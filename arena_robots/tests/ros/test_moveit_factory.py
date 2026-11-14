@@ -364,7 +364,7 @@ class TestBuildMoveitParamsTiago(_SrdfLinksExist):
         assert _group_chains(params)["arm"] == ("torso_lift_link", "arm_tool_link")
 
     def test_named_states_match_caps(self, params: dict) -> None:
-        assert _group_states(params, "arm") == {"stow", "ready"}
+        assert _group_states(params, "arm") == {"stow", "ready", "carry"}
 
     def test_joint_limits_cover_arm_joints(self, params: dict) -> None:
         assert set(self._JOINTS) <= set(params["robot_description_planning"]["joint_limits"])

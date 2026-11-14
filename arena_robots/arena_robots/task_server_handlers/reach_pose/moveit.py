@@ -8,9 +8,12 @@ import xml.etree.ElementTree as ET
 from functools import partial
 from typing import TYPE_CHECKING
 
+import rclpy.clock
+import rclpy.task
 import rclpy.time
 from action_msgs.msg import GoalStatus
 from arena_robots_msgs.action import ReachPose
+from builtin_interfaces.msg import Duration
 from control_msgs.msg import JointTrajectoryControllerState
 from geometry_msgs.msg import Pose, PoseStamped
 from moveit_msgs.action import ExecuteTrajectory, MoveGroup
@@ -26,7 +29,7 @@ from moveit_msgs.msg import (
     PlanningSceneComponents,
     PositionConstraint,
 )
-from moveit_msgs.srv import GetPlanningScene
+from moveit_msgs.srv import GetPlanningScene, GetPositionIK
 from rcl_interfaces.srv import GetParameters
 from rclpy.action import ActionClient
 from sensor_msgs.msg import JointState
@@ -58,6 +61,12 @@ _PILZ = "pilz_industrial_motion_planner"
 _MOTIONS = ("", "free", "linear")
 _SERVICE_TIMEOUT = 10.0
 _START_CLAMP = 0.05
+_SETTLE_ERROR = 0.01
+_SETTLE_TIME_S = 3.0
+_SETTLE_WALL_S = 10.0
+_LIN_ATTEMPTS = 4
+_IK_MARGIN = 0.3
+_IK_TIMEOUT_NS = 50_000_000
 
 
 class _ReachAbort(Exception):
@@ -70,6 +79,24 @@ class _Guard:
     native_handle: ClientGoalHandle
     stall_since: float | None = None
     violation: str = ""
+
+
+@dataclasses.dataclass
+class _Settle:
+    done: rclpy.task.Future
+    deadline: float | None = None
+    worst: tuple[float, str] = (0.0, "")
+
+
+def _settle_step(settle: _Settle, msg: JointTrajectoryControllerState) -> bool | None:
+    """True once every joint is within the settle error of its reference, False past the settle time, None while it still moves."""
+    stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+    if settle.deadline is None:
+        settle.deadline = stamp + _SETTLE_TIME_S
+    settle.worst = max(((abs(error), name) for name, error in zip(msg.joint_names, msg.error.positions, strict=False)), default=(0.0, ""))
+    if settle.worst[0] <= _SETTLE_ERROR:
+        return True
+    return False if stamp >= settle.deadline else None
 
 
 def _quat_mul(a: Pose, b: Pose) -> tuple[float, float, float, float]:
@@ -176,6 +203,20 @@ def _guard_step(guard: _Guard, msg: JointTrajectoryControllerState) -> str:
     return ""
 
 
+def _joint_goal(joints: dict[str, float]) -> Constraints:
+    """Joint constraints holding each joint within 0.01 rad of its position."""
+    constraints = Constraints()
+    for joint_name, position in joints.items():
+        jc = JointConstraint()
+        jc.joint_name = joint_name
+        jc.position = float(position)
+        jc.tolerance_above = 0.01
+        jc.tolerance_below = 0.01
+        jc.weight = 1.0
+        constraints.joint_constraints.append(jc)  # pyright: ignore[reportAttributeAccessIssue]
+    return constraints
+
+
 def _translate_moveit_status(code: int) -> tuple[int, str]:
     if code == MoveItErrorCodes.SUCCESS:
         return ReachPose.Result.STATUS_SUCCEEDED, ""
@@ -203,8 +244,10 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         self._beat = LockstepBeat(node, "reach")
         self._native_goals = NativeGoals()
         self._guards: dict[str, _Guard] = {}
+        self._settles: dict[str, _Settle] = {}
         self._scene_clients = {mount: node.create_client(GetPlanningScene, str(bringup.arm_namespace(mount)("get_planning_scene"))) for mount in bringup.arms()}
         self._param_clients = {mount: node.create_client(GetParameters, str(bringup.arm_namespace(mount)("move_group", "get_parameters"))) for mount in bringup.arms()}
+        self._ik_clients = {mount: node.create_client(GetPositionIK, str(bringup.arm_namespace(mount)("compute_ik"))) for mount in bringup.arms()}
         self._models: dict[str, tuple[frozenset[str], dict[str, tuple[float, float]]]] = {}
         self._positions: dict[str, dict[str, float]] = {}
         for mount, arm in bringup.arms().items():
@@ -218,6 +261,9 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
     def _on_controller_state(self, mount: str, msg: JointTrajectoryControllerState) -> None:
         self._beat.pulse(msg.header.stamp)
         self._positions[mount] = dict(zip(msg.joint_names, msg.feedback.positions, strict=False))
+        settle = self._settles.get(mount)
+        if settle is not None and not settle.done.done() and (settled := _settle_step(settle, msg)) is not None:
+            settle.done.set_result(settled)
         guard = self._guards.get(mount)
         if guard is None or guard.violation:
             return
@@ -286,6 +332,38 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             names.append(joint)
             values.append(clamped)
         return JointState(name=names, position=values)
+
+    async def _roomiest_solution(self, mount: str, arm: ArmSpec, target: PoseStamped, start: JointState | None) -> dict[str, float] | None:
+        """The first IK solution clearing the joint limit margin from the current joints, then each named pose as seed, else the roomiest."""
+        client = self._ik_clients[mount]
+        bounds = self._models[mount][1]
+        current = {} if start is None else dict(zip(start.name, start.position, strict=True))
+        best: dict[str, float] | None = None
+        best_margin = -math.inf
+        for pose in [{}, *arm.named_poses.values()]:
+            seed = {**current, **{joint: float(value) for joint, value in pose.items()}}
+            request = GetPositionIK.Request()
+            request.ik_request.group_name = arm.planning_group or arm.name
+            request.ik_request.ik_link_name = self._tf_prefix + arm.tip_link
+            request.ik_request.pose_stamped = target
+            request.ik_request.avoid_collisions = True
+            request.ik_request.timeout = Duration(nanosec=_IK_TIMEOUT_NS)
+            request.ik_request.robot_state.is_diff = True
+            request.ik_request.robot_state.joint_state = JointState(name=list(seed), position=list(seed.values()))
+            try:
+                response = await self._call(client, request, "move_group compute_ik")
+            except _ReachAbort:
+                return best
+            if response.error_code.val != MoveItErrorCodes.SUCCESS:
+                continue
+            solved = response.solution.joint_state
+            solution = {joint: position for joint, position in zip(solved.name, solved.position, strict=False) if joint in arm.chain}
+            margin = min((min(position - bounds[joint][0], bounds[joint][1] - position) for joint, position in solution.items() if joint in bounds), default=math.inf)
+            if margin >= _IK_MARGIN:
+                return solution
+            if margin > best_margin:
+                best, best_margin = solution, margin
+        return best
 
     async def _contact_scene(self, mount: str, arm: ArmSpec, object_ids: Sequence[str]) -> PlanningScene:
         links, _ = await self._model(mount, arm)
@@ -364,6 +442,8 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             if start is not None:
                 mg_goal.request.start_state.is_diff = False
                 mg_goal.request.start_state.joint_state = start
+            if mg_goal.request.planner_id == "PTP" and (joints := await self._roomiest_solution(mount, arm, arena_goal.target, start)) is not None:
+                mg_goal.request.goal_constraints = [_joint_goal(joints)]
             if arena_goal.contact:
                 mg_goal.planning_options.planning_scene_diff = await self._contact_scene(mount, arm, list(arena_goal.contact))
             frame = self._tf_prefix + arm.base_link if arena_goal.named_target else arena_goal.target.header.frame_id
@@ -391,19 +471,38 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             return result
 
         self._publish_feedback(goal_handle, "PLANNING", 0.0)
-        plan_handle = await native_client.send_goal_async(mg_goal)
-        if plan_handle is None or not plan_handle.accepted:
-            goal_handle.abort()
-            result.status = ReachPose.Result.STATUS_ABORTED
-            result.reason = "MoveIt MotionPlanRequest aborted"
-            return result
-        with self._native_goals.tracking(goal_handle, plan_handle):
-            planned = await plan_handle.get_result_async()
-        if not goal_handle.is_active:
-            result.status = ReachPose.Result.STATUS_CANCELED
-            result.reason = "goal canceled by client"
-            return result
-        status, reason = self._outcome(planned)
+        lin_attempts = 0
+        speed = mg_goal.request.max_velocity_scaling_factor
+        while True:
+            plan_handle = await native_client.send_goal_async(mg_goal)
+            if plan_handle is None or not plan_handle.accepted:
+                goal_handle.abort()
+                result.status = ReachPose.Result.STATUS_ABORTED
+                result.reason = "MoveIt MotionPlanRequest aborted"
+                return result
+            with self._native_goals.tracking(goal_handle, plan_handle):
+                planned = await plan_handle.get_result_async()
+            if not goal_handle.is_active:
+                result.status = ReachPose.Result.STATUS_CANCELED
+                result.reason = "goal canceled by client"
+                return result
+            status, reason = self._outcome(planned)
+            if status in (ReachPose.Result.STATUS_SUCCEEDED, ReachPose.Result.STATUS_CANCELED) or mg_goal.request.pipeline_id != _PILZ:
+                break
+            if mg_goal.request.planner_id == "LIN":
+                lin_attempts += 1
+                if lin_attempts < _LIN_ATTEMPTS:
+                    mg_goal.request.max_velocity_scaling_factor /= 2
+                    mg_goal.request.max_acceleration_scaling_factor /= 2
+                    continue
+                self._node.get_logger().warning(f"arm {mount!r} has no straight path to its target ({reason}), moving it point to point")
+                mg_goal.request.planner_id = "PTP"
+                mg_goal.request.max_velocity_scaling_factor = speed
+                mg_goal.request.max_acceleration_scaling_factor = speed
+                continue
+            self._node.get_logger().warning(f"arm {mount!r} has no point to point path to its target ({reason}), planning it freely")
+            mg_goal.request.pipeline_id = ""
+            mg_goal.request.planner_id = ""
         if status != ReachPose.Result.STATUS_SUCCEEDED:
             return self._finish(goal_handle, result, status, reason, arm, frame)
 
@@ -438,7 +537,26 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         if goal_handle.is_cancel_requested:
             return self._finish(goal_handle, result, ReachPose.Result.STATUS_CANCELED, "goal canceled by client", arm, frame)
         status, reason = self._outcome(wrapped)
+        if status == ReachPose.Result.STATUS_SUCCEEDED and mount in self._positions:
+            await self._settle(mount)
         return self._finish(goal_handle, result, status, reason, arm, frame)
+
+    async def _settle(self, mount: str) -> None:
+        """Wait until the arm stands at the end of its executed trajectory, at most the settle time."""
+        settle = self._settles[mount] = _Settle(done=rclpy.task.Future())
+
+        def give_up() -> None:
+            if not settle.done.done():
+                settle.done.set_result(False)
+
+        timer = self._node.create_timer(_SETTLE_WALL_S, give_up, clock=rclpy.clock.Clock(clock_type=rclpy.clock.ClockType.STEADY_TIME))
+        try:
+            settled = await settle.done
+        finally:
+            self._node.destroy_timer(timer)
+            self._settles.pop(mount, None)
+        if not settled:
+            self._node.get_logger().warning(f"arm {mount!r} stopped {settle.worst[0]:.3f} rad off its trajectory end at joint {settle.worst[1]!r}")
 
     @staticmethod
     def _outcome(wrapped: MoveGroup.Impl.GetResultService.Response | ExecuteTrajectory.Impl.GetResultService.Response) -> tuple[int, str]:
@@ -476,14 +594,7 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
             joints = arm.named_poses.get(arena_goal.named_target)
             if joints is None:
                 return None
-            for joint_name, position in joints.items():
-                jc = JointConstraint()
-                jc.joint_name = joint_name
-                jc.position = float(position)
-                jc.tolerance_above = 0.01
-                jc.tolerance_below = 0.01
-                jc.weight = 1.0
-                constraints.joint_constraints.append(jc)  # pyright: ignore[reportAttributeAccessIssue]
+            constraints = _joint_goal(joints)
         else:
             pos_tol = arena_goal.position_tolerance or _DEFAULT_POSITION_TOLERANCE
             ori_tol = arena_goal.orientation_tolerance or _DEFAULT_ORIENTATION_TOLERANCE
@@ -521,6 +632,9 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         if arena_goal.motion == "linear":
             mg_goal.request.pipeline_id = _PILZ
             mg_goal.request.planner_id = "LIN"
+        elif not arena_goal.named_target:
+            mg_goal.request.pipeline_id = _PILZ
+            mg_goal.request.planner_id = "PTP"
         # is_diff=true means "use the current robot state as start; ignore the (empty) joint_state I'm sending".
         # Without this, MoveIt warns every goal that it's ignoring our supplied start state.
         mg_goal.request.start_state.is_diff = True

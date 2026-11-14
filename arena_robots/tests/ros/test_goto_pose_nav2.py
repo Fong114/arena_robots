@@ -213,3 +213,73 @@ class TestGotoPoseHandlerNav2Tolerance:
         goto_rig.serve(_handler(), tf_buffer=buffer)
         goto_rig.result(goto_rig.send(pose_tolerance=0.05))
         assert nav2.received == 1
+
+
+class TestGotoPoseHandlerNav2StraightMoves:
+    def _drive(self, goto_rig, base_x, *, target_x, behaviors=("backup", "drive_on_heading"), base_yaw=0.0, **goal):
+        from nav2_msgs.action import BackUp, DriveOnHeading
+        from tf2_ros import Buffer
+
+        servers = {name: goto_rig.behavior(action, name) for name, action in (("backup", BackUp), ("drive_on_heading", DriveOnHeading)) if name in behaviors}
+        nav2 = goto_rig.nav2()
+        buffer = Buffer()
+        goto_rig.robot_at(buffer, base_x, yaw=base_yaw)
+        goto_rig.serve(_handler(), tf_buffer=buffer)
+        wrapped = goto_rig.result(goto_rig.send(target_x, **goal))
+        return wrapped, nav2, servers
+
+    def test_goal_straight_behind_backs_up_by_its_distance(self, goto_rig):
+        from arena_robots_msgs.action import GotoPose
+
+        wrapped, nav2, servers = self._drive(goto_rig, 2.0, target_x=1.5, pose_tolerance=0.05, yaw_tolerance=0.05)
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
+        assert nav2.received == 0
+        assert len(servers["backup"].goals) == 1
+        assert servers["drive_on_heading"].goals == []
+        goal = servers["backup"].goals[0]
+        assert goal.target.x == pytest.approx(0.5)
+        assert goal.speed == pytest.approx(0.1)
+        assert goal.time_allowance.sec == 25
+
+    def test_goal_straight_ahead_drives_on_heading_by_its_distance(self, goto_rig):
+        from arena_robots_msgs.action import GotoPose
+
+        wrapped, nav2, servers = self._drive(goto_rig, 1.0, target_x=1.5, pose_tolerance=0.05, yaw_tolerance=0.05)
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
+        assert nav2.received == 0
+        assert servers["backup"].goals == []
+        assert len(servers["drive_on_heading"].goals) == 1
+        assert servers["drive_on_heading"].goals[0].target.x == pytest.approx(0.5)
+
+    def test_goal_beside_a_turned_base_goes_to_nav2(self, goto_rig):
+        _, nav2, servers = self._drive(goto_rig, 1.0, target_x=1.5, base_yaw=1.5707963, pose_tolerance=0.05)
+        assert nav2.received == 1
+        assert servers["drive_on_heading"].goals == []
+
+    def test_goal_with_lateral_offset_beyond_tolerance_goes_to_nav2(self, goto_rig):
+        _, nav2, servers = self._drive(goto_rig, 2.0, target_x=1.7, y=0.2, pose_tolerance=0.05)
+        assert nav2.received == 1
+        assert servers["backup"].goals == []
+
+    def test_goal_with_yaw_change_beyond_tolerance_goes_to_nav2(self, goto_rig):
+        _, nav2, servers = self._drive(goto_rig, 2.0, target_x=1.7, yaw=0.5, yaw_tolerance=0.05)
+        assert nav2.received == 1
+        assert servers["backup"].goals == []
+
+    def test_goal_beyond_one_meter_goes_to_nav2(self, goto_rig):
+        _, nav2, servers = self._drive(goto_rig, 3.0, target_x=1.5)
+        assert nav2.received == 1
+        assert servers["backup"].goals == []
+
+    def test_goal_within_two_centimeters_goes_to_nav2(self, goto_rig):
+        _, nav2, servers = self._drive(goto_rig, 1.0, target_x=1.01)
+        assert nav2.received == 1
+        assert servers["drive_on_heading"].goals == []
+
+    def test_missing_behavior_server_falls_back_to_nav2(self, goto_rig):
+        from arena_robots_msgs.action import GotoPose
+
+        wrapped, nav2, servers = self._drive(goto_rig, 2.0, target_x=1.7, behaviors=("drive_on_heading",), pose_tolerance=0.05, yaw_tolerance=0.05)
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
+        assert nav2.received == 1
+        assert servers["drive_on_heading"].goals == []
