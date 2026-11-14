@@ -8,6 +8,12 @@ behalf of a robot. Each `TaskKind` has one action type (defined in
 advertises depends on the selected `bringup` and the handlers registered for
 that `(TaskKind, bringup_kind)` pair.
 
+`TaskKind.GRASP` (cap `gripper`) is the one kind without a `task_server`
+endpoint or handler: the `gripper: direct` adapter in `arena_runtime` sends
+the phase to the gripper controller's `control_msgs/GripperCommand` action
+(the type `action_type()` returns for it) and the phase ends when that action
+returns. It has no `PUBLIC_SUFFIX` entry, so no `<namespace>/grasp` endpoint exists and the robots MCP lists none.
+
 ## Sources of truth
 
 | File | Role |

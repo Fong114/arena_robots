@@ -183,9 +183,9 @@ def _action_name(action: type) -> str:
 
 def _actions(available: frozenset[str]) -> dict[str, Any]:
     from arena_robots.bringup import BRINGUPS
-    from arena_robots.task_kinds import PUBLIC_SUFFIX, TaskKind, action_type, cap_for_task_kind
+    from arena_robots.task_kinds import PUBLIC_SUFFIX, action_type, cap_for_task_kind
 
-    endpoints = {kind.value: {"endpoint": f"<robot_ns>/{PUBLIC_SUFFIX[kind]}", "action": _action_name(action_type(kind)), "cap": cap_for_task_kind(kind)} for kind in TaskKind if cap_for_task_kind(kind) in available}
+    endpoints = {kind.value: {"endpoint": f"<robot_ns>/{PUBLIC_SUFFIX[kind]}", "action": _action_name(action_type(kind)), "cap": cap_for_task_kind(kind)} for kind in PUBLIC_SUFFIX if cap_for_task_kind(kind) in available}
     bringups: dict[str, Any] = {}
     for cap, registry in BRINGUPS.items():
         if cap not in available:
@@ -451,9 +451,9 @@ def _topic(ns: str, relative: str) -> str:
 
 
 def _task_kinds() -> list[TaskKind]:
-    from arena_robots.task_kinds import TaskKind
+    from arena_robots.task_kinds import PUBLIC_SUFFIX
 
-    return list(TaskKind)
+    return list(PUBLIC_SUFFIX)
 
 
 def _served(entry: dict[str, Any], actions: list[str]) -> dict[str, Any]:
