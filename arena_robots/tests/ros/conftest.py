@@ -30,7 +30,7 @@ def until(pred: Callable[[], bool], what: str, timeout: float = GOAL_TIMEOUT) ->
 class Nav2Server:
     """A NavigateToPose action server scripted per goal."""
 
-    def __init__(self, node: Any, name: str, *, reject_first: int = 0, outcomes: tuple[str, ...] = ("succeed",), hold: bool = False, distance: float | None = None) -> None:
+    def __init__(self, node: Any, name: str, *, reject_first: int = 0, outcomes: tuple[str, ...] = ("succeed",), hold: bool = False, distance: float | None = None, linger: float = 0.0) -> None:
         from nav2_msgs.action import NavigateToPose
         from rclpy.action import ActionServer, CancelResponse
 
@@ -39,7 +39,9 @@ class Nav2Server:
         self._outcomes = list(outcomes)
         self.holding = hold
         self.distance = distance
+        self.linger = linger
         self.received = 0
+        self.events: list[str] = []
         self.canceled = 0
         self._server = ActionServer(node, NavigateToPose, name, execute_callback=self._execute, goal_callback=self._on_goal, cancel_callback=lambda _handle: CancelResponse.ACCEPT)
 
@@ -54,6 +56,7 @@ class Nav2Server:
 
         from arena_robots.task_server_handlers import _executor_sleep
 
+        self.events.append("start")
         while self.holding and not goal_handle.is_cancel_requested:
             if self.distance is not None:
                 feedback = NavigateToPose.Feedback()
@@ -62,12 +65,14 @@ class Nav2Server:
                 goal_handle.publish_feedback(feedback)
             await _executor_sleep(self._node, 0.02, wall=True)
         if goal_handle.is_cancel_requested:
+            await _executor_sleep(self._node, self.linger, wall=True)
             goal_handle.canceled()
             self.canceled += 1
         elif (self._outcomes.pop(0) if len(self._outcomes) > 1 else self._outcomes[0]) == "abort":
             goal_handle.abort()
         else:
             goal_handle.succeed()
+        self.events.append("end")
         return NavigateToPose.Result()
 
     def destroy(self) -> None:
