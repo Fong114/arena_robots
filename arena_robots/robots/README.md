@@ -12,7 +12,7 @@ files, and the `arena feature robots` CLI all look robots up by this name.
 ├── control.yaml         # ros2_control configuration
 ├── mappings.yaml        # sim ⇄ ROS2 topic bridge
 └── caps/
-    └── mobile.yaml      # required: every robot has a mobile base
+    └── mobile.yaml      # drivable robots only: a robot without it is immobile
 ```
 
 ### `model_params.yaml`
@@ -383,8 +383,8 @@ their URDFs reference `package://jackal_description/…` etc., supplied by
 
 1. `mkdir -p arena_robots/arena_robots/robots/<name>/caps`
 2. Write `model_params.yaml` (minimal identity), `control.yaml`, `mappings.yaml`.
-3. Write `caps/mobile.yaml` (every robot has a mobile base). Add `caps/arm.yaml`
-   and/or `caps/lift.yaml` if the robot has those subsystems.
+3. Write `caps/mobile.yaml` if the robot drives (a fixed-base robot such as `fr3` has none).
+   Add `caps/arm.yaml` and/or `caps/lift.yaml` if the robot has those subsystems.
 4. (Optional) add `urdf/<name>.urdf.xacro` and/or a `meshes/` submodule.
    For component-catalog sensors, add `assembly.yaml` + a golden (see "Moving a
    robot's sensors to the component catalog" above).

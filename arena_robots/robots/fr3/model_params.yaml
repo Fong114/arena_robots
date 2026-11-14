@@ -1,0 +1,13 @@
+robot_model: fr3
+base_frame: base_link
+z_offset: 0.0
+mass:
+  base_kg: 80.0
+sensors: []
+control:
+  mode: ros2_control
+  config: package://arena_robots/robots/fr3/control.yaml
+  controllers:
+    - joint_state_broadcaster
+  cmd_vel_topic: unused_cmd_vel_stamped
+  odom_topic: odom

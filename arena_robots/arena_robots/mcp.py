@@ -302,7 +302,7 @@ def _definition_findings(view: RobotView) -> list[dict[str, Any]]:
         findings.append(_finding(name, "assembly", _error(exc)))
         caps, available = view.caps, view.caps.available
     if "mobile" not in available:
-        findings.append(_finding(name, "caps", "caps/mobile.yaml is missing, every robot needs a mobile cap"))
+        findings.append(_finding(name, "caps", "caps/mobile.yaml is missing, the robot is immobile", "info"))
     else:
         for field in ("velocity_limits", "acceleration_limits", "actions", "planar", "laser", "footprint", "polygons_dict"):
             try:

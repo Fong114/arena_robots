@@ -351,6 +351,11 @@ class MobileSpec(CapConfig):
         return bool(self.raw.get('is_holonomic', False))
 
     @property
+    def drive(self) -> bool:
+        """Whether the base takes velocity commands, false for a base that only seats the robot."""
+        return bool(self.raw.get('drive', True))
+
+    @property
     def climbs(self) -> frozenset[str]:
         """Stairs kinds the base can drive through, a subset of CLIMBABLE."""
         v = self.raw.get('climbs') or []
