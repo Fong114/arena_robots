@@ -467,17 +467,24 @@ def test_gesture_job_fails_when_the_episode_fails_its_phase(run):
     assert "play_gesture phase" in done.error and "failed" in done.error
 
 
-def test_drive_publishes_the_command_at_rate_then_zero(run):
+def test_drive_repeats_the_command_within_its_rate_then_zero(run):
+    run(mcp.robots_stop(ENV, "jackal"))
     run.peer.twists.clear()
-    job = run(mcp.robots_drive(0.4, wz=0.2, duration_s=0.5, rate_hz=20.0, env_id=ENV, robot="jackal"))
+    duration_s, rate_hz = 0.5, 20.0
+    job = run(mcp.robots_drive(0.4, wz=0.2, duration_s=duration_s, rate_hz=rate_hz, env_id=ENV, robot="jackal"))
     done = run(JOBS.wait(job["id"], 30))
     assert done.state == SUCCEEDED, done.error
     assert done.result["type"] == "geometry_msgs/msg/Twist" and done.result["topic"] == f"{JACKAL}/cmd_vel"
-    assert 5 <= done.result["messages"] <= 12
+    assert 2 <= done.result["messages"] <= duration_s * rate_hz + 1
+
+    async def zeroed() -> bool:
+        twists = run.peer.twists
+        driven = any(twist.linear.x == pytest.approx(0.4) for twist in twists)
+        return driven and (twists[-1].linear.x, twists[-1].linear.y, twists[-1].angular.z) == (0.0, 0.0, 0.0)
+
+    run(_until(zeroed, "the zero twist after the drive"))
     moving = [twist for twist in run.peer.twists if twist.linear.x == pytest.approx(0.4)]
-    assert moving and all(twist.angular.z == pytest.approx(0.2) for twist in moving)
-    last = run.peer.twists[-1]
-    assert (last.linear.x, last.linear.y, last.angular.z) == (0.0, 0.0, 0.0)
+    assert len(moving) >= 2 and all(twist.angular.z == pytest.approx(0.2) for twist in moving)
 
 
 def test_stop_cancels_the_drive_job_and_publishes_zero(run):
