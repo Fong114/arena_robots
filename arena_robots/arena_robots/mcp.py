@@ -788,6 +788,8 @@ async def robots_drive(
         try:
             while (elapsed := time.monotonic() - start) < duration_s:
                 await send(vx, vy, wz)
+                if not sent:
+                    start = time.monotonic()
                 sent += 1
                 if sent % max(1, int(rate_hz)) == 0:
                     job.progress(sent=sent, elapsed_s=round(elapsed, 2))
