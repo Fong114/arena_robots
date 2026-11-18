@@ -9,15 +9,16 @@ from collections.abc import Iterable, Iterator, Mapping
 import attrs
 
 from arena_robots import assembly as assembly_mod
-from arena_robots.caps import FACT_BLOCKS, CapConfig, RobotCaps, adapter_blocks, simulators_honoring, typed_fields
+from arena_robots.caps import FACT_BLOCKS, CapConfig, RobotCaps, adapter_blocks, simulator_names, simulators_honoring, typed_fields
 from arena_robots.inline import split_top_level
 from arena_robots.Robot import RobotIdentifier, RobotView
 from arena_robots.SetupFile import Config
 
-Kind = typing.Literal['value', 'list', 'map', 'unset']
+Kind = typing.Literal['value', 'list', 'map', 'unset', 'arg']
 
 _INSTANCE_CAPS = ('arm', 'lift', 'gripper')
-_SUFFIXES: dict[Kind, tuple[str, ...]] = {'value': ('=',), 'list': ('=',), 'map': ('.',), 'unset': ('=', '.')}
+_SUFFIXES: dict[Kind, tuple[str, ...]] = {'value': ('=',), 'list': ('=',), 'map': ('.',), 'unset': ('=', '.'), 'arg': ('=',)}
+_NOT_OVERRIDABLE = ('body.mass', 'body.mass_urdf', 'body.outline', 'mobile.laser')
 _COMPLETION_ERRORS = (ValueError, RuntimeError, FileNotFoundError, KeyError)
 
 
@@ -31,14 +32,11 @@ class OverridePath:
     provenance: str = 'file'
     part: str | None = None
     relative: str | None = None
-
-    @property
-    def simulators(self) -> frozenset[str]:
-        return simulators_honoring(self.path)
+    simulators: frozenset[str] = frozenset()
 
     @property
     def overridable(self) -> bool:
-        return self.path != 'body.mass' and not self.path.startswith('body.mass.')
+        return not any(self.path == head or self.path.startswith(f'{head}.') for head in _NOT_OVERRIDABLE)
 
 
 def _kind(value: object) -> Kind:
@@ -65,21 +63,31 @@ def _relative(spec: CapConfig, cap: str) -> list[tuple[str, object, Kind]]:
     return entries + [(name, None, 'unset') for name in unset]
 
 
+def _arg_paths(caps: RobotCaps) -> list[OverridePath]:
+    if caps.resolved is None or caps.catalog is None:
+        return []
+    return [
+        OverridePath(f'{placement.type}.{placement.mount.name}.{arg}', placement.params.get(arg, default), 'arg', 'override' if arg in placement.args else 'component', placement.mount.name, arg, simulator_names())
+        for placement in caps.resolved.placements
+        for arg, default in caps.catalog.get(placement.type, placement.variant).args.items()
+    ]
+
+
 def override_paths(caps: RobotCaps) -> list[OverridePath]:
-    """Every leaf, list and mapping of the effective caps and fact blocks, each with its provenance, plus the typed fields and adapter blocks the caps leave unset."""
+    """Every leaf, list and mapping of the effective caps and fact blocks, each with its provenance, plus the typed fields and adapter blocks the caps leave unset and the xacro arguments of the placed parts."""
     out: list[OverridePath] = []
     if 'mobile' in caps.available:
-        out += [OverridePath(f'mobile.{relative}', value, kind, caps.provenance(f'mobile.{relative}')) for relative, value, kind in _relative(caps.mobile, 'mobile')]
+        out += [OverridePath(f'mobile.{relative}', value, kind, caps.provenance(f'mobile.{relative}'), simulators=simulators_honoring(f'mobile.{relative}', caps)) for relative, value, kind in _relative(caps.mobile, 'mobile')]
     placed = {(placement.type, placement.mount.name) for placement in caps.resolved.placements} if caps.resolved is not None else set()
     for cap in _INSTANCE_CAPS:
         for name, spec in (getattr(caps, cap) or {}).items():
             part = name if (cap, name) in placed else None
-            out += [OverridePath(f'{cap}.{name}.{relative}', value, kind, caps.provenance(f'{cap}.{name}.{relative}'), part, relative if part else None) for relative, value, kind in _relative(spec, cap)]
+            out += [OverridePath(f'{cap}.{name}.{relative}', value, kind, caps.provenance(f'{cap}.{name}.{relative}'), part, relative if part else None, simulators_honoring(f'{cap}.{name}.{relative}', caps)) for relative, value, kind in _relative(spec, cap)]
     for block in FACT_BLOCKS:
         spec = getattr(caps, block)
         if spec is not None:
-            out += [OverridePath(f'{block}.{relative}', value, kind, caps.provenance(f'{block}.{relative}')) for relative, value, kind in _relative(spec, block)]
-    return out
+            out += [OverridePath(f'{block}.{relative}', value, kind, caps.provenance(f'{block}.{relative}'), simulators=simulators_honoring(f'{block}.{relative}', caps)) for relative, value, kind in _relative(spec, block)]
+    return out + _arg_paths(caps)
 
 
 def _split(text: str) -> tuple[list[str], str, int] | None:
@@ -157,10 +165,7 @@ def _effective_caps(view: RobotView, config: Config) -> RobotCaps:
     if unknown_frames:
         raise ValueError(f"frames override targets unknown mount(s) {sorted(unknown_frames)}, declared mounts: {sorted(spec.mounts)}")
     resolved = assembly_mod.apply_frame_overrides(resolved, config.frames)
-    placed: dict[str, list[assembly_mod.RequestPart]] = {}
-    for placement in resolved.placements:
-        placed.setdefault(placement.type, []).append(assembly_mod.RequestPart(variant=placement.variant, mount=placement.mount.name, overrides=placement.overrides, caps=dict(placement.caps)))
-    return view.effective_caps(placed, frames=config.frames, caps=dict(config.caps))
+    return view.effective_caps(assembly_mod.placed_request(resolved), frames=config.frames, caps=dict(config.caps))
 
 
 def entry_paths(entry: str) -> list[OverridePath]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import math
 import re
 import time
@@ -23,8 +24,7 @@ if TYPE_CHECKING:
     from sensor_msgs.msg import LaserScan
 
     from arena_mcp.core import JobHandle
-    from arena_robots.assembly import RequestPart
-    from arena_robots.caps import ArmSpec, RobotCaps
+    from arena_robots.caps import ArmSpec, BodySpec, RobotCaps
     from arena_robots.request import InstanceRequest
     from arena_robots.Robot import RobotView
     from arena_robots.Sensor import SensorSpec
@@ -88,7 +88,7 @@ def _sensor_dict(spec: SensorSpec, namespace: str | None = None) -> dict[str, An
 PartsArg = Annotated[
     dict[str, str | list[str]] | None,
     Field(
-        description="morphology of the instance, the directive mapping of a setup file entry: mount or type to `type/variant`, `variant` or `none`, a bracket after the variant carries that part's cap overrides, e.g. {\"top\": \"arm/fr3[stall_time=2.0]\", \"top_tool\": \"gripper/franka_hand[max_effort=*0.5]\"}, omit for the model's default parts"
+        description="morphology of the instance, the directive mapping of a setup file entry: mount or type to `type/variant`, `variant` or `none`, a bracket after the variant carries that part's cap overrides and the xacro arguments its component declares (robots_overrides lists them with kind `arg`), e.g. {\"top\": \"arm/fr3[stall_time=2.0]\", \"top_tool\": \"gripper/franka_hand[max_effort=*0.5]\", \"base_front\": \"lidar/arena_default[max_range=8]\"}, omit for the model's default parts"
     ),
 ]
 FramesArg = Annotated[
@@ -126,10 +126,7 @@ def _request(view: RobotView, parts: dict[str, str | list[str]] | None, frames: 
     if unknown_frames:
         raise ValueError(f"frames override targets unknown mount(s) {sorted(unknown_frames)}, declared mounts: {sorted(spec.mounts)}")
     resolved = assembly.apply_frame_overrides(resolved, config.frames)
-    placed: dict[str, list[RequestPart]] = {}
-    for placement in resolved.placements:
-        placed.setdefault(placement.type, []).append(assembly.RequestPart(variant=placement.variant, mount=placement.mount.name, overrides=placement.overrides, caps=dict(placement.caps)))
-    return InstanceRequest(parts=placed, frames=dict(config.frames), caps=dict(config.caps))
+    return InstanceRequest(parts=assembly.placed_request(resolved), frames=dict(config.frames), caps=dict(config.caps))
 
 
 def _summary(view: RobotView) -> dict[str, Any]:
@@ -332,7 +329,7 @@ def robots_definition(model: str, parts: PartsArg = None, frames: FramesArg = No
 
 @domain.tool(read_only=True)
 def robots_overrides(model: str, parts: PartsArg = None, frames: FramesArg = None, caps: CapsArg = None) -> list[dict[str, Any]]:
-    """Every cap override path of one robot instance with its effective value: leaves, lists and mappings of the mobile cap and of each arm, lift and gripper instance, plus the typed fields and adapter blocks the cap leaves unset, and the `body`, `power` and `acoustics` fact blocks (`body.mass*` is not overridable). Each carries its `provenance` (override, component, derived or file). A path of a part placed through the assembly carries its mount in `part` and the path to write inside that part's brackets in `relative`. With parts, frames or caps the paths are those of the instance with them applied."""
+    """Every cap override path of one robot instance with its effective value: leaves, lists and mappings of the mobile cap and of each arm, lift and gripper instance, plus the typed fields and adapter blocks the cap leaves unset, and the `body`, `power` and `acoustics` fact blocks (`body.mass*`, `body.outline` and `mobile.laser*` are not overridable, `overridable` says so), the joint limits of each arm as `arm.<mount>.joint_limits.<joint>.<key>`, and the xacro arguments of each placed part as kind `arg` entries. Each carries its `provenance` (override, component, derived, urdf or file) and the `simulators` that honor it. A path of a part placed through the assembly carries its mount in `part` and the path to write inside that part's brackets in `relative`. With parts, frames or caps the paths are those of the instance with them applied."""
     from arena_robots.override_paths import override_paths
 
     view = _view(model)
@@ -342,7 +339,7 @@ def robots_overrides(model: str, parts: PartsArg = None, frames: FramesArg = Non
         paths = override_paths(effective)
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
         raise ToolError(f"instance request of {model!r} is invalid: {_error(exc)}", hint="robots_overrides without parts, frames and caps lists the model's defaults, caps paths are the fields of caps/<cap>.yaml") from exc
-    return [{"path": entry.path, "kind": entry.kind, "value": msgs.jsonable(entry.value), "provenance": entry.provenance, "part": entry.part, "relative": entry.relative, "simulators": sorted(entry.simulators)} for entry in paths]
+    return [{"path": entry.path, "kind": entry.kind, "value": msgs.jsonable(entry.value), "provenance": entry.provenance, "part": entry.part, "relative": entry.relative, "simulators": sorted(entry.simulators), "overridable": entry.overridable} for entry in paths]
 
 
 @domain.resource("arena://robots/catalog", mime_type="application/json", description="Every robot model with caps and a one-line summary")
@@ -357,6 +354,52 @@ def robots_definition_resource(model: str) -> dict[str, Any]:
 
 def _finding(robot: str, check: str, message: str, severity: str = "error", **extra: object) -> dict[str, Any]:
     return {"robot": robot, "check": check, "severity": severity, "message": message, **extra}
+
+
+_MASS_TOLERANCE = 0.05
+
+
+def _drift_findings(name: str, check: str, call: Callable[[], list[str]]) -> list[dict[str, Any]]:
+    try:
+        return [_finding(name, check, message, "warning") for message in call()]
+    except Exception as exc:
+        return [_finding(name, check, _error(exc), "warning")]
+
+
+def _mass_findings(name: str, body: BodySpec, power_mass: object) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    urdf_mass: float | None = None
+    try:
+        urdf_mass = body.mass_urdf
+    except ImportError:
+        pass
+    except Exception as exc:
+        findings.append(_finding(name, "caps.mass", f"the URDF mass is not readable: {_error(exc)}", "warning"))
+    figures = [value for value in (body.mass_total, urdf_mass, None if power_mass is None else float(cast("float", power_mass))) if value is not None]
+    if any(abs(a - b) > _MASS_TOLERANCE * max(a, b) for a, b in itertools.combinations(figures, 2)):
+        findings.append(_finding(name, "caps.mass", f"mass differs: model_params.yaml mass.base_kg {body.mass_base} plus parts {body.mass_total}, URDF {urdf_mass}, telemetry/power.yaml robot_mass_kg {power_mass}, the power model uses robot_mass_kg", "warning"))
+    return findings
+
+
+def _file_drift_findings(view: RobotView, caps: RobotCaps) -> list[dict[str, Any]]:
+    from arena_robots import drift
+
+    name = view.name
+    limits = view.caps.mobile.limits if "mobile" in view.caps.available else None
+    findings = _drift_findings(name, "control.limits", lambda: drift.limit_drift(view, limits)) + _drift_findings(name, "gait", lambda: drift.gait_drift(view, limits))
+    try:
+        from arena_robots import urdf_facts
+
+        urdf = urdf_facts.rendered_urdf(view, {}, None)
+    except ImportError:
+        return findings
+    except Exception as exc:
+        return [*findings, _finding(name, "urdf", f"the default URDF does not render, the URDF checks are skipped: {_error(exc)}", "warning")]
+    findings += _drift_findings(name, "laser", lambda: drift.laser_drift(view, urdf))
+    findings += _drift_findings(name, "control.wheels", lambda: drift.wheel_drift(view, urdf, view.caps.body.base_frame))
+    for instance, arm in (caps.arm or {}).items():
+        findings += _drift_findings(name, "joint_limits", lambda instance=instance, arm=arm: drift.joint_drift(instance, arm, caps.rendered_urdf()))
+    return findings
 
 
 def _definition_findings(view: RobotView, request: InstanceRequest | None = None) -> list[dict[str, Any]]:
@@ -390,8 +433,8 @@ def _definition_findings(view: RobotView, request: InstanceRequest | None = None
         findings += [_finding(name, "caps.warnings", warning, "warning") for warning in caps.warnings()]
         body, power = caps.body, caps.power
         power_mass = power.power_system.get("robot_mass_kg") if power is not None else None
-        if body.mass_base is not None and power_mass is not None and abs(float(power_mass) - body.mass_base) > 0.05 * body.mass_base:
-            findings.append(_finding(name, "caps.mass", f"telemetry/power.yaml robot_mass_kg {power_mass} differs from model_params.yaml mass.base_kg {body.mass_base}, the power model uses robot_mass_kg", "warning"))
+        findings += _mass_findings(name, body, power_mass)
+        findings += _file_drift_findings(view, caps)
     except (ValueError, FileNotFoundError) as exc:
         findings.append(_finding(name, "caps.warnings", _error(exc)))
     if "mobile" not in available:

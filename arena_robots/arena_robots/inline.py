@@ -118,8 +118,9 @@ def split_part(value: str) -> tuple[str, dict[str, object]]:
     return head.strip(), caps
 
 
-def format_part(variant: str, caps: typing.Mapping[str, object]) -> str:
-    """Inverse of :func:`split_part`."""
-    if not caps:
+def format_part(variant: str, caps: typing.Mapping[str, object], params: typing.Mapping[str, object] | None = None) -> str:
+    """Inverse of :func:`split_part`, the xacro arguments ``params`` leading the cap overrides."""
+    entries = {**(params or {}), **caps}
+    if not entries:
         return variant
-    return f"{variant}[{','.join(f'{key}={format_inline_override(value)}' for key, value in caps.items())}]"
+    return f"{variant}[{','.join(f'{key}={format_inline_override(value)}' for key, value in entries.items())}]"

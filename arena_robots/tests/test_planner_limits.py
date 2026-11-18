@@ -101,10 +101,10 @@ class TestSimulatorReach:
     def test_limits_reach_the_actuated_simulators(self):
         assert simulators_honoring("mobile.limits.velocity.linear") == frozenset({"flatsim", "gazebo", "mujoco", "isaac"})
 
-    def test_laser_override_warns_outside_flatsim(self, tmp_path: Path):
+    def test_laser_override_raises(self, tmp_path: Path):
         caps = _caps(tmp_path, {"mobile.laser.range": 5.0}, laser={"range": 10.0})
-        assert caps.warnings("flatsim") == []
-        assert caps.warnings("gazebo") == ["cap override 'mobile.laser.range' has no effect in sim:=gazebo, honored by flatsim"]
+        with pytest.raises(ValueError, match="rendered URDF"):
+            caps.mobile
 
     def test_planar_dynamics_override_warns_outside_flatsim(self, tmp_path: Path):
         caps = _caps(tmp_path, {"mobile.planar.lag": 0.2})

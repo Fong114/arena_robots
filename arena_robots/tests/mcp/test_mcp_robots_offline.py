@@ -285,7 +285,7 @@ def test_overrides_list_the_jackal_mobile_paths_with_their_effective_values_as_j
     json.dumps(paths, allow_nan=False)
     authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())
     by_path = {entry["path"]: entry for entry in paths}
-    assert by_path["mobile.velocity_limits.linear"] == {"path": "mobile.velocity_limits.linear", "kind": "list", "value": authored["velocity_limits"]["linear"], "provenance": "file", "part": None, "relative": None, "simulators": sorted(simulator_names())}
+    assert by_path["mobile.velocity_limits.linear"] == {"path": "mobile.velocity_limits.linear", "kind": "list", "value": authored["velocity_limits"]["linear"], "provenance": "file", "part": None, "relative": None, "simulators": sorted(simulator_names()), "overridable": True}
     assert any(entry["kind"] == "unset" and entry["value"] is None for entry in paths)
 
 

@@ -16,6 +16,7 @@ from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchDescription
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterFile
 
 
 def generate_launch_description():
@@ -25,13 +26,14 @@ def generate_launch_description():
     description_path = os.path.join(a1_dir, 'urdf', 'a1.urdf.xacro')
     joints_map = os.path.join(a1_dir, 'champ', 'joints.yaml')
     links_map = os.path.join(a1_dir, 'champ', 'links.yaml')
-    gait_config = os.path.join(a1_dir, 'champ', 'gait.yaml')
+    default_gait_config = os.path.join(a1_dir, 'champ', 'gait.yaml')
 
     use_sim_time = LaunchConfiguration('use_sim_time')
 
     declare_namespace = LaunchArgument('namespace', default_value='', description='Robot namespace.')
     declare_base_frame = LaunchArgument('base_frame', default_value='base', description='Base link frame.')
     declare_use_sim_time = LaunchArgument('use_sim_time', default_value='true', description='Use the sim clock.')
+    declare_gait_config = LaunchArgument('gait_config', default_value=default_gait_config, description='CHAMP gait parameter file.')
 
     urdf = {'urdf': Command(['xacro ', description_path])}
 
@@ -54,7 +56,7 @@ def generate_launch_description():
             urdf,
             joints_map,
             links_map,
-            gait_config,
+            ParameterFile(LaunchConfiguration('gait_config')),
         ],
         remappings=[('cmd_vel/smooth', 'cmd_vel')],
     )
@@ -71,7 +73,7 @@ def generate_launch_description():
             urdf,
             joints_map,
             links_map,
-            gait_config,
+            ParameterFile(LaunchConfiguration('gait_config')),
         ],
     )
 
@@ -80,6 +82,7 @@ def generate_launch_description():
             declare_namespace,
             declare_base_frame,
             declare_use_sim_time,
+            declare_gait_config,
             quadruped_controller,
             state_estimator,
         ]

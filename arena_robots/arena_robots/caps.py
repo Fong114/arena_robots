@@ -17,12 +17,17 @@ from __future__ import annotations
 
 import ast
 import copy
+import functools
 import hashlib
 import json
 import math
+import re
+import socket
 import subprocess
+import tempfile
 import typing
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -31,9 +36,13 @@ import yaml
 from arena_rclpy_mixins.yaml_replace import YAMLReplacer
 from arena_simulation_setup.tree.Gesture import GestureSpec
 
-from arena_robots.assembly import ResolvedAssembly
-from arena_robots.catalog import Catalog, _frame_stem, resolve_mount_parent
+from arena_robots import drift
+from arena_robots.assembly import Placement, RequestPart, ResolvedAssembly
+from arena_robots.catalog import Catalog, _frame_stem, _render_sensor_templates, resolve_mount_parent
 from arena_robots.inline import APPEND_KEY, OFFSET_KEY, SCALE_KEY, WILDCARD, is_affine, is_append, is_delete
+
+if typing.TYPE_CHECKING:
+    from arena_robots.Robot import RobotView
 
 _CAPS_PREFIX = 'robot_'
 """Frame-templating prefix for placement-rendered caps; matches
@@ -627,17 +636,9 @@ class ArmSpec(InstanceSpec):
 
     @property
     def joint_limits(self) -> dict[str, dict[str, object]]:
-        """``{joint_name: limits}`` from the moveit joint_limits file, empty when not declared."""
-        mv = self.raw.get("moveit")
-        if not isinstance(mv, dict):
-            return {}
-        jl = mv.get("joint_limits")
-        if not isinstance(jl, dict):
-            return {}
-        full = _resolve_find_ref(f"$(find {jl.get('package', mv.get('package'))})/{jl.get('path', 'config/joint_limits.yaml')}")
-        with open(full) as f:
-            data = yaml.safe_load(f) or {}
-        return data.get("joint_limits", {})
+        """``{rendered joint name: MoveIt limits}`` of the component's joint_limits file with the instance's overrides, empty when not declared."""
+        joints = self.raw.get("joint_limits")
+        return joints if isinstance(joints, dict) else {}
 
     @property
     def named_poses(self) -> dict[str, dict[str, float]]:
@@ -725,6 +726,39 @@ class GripperSpec(InstanceSpec):
         if v is None:
             raise ValueError(f"{self.path}: gripper '{self.name}' missing 'max_effort'")
         return float(v)
+
+
+@functools.lru_cache(maxsize=64)
+def _joint_limits_file(path: str, context: tuple[tuple[str, str], ...]) -> dict[str, dict[str, object]]:
+    text = Path(path).read_text()
+    data = yaml.safe_load(text) or {}
+    if '${' in text:
+        mapping = dict(context)
+        data = _substitute_keys(YAMLReplacer(mapping).replace(data), mapping)
+    limits = data.get('joint_limits') if isinstance(data, dict) else None
+    return limits if isinstance(limits, dict) else {}
+
+
+def moveit_joint_limits(raw: typing.Mapping[str, typing.Any]) -> dict[str, dict[str, object]]:
+    """The joint_limits file an arm entry's ``moveit`` block names, re-keyed for its mount, empty when it names none."""
+    moveit = raw.get('moveit')
+    if not isinstance(moveit, dict):
+        return {}
+    ref = moveit.get('joint_limits')
+    if not isinstance(ref, dict):
+        return {}
+    package = ref.get('package', moveit.get('package') or 'arena_robots')
+    path = _resolve_find_ref(f"$(find {package})/{ref.get('path', 'config/joint_limits.yaml')}")
+    args = moveit.get('args') or {}
+    context = tuple((key, str(args[key])) for key in ('prefix', 'mount', 'parent') if key in args)
+    return copy.deepcopy(_joint_limits_file(str(path), context))
+
+
+def _with_joints(raw: dict[str, typing.Any]) -> dict[str, typing.Any]:
+    if 'joint_limits' in raw:
+        return raw
+    joints = moveit_joint_limits(raw)
+    return {**raw, 'joint_limits': joints} if joints else raw
 
 
 _INSTANCE_CLASSES: dict[str, type[InstanceSpec]] = {
@@ -844,7 +878,9 @@ SNAPSHOT_FORMAT = 'arena-caps/1'
 
 @attrs.define(slots=False)
 class BodySpec(CapConfig):
-    """Robot-wide facts read from ``model_params.yaml`` and the placed components: base frame, control topics, mass."""
+    """Robot-wide facts read from ``model_params.yaml`` and the placed components: base frame, control topics, mass, and the collision outline and mass of the rendered URDF."""
+
+    urdf: Callable[[], str] | None = None
 
     @property
     def base_frame(self) -> str:
@@ -871,6 +907,24 @@ class BodySpec(CapConfig):
     def mass_total(self) -> float | None:
         v = self.raw['mass']['total']
         return None if v is None else float(v)
+
+    @property
+    def mass_urdf(self) -> float | None:
+        """Summed inertial mass of the rendered URDF."""
+        if self.urdf is None:
+            return None
+        from arena_robots import urdf_facts
+
+        return urdf_facts.total_mass(self.urdf())
+
+    @property
+    def outline(self) -> list[tuple[float, float]] | None:
+        """Convex ground outline of the base's collision geometry in the base frame."""
+        if self.urdf is None:
+            return None
+        from arena_robots import urdf_facts
+
+        return urdf_facts.collision_outline(self.urdf(), self.base_frame)
 
 
 @attrs.define(slots=False)
@@ -929,19 +983,21 @@ def simulator_names() -> frozenset[str]:
 
 
 _ACTUATED = frozenset({'flatsim', 'gazebo', 'mujoco', 'isaac'})
+_DRIVE_CONTROLLED = frozenset({'gazebo', 'mujoco', 'isaac'})
 _REACH: dict[tuple[str, ...], frozenset[str]] = {
     ('mobile', 'limits'): _ACTUATED,
-    ('mobile', 'laser'): frozenset({'flatsim'}),
     ('mobile', 'planar'): frozenset({'flatsim'}),
 }
 
 
-def simulators_honoring(path: str) -> frozenset[str]:
-    """The simulators in which a cap override at ``path`` changes behavior."""
+def simulators_honoring(path: str, caps: RobotCaps | None = None) -> frozenset[str]:
+    """The simulators in which a cap override at ``path`` changes behavior, with ``caps`` given the drive controller's declared limit keys narrowing ``mobile.limits``."""
     segments = tuple(path.split('.'))
     for length in range(len(segments), 0, -1):
         reach = _REACH.get(segments[:length])
         if reach is not None:
+            if segments[:2] == ('mobile', 'limits') and caps is not None and caps.view is not None and not drift.declares_limit_keys(caps.view):
+                return reach - _DRIVE_CONTROLLED
             return reach
     return simulator_names()
 
@@ -1011,6 +1067,9 @@ class RobotCaps:
     # chassis assembly prefix (${prefix}); robots with no prefix convention (jackal) pass ""
     prefix: str = _CAPS_PREFIX
     overrides: dict[str, object] = attrs.field(factory=dict)
+    view: RobotView | None = None
+    parts: dict[str, list[RequestPart]] = attrs.field(factory=dict)
+    frames: dict[str, str] = attrs.field(factory=dict)
 
     _cached: dict[str, typing.Any] = attrs.field(factory=dict, init=False)
     _notes: list[str] = attrs.field(factory=list, init=False)
@@ -1050,10 +1109,73 @@ class RobotCaps:
         prefix = f'{cap}.'
         return {path.removeprefix(prefix): value for path, value in self.all_overrides.items() if path.startswith(prefix)}
 
+    def rendered_urdf(self) -> str:
+        """The instance's URDF as the simulators render it."""
+        from arena_robots import urdf_facts
+
+        assert self.view is not None
+        return urdf_facts.rendered_urdf(self.view, self.parts, self.frames or None)
+
+    def _lidar_form(self) -> str:
+        if self.resolved is None or self.catalog is None:
+            return ''
+        for placement in self.resolved.placements:
+            declared = self.catalog.get(placement.type, placement.variant).args if placement.type == 'lidar' else {}
+            if declared:
+                return f", e.g. {placement.mount.name}=lidar/{placement.variant}[{'max_range' if 'max_range' in declared else next(iter(declared))}=...]"
+        return ''
+
+    def _laser_part(self) -> Placement | None:
+        if self.resolved is None or self.catalog is None:
+            return None
+        for placement in self.resolved.placements:
+            if placement.type == 'lidar' and placement.args and any(str(entry.get('type')) == 'laserscan' for entry in self.catalog.get(placement.type, placement.variant).sensor_gz):
+                return placement
+        return None
+
+    def _with_urdf_laser(self, data: dict[str, typing.Any]) -> dict[str, typing.Any]:
+        placement = self._laser_part()
+        if placement is None or self.view is None:
+            return data
+        assert self.catalog is not None
+        from arena_robots import urdf_facts
+
+        context: dict[str, typing.Any] = {'mount': _frame_stem(placement.mount), 'variant': placement.variant, 'prefix': self.prefix, **placement.params, **placement.overrides}
+        frame = next(str(entry['frame']) for entry in _render_sensor_templates(self.catalog.get(placement.type, placement.variant), context) if str(entry['type']) == 'laserscan')
+        block = urdf_facts.laser_block(self.rendered_urdf(), frame)
+        if block is None:
+            self._notes.append(f"laser: the rendered URDF has no lidar sensor on {frame}, the cap file's block stays")
+            return data
+        return {**data, 'laser': block}
+
+    def joints_overridden(self, instance: str) -> bool:
+        """Whether an override changes the MoveIt joint limits of arm ``instance``."""
+        for path in self.all_overrides:
+            segments = path.split('.')
+            if len(segments) > 2 and segments[0] == 'arm' and segments[1] in (instance, WILDCARD) and segments[2] == 'joint_limits':
+                return True
+        return False
+
+    def champ_gait_file(self, label: str) -> str | None:
+        """Path of a CHAMP gait file with this instance's ``mobile.limits`` written into the gait speeds, None unless an override touches ``mobile.limits``."""
+        source = self.caps_dir.parent / 'champ' / 'gait.yaml'
+        if not source.is_file() or not any(drift.touches_limits(path) for path in self.all_overrides) or 'mobile' not in self.available:
+            return None
+        limits = self.mobile.limits
+        if limits is None:
+            return None
+        data = yaml.safe_load(source.read_text())
+        data['/**']['ros__parameters']['gait'].update(drift.gait_limits(limits))
+        out = Path(tempfile.gettempdir()) / f"champ_gait_{socket.gethostname()}_{re.sub(r'[^A-Za-z0-9_.-]', '_', label)}.yaml"
+        out.write_text(yaml.safe_dump(data, sort_keys=False))
+        return str(out)
+
     def _overlay_file(self, cap: str, data: dict[str, typing.Any], path: Path) -> dict[str, typing.Any]:
         rel = self._cap_overrides(cap)
         if cap == 'mobile':
-            return normalize_mobile(data, rel, label=str(path), known=typed_fields(MobileSpec) | adapter_blocks(cap), notes=self._notes)
+            if any(key.partition('.')[0] == 'laser' for key in rel):
+                raise ValueError(f"{path}: cap override 'mobile.laser': the laser block is read from the rendered URDF, set the xacro arguments of the lidar part in its brackets{self._lidar_form()}")
+            return self._with_urdf_laser(normalize_mobile(data, rel, label=str(path), known=typed_fields(MobileSpec) | adapter_blocks(cap), notes=self._notes))
         if not rel:
             return data
         instance_cls = _INSTANCE_CLASSES.get(cap)
@@ -1064,12 +1186,12 @@ class RobotCaps:
         every = grouped.pop(WILDCARD, {})
         for instance, entry in data.items():
             if every and isinstance(entry, dict):
-                out[instance] = overlay(entry, every, label=f'{path} {instance}', known=typed_fields(instance_cls))
+                out[instance] = overlay(_with_joints(entry) if cap == 'arm' else entry, every, label=f'{path} {instance}', known=typed_fields(instance_cls))
         for instance, instance_rel in grouped.items():
             entry = out.get(instance)
             if not isinstance(entry, dict):
                 raise ValueError(f"{path}: cap override targets unknown {cap} instance {instance!r}, instances: {sorted(data)}")
-            out[instance] = overlay(entry, instance_rel, label=f'{path} {instance}', known=typed_fields(instance_cls))
+            out[instance] = overlay(_with_joints(entry) if cap == 'arm' else entry, instance_rel, label=f'{path} {instance}', known=typed_fields(instance_cls))
         return out
 
     def _fact_file(self, block: str) -> Path:
@@ -1114,7 +1236,7 @@ class RobotCaps:
         data = self._load_fact('body')
         if data is None:
             raise FileNotFoundError(f"robot facts: {self._fact_file('body')} does not exist")
-        return BodySpec(path=self._fact_file('body'), raw=data)
+        return BodySpec(path=self._fact_file('body'), raw=data, urdf=self.rendered_urdf if self.view is not None else None)
 
     @property
     def power(self) -> PowerSpec | None:
@@ -1146,6 +1268,8 @@ class RobotCaps:
         if any(_matches(pattern, path) for pattern in self.all_overrides):
             return 'override'
         head, _, rest = path.partition('.')
+        if head == 'mobile' and rest.partition('.')[0] == 'laser' and self._laser_part() is not None:
+            return 'urdf'
         if head == 'body' and (rest.startswith('mass.parts') or rest == 'mass.total'):
             return 'derived'
         if head == 'mobile' and rest.startswith('limits'):
@@ -1165,10 +1289,11 @@ class RobotCaps:
         """The instance as it ran: model, request, effective caps, the source of every leaf and the hash."""
         effective = self.effective()
         parts = {f'{p.type}@{p.mount.name}': p.variant for p in self.resolved.placements} if self.resolved is not None else {}
+        params = {f'{p.type}@{p.mount.name}': copy.deepcopy(p.args) for p in self.resolved.placements if p.args} if self.resolved is not None else {}
         return {
             'format': SNAPSHOT_FORMAT,
             'model': self.caps_dir.parent.name,
-            'request': {'parts': parts, 'overrides': copy.deepcopy(self.all_overrides)},
+            'request': {'parts': parts, 'params': params, 'overrides': copy.deepcopy(self.all_overrides)},
             'effective': effective,
             'provenance': {leaf: self.provenance(leaf) for cap, value in effective.items() for leaf in _leaves(cap, value)},
             'hash': self.caps_hash(),
@@ -1183,7 +1308,7 @@ class RobotCaps:
             out += [f'mobile: {issue}' for issue in _mobile_sanity(mobile)]
         if sim is not None:
             for path in self.all_overrides:
-                honoring = simulators_honoring(path)
+                honoring = simulators_honoring(path, self)
                 if sim not in honoring:
                     out.append(f"cap override '{path}' has no effect in sim:={sim}, honored by {', '.join(sorted(honoring))}")
         return out
@@ -1199,6 +1324,8 @@ class RobotCaps:
         for path in self.all_overrides:
             if _matches('body.mass', path) or path == 'body':
                 raise ValueError(f"cap override '{path}': mass is what the simulators simulate and is not overridable")
+            if _matches('body.mass_urdf', path) or _matches('body.outline', path):
+                raise ValueError(f"cap override '{path}': it is read from the rendered URDF and is not overridable")
         for cap in sorted({path.partition('.')[0] for path in self.all_overrides}):
             if cap in FACT_BLOCKS:
                 if self._load_fact(cap) is None:
@@ -1223,6 +1350,28 @@ class RobotCaps:
                 for name in instances if instance == WILDCARD else [instance]:
                     for field in {path.partition('.')[0] for path in instance_rel} & typed_fields(instance_cls):
                         getattr(instances[name], field)
+            if cap == 'arm':
+                self._check_joints_against_urdf(instances)
+
+    def _check_joints_against_urdf(self, arms: dict[str, typing.Any]) -> None:
+        from arena_robots import urdf_facts
+
+        limits: dict[str, urdf_facts.JointLimit] | None = None
+        for name, arm in arms.items():
+            if not self.joints_overridden(name):
+                continue
+            limits = urdf_facts.joint_limits(self.rendered_urdf()) if limits is None else limits
+            base = moveit_joint_limits(arm.raw)
+            for joint, entry in arm.joint_limits.items():
+                bounds = limits.get(joint)
+                if bounds is None:
+                    continue
+                for key, bound in (('max_velocity', bounds.velocity), ('max_effort', bounds.effort)):
+                    value = entry.get(key)
+                    if bound is None or not isinstance(value, int | float) or value == base.get(joint, {}).get(key):
+                        continue
+                    if float(value) > bound * (1 + drift.JOINT_LIMIT_TOLERANCE):
+                        raise ValueError(f"cap override on arm {name!r} joint {joint!r}: {key} {value} is above the URDF limit {bound}, an override may only tighten it")
 
     @property
     def mobile(self) -> MobileSpec:
@@ -1266,6 +1415,8 @@ class RobotCaps:
                 rendered = _substitute_keys(rendered, context)
                 if not isinstance(rendered, dict):
                     raise ValueError(f"{placement.type} component {placement.variant!r}: 'caps' must render to a mapping; got {type(rendered).__name__}")
+                if cap == 'arm':
+                    rendered = _with_joints(rendered)
                 for instance_rel in (rel.get(WILDCARD), rel.get(placement.mount.name)):
                     if instance_rel:
                         rendered = overlay(rendered, instance_rel, label=f'{placement.type} {placement.mount.name}', known=typed_fields(cls))
@@ -1283,7 +1434,7 @@ class RobotCaps:
         for name, entry in data.items():
             if not isinstance(entry, dict):
                 raise ValueError(f"{path}: '{name}' must be a mapping (dict-keyed instance); got {type(entry).__name__}. See robots/README.md on the uniform dict-keyed shape for multi-instance caps.")
-            out[str(name)] = cls(path=path, raw=entry, name=str(name))
+            out[str(name)] = cls(path=path, raw=_with_joints(entry) if cap == 'arm' else entry, name=str(name))
         return out
 
 

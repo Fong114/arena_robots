@@ -209,6 +209,7 @@ class RobotView(PathView):
             if not path.is_file():
                 raise FileNotFoundError(f"model_params.yaml not found for robot '{self.name}' at {path}")
             self._cached_params = ModelParams.from_yaml(path)
+            self._cached_params.caps.view = self
         return self._cached_params
 
     @property
@@ -292,10 +293,10 @@ class RobotView(PathView):
         ``resolved``/``catalog`` set so `.available`/instances see placement-derived caps."""
         resolved = self._resolved(parts)
         if resolved is None:
-            return RobotCaps(self.caps.caps_dir, overrides=dict(caps)) if caps else self.caps
+            return RobotCaps(self.caps.caps_dir, overrides=dict(caps), view=self, parts=parts) if caps else self.caps
         assert self.assembly is not None
         resolved = assembly_mod.apply_frame_overrides(resolved, frames or {})
-        return RobotCaps(self.caps.caps_dir, resolved=resolved, catalog=_CATALOG, prefix=self.assembly.prefix, overrides=dict(caps or {}))
+        return RobotCaps(self.caps.caps_dir, resolved=resolved, catalog=_CATALOG, prefix=self.assembly.prefix, overrides=dict(caps or {}), view=self, parts=parts, frames=dict(frames or {}))
 
     def power_profile(self, caps: RobotCaps) -> dict[str, float | int] | None:
         """Power-publisher parameters from the instance's effective power and body facts plus the resolved component draw. ``None`` when unpowered."""

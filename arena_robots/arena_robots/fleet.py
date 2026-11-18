@@ -12,7 +12,7 @@ from collections.abc import Mapping
 import attrs
 import yaml
 
-from arena_robots.assembly import RequestPart
+from arena_robots.assembly import RequestPart, ResolvedAssembly
 from arena_robots.caps import RobotCaps
 from arena_robots.Robot import RobotIdentifier, RobotView
 
@@ -49,19 +49,41 @@ def _wheel_separation(control: Mapping[str, typing.Any]) -> float | None:
     return None
 
 
+PART_ARG_PREFIX = "param:"
+
+
+def placement_params(resolved: ResolvedAssembly) -> dict[str, str]:
+    """The `param:<type>@<mount>.<arg>` fleet params holding each placement's xacro arguments as JSON values."""
+    return {f"{PART_ARG_PREFIX}{p.type}@{p.mount.name}.{arg}": json.dumps(value) for p in resolved.placements for arg, value in p.args.items()}
+
+
+def _part_args(params: Mapping[str, str]) -> dict[tuple[str, str], dict[str, object]]:
+    out: dict[tuple[str, str], dict[str, object]] = {}
+    for key, value in params.items():
+        if not key.startswith(PART_ARG_PREFIX):
+            continue
+        owner, _, arg = key.removeprefix(PART_ARG_PREFIX).rpartition(".")
+        type_, _, mount = owner.partition("@")
+        out.setdefault((type_, mount), {})[arg] = json.loads(value)
+    return out
+
+
 def fleet_parts(view: RobotView, params: Mapping[str, str]) -> dict[str, list[RequestPart]]:
-    """The assembly request a fleet entry's `<type>@<mount>` params place, defaults' overrides kept."""
+    """The assembly request a fleet entry's `<type>@<mount>` and `param:<type>@<mount>.<arg>` params place, defaults' overrides kept."""
     spec = view.assembly
     if spec is None:
         return {}
     defaults = {(type_, part.mount, part.variant): part for type_, parts in spec.defaults.items() for part in parts}
+    args = _part_args(params)
     request: dict[str, list[RequestPart]] = {}
     for key, variant in params.items():
+        if key.startswith(PART_ARG_PREFIX):
+            continue
         type_, sep, mount = key.partition("@")
         if not sep:
             continue
         default = defaults.get((type_, mount, variant)) or defaults.get((type_, None, variant))
-        request.setdefault(type_, []).append(RequestPart(variant=variant, mount=mount, overrides=dict(default.overrides) if default is not None else {}))
+        request.setdefault(type_, []).append(RequestPart(variant=variant, mount=mount, params=args.get((type_, mount), {}), overrides=dict(default.overrides) if default is not None else {}))
     return request
 
 
@@ -78,7 +100,7 @@ def _instance_caps(model: str, params: frozenset[tuple[str, str]]) -> RobotCaps:
 
 
 def instance_caps(model: str, params: Mapping[str, str]) -> RobotCaps:
-    """The effective caps of a fleet entry's instance from its `<type>@<mount>` and `cap:<path>` params."""
+    """The effective caps of a fleet entry's instance from its `<type>@<mount>`, `param:<type>@<mount>.<arg>` and `cap:<path>` params."""
     return _instance_caps(model, frozenset(params.items()))
 
 

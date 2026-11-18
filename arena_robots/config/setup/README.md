@@ -98,6 +98,30 @@ the bracket form. Robots whose `arm`, `lift` or `gripper` instances come from
 their static `caps/<cap>.yaml` (no assembly) address them as
 `<cap>.<instance>.<path>`, the instance being the key in that file.
 
+A bracket key the part's component declares under `xacro.args` in its
+`component.yaml` is an xacro argument of the part, not a cap override:
+`base_front=lidar/arena_default[max_range=8]`. The wrapper xacro passes it to the
+part's macro, so the URDF every simulator renders carries it, and a part pinned to
+a default's mount and variant keeps the default's other params. The value is one
+scalar. `robots_overrides` lists the arguments of each placed part as kind `arg`
+entries with the path to write inside its brackets. They travel in the fleet params
+as `param:<type>@<mount>.<arg>` entries holding a JSON value, next to the
+`<type>@<mount>` entry that names the variant.
+
+`mobile.laser` stays authored in `caps/mobile.yaml` until a lidar part carries
+xacro arguments in its brackets. The effective `mobile.laser` is then read from the
+scan sensor of the rendered URDF on that part's frame (increment `2 pi / n` for a
+full circle, else `(max - min) / (n - 1)`) and its provenance is `urdf`. A
+`mobile.laser` override raises and names the bracket form.
+
+`arm.<mount>.joint_limits.<joint>.<key>` are the arm's MoveIt joint limits (`max_velocity`,
+`max_acceleration`, `max_effort`, `min_position`, `max_position` and their `has_*`
+flags), keyed by rendered joint name from the component's `joint_limits/` file, in
+brackets for a placed part: `top=arm/ur5e[joint_limits.*.max_velocity=*0.5]`. An override
+that sets a `max_velocity` or `max_effort` above the URDF `<limit>` of that joint
+raises, and an instance that overrides `joint_limits` gets its MoveIt joint-limit file
+rendered from the effective values.
+
 The robot-wide fact blocks of the effective caps are overridable the same way:
 `body.base_frame`, `body.cmd_vel_topic`, `body.odom_topic`, `power.power_system.<key>`
 and `acoustics.<key>` (`power.power_system.rolling_resistance_crr=0.05`). `body.mass`,
@@ -124,7 +148,12 @@ launch` completes them.
 takes it from `planar.velocity` and `planar.acceleration`, and the effective cap
 carries it in their place: flatsim drives by it, and an instance that overrides
 `limits` or `planar` gets the base controller's velocity and acceleration limits
-in `control.yaml` replaced from it in Gazebo, MuJoCo and Isaac.
+in `control.yaml` replaced from it in Gazebo, MuJoCo and Isaac, on the keys the
+controller declares (DiffDrive and Mecanum do, the swerve and omni controllers
+declare none, so `mobile.limits` reaches flatsim only there). `a1` and `go1` take
+the CHAMP gait speeds from it the same way: an override of `mobile.limits` renders
+`gait.yaml` per instance (`RobotCaps.champ_gait_file`, symmetric `max(|min|, |max|)`
+per axis) and passes it to the CHAMP bringup as `gait_config`.
 `velocity_limits` and `acceleration_limits` are what planners, the DRL clamp and
 the training action space use, clamped to `limits` on every axis.
 `mobile.limits.velocity.linear=[-0.5,0.5]` or `mobile.limits=*0.5` slows the
@@ -133,13 +162,18 @@ planner limit above `limits` that no `limits` override caused (in the file, or
 from a `velocity_limits` override) is clamped and warns.
 
 Not every override changes every simulator. `mobile.limits` reaches flatsim and
-the drive controllers of Gazebo, MuJoCo and Isaac, `mobile.laser` and the
+the drive controllers of Gazebo, MuJoCo and Isaac that declare limit keys, while the
 `mobile.planar` dynamics (`gain`, `lag`, `traction`, `pivot`, `timeout`) reach
 flatsim only, everything else is planner- or adapter-facing and reaches every
 simulator. An override the env's simulator does not honor logs a warning when the
 robot spawns, and `arena robot paths` marks such paths `only in <sims>`.
 `robots_check` reports range sanity (a min above its max, a non-positive radius or
-acceleration) and clamped planner limits as warnings.
+acceleration) and clamped planner limits as warnings. It also warns where a value
+written in two places differs from its owner: a `control*.yaml` limit literal from
+`mobile.limits`, `control.yaml` wheel geometry from the URDF, `champ/gait.yaml` from
+`mobile.limits`, the file's `mobile.laser` from the default URDF's scan sensor, a
+`joint_limits/` file value above the URDF `<limit>`, and the masses of
+`model_params.yaml` (base plus parts), the URDF and `telemetry/power.yaml`.
 
 Changing an instance's overrides respawns and relaunches it. The env-wide
 `robot.<cap>.<key>:=` launch arguments only reach the bound adapter's own

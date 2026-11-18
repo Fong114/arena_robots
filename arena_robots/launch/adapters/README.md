@@ -53,9 +53,10 @@ forwards the argument to this file.
 
 Internals of `arena_robots.bringup.arm.moveit.MoveItArmBringup`. Starts one
 `move_group` for the arm instance named by `instance` (empty = the only arm).
-`request_json` carries the instance request (`parts`, `frames`, cap overrides,
-`InstanceRequest.dumps()`), from which `build_moveit_params` resolves the
-effective arm caps.
+`request_json` carries the instance request (`parts` with their xacro arguments,
+`frames`, cap overrides, `InstanceRequest.dumps()`), from which `build_moveit_params`
+resolves the effective arm caps and, for an instance that overrides `arm.<mount>.joint_limits`,
+writes the effective joint limits in place of the component's file.
 
 ### `none.launch.py`
 

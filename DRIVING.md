@@ -91,11 +91,15 @@ surface for agents. `python3 -m arena_mcp ls robots` lists its tools.
   `arena feature robots check --sim` for a wedged, weak or ok verdict per robot.
   `robots_overrides` lists every cap override path of one instance (same
   `parts`, `frames` and `caps`) with its effective value and a kind (`value`,
-  `list`, `map`, or `unset` for a typed field or adapter block the cap leaves
-  out) and a `provenance` (`override`, `component`, `derived` or `file`). The
-  `body`, `power` and `acoustics` fact blocks are listed too, `body.mass*` is
-  not overridable. A part placed through the assembly carries its mount in
-  `part` and the path to write inside its brackets in `relative`.
+  `list`, `map`, `unset` for a typed field or adapter block the cap leaves
+  out, or `arg` for an xacro argument of a placed part) and a `provenance`
+  (`override`, `component`, `derived`, `urdf` or `file`). The `body`, `power`
+  and `acoustics` fact blocks are listed too, with each arm's `joint_limits`.
+  `overridable` is false for `body.mass*`, `body.outline` and `mobile.laser*`,
+  and `simulators` names the simulators that honor the path. A part placed
+  through the assembly carries its mount in `part` and the path to write inside
+  its brackets in `relative`, an xacro argument is written there too
+  (`base_front=lidar/arena_default[max_range=8]`).
   `robots_definition` also returns `body`, `acoustics`, the `provenance` of
   every leaf of the effective caps and their `warnings`.
 - Live, in a running env: the fleet from `state/robots` with the task actions

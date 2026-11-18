@@ -226,8 +226,27 @@ stays in the files, every consumer reads the block:
 `body.*`, `power.*` and `acoustics.*` take cap overrides like any cap
 (`power.power_system.rolling_resistance_crr=0.05`), except `body.mass*`: mass is
 what the simulators simulate. `RobotCaps.provenance(path)` names where a value
-comes from (`override`, `component`, `derived` or `file`) and `RobotCaps.snapshot()`
-holds the effective caps with every leaf's source and a hash.
+comes from (`override`, `component`, `derived`, `urdf` or `file`) and `RobotCaps.snapshot()`
+holds the effective caps with every leaf's source and a hash. `body.outline` (the
+convex ground outline of the base's collision geometry) and `body.mass_urdf` (the
+summed inertial mass) are read lazily from the rendered URDF and are not overridable.
+
+#### Where each value is authored
+
+A value is written once, by its owner. Every other file that carries it is rendered
+from the effective caps, or `robots_check` warns where it differs.
+
+| Value | Author it in | Read by |
+| --- | --- | --- |
+| Base velocity and acceleration the body can do (`mobile.limits`) | `caps/mobile.yaml` (`limits`, or `planar`) | flatsim drive, the drive controller keys `control*.yaml` declares (DiffDrive, Mecanum), the CHAMP gait of `a1` and `go1`, the planner limits as their bound |
+| Controller limit literals | `control*.yaml`, only to declare which keys exist | the controller, overlaid from `mobile.limits` on an override, `robots_check` warns on a different literal |
+| Wheel radius, separation | `control.yaml` | the controller, `robots_check` compares them with the URDF's wheel joints |
+| CHAMP gait speeds | `champ/gait.yaml` | the CHAMP bringup, rendered per instance from `mobile.limits` on an override |
+| Lidar geometry (`mobile.laser`) | the lidar component's xacro arguments (a bracket on the part) or the URDF | `mobile.laser` file block until a part carries arguments, then the rendered URDF's scan sensor |
+| MoveIt joint limits (`arm.<mount>.joint_limits`) | the component's `joint_limits/` file | `moveit_factory`, overridable per instance, tightened-only against the URDF `<limit>` |
+| Joint position, velocity and effort limits | the URDF | the simulators, the bound of the MoveIt limits |
+| Body mass | `model_params.yaml` `mass.base_kg` and each component's `mass.kg` | `body.mass.*`, the power model through `power.yaml` `robot_mass_kg`, `robots_check` lists both beside the URDF sum |
+| Collision geometry | the URDF | `body.outline` |
 
 #### `caps/arm.yaml`, `caps/lift.yaml`, `caps/gripper.yaml`: dict-keyed
 

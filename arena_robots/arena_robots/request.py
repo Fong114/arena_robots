@@ -16,7 +16,7 @@ if typing.TYPE_CHECKING:
 
 @attrs.define(frozen=True)
 class InstanceRequest:
-    """Morphology parts, mount frame overrides and cap overrides of one robot instance."""
+    """Morphology parts (with their xacro arguments), mount frame overrides and cap overrides of one robot instance."""
 
     parts: dict[str, list[RequestPart]] = attrs.field(factory=dict)
     frames: dict[str, str] = attrs.field(factory=dict)
@@ -29,7 +29,7 @@ class InstanceRequest:
     def dumps(self) -> str:
         return json.dumps(
             {
-                'parts': {kind: [{'variant': p.variant, 'mount': p.mount, 'overrides': p.overrides, 'caps': p.caps} for p in parts] for kind, parts in self.parts.items()},
+                'parts': {kind: [{'variant': p.variant, 'mount': p.mount, 'params': p.params, 'overrides': p.overrides, 'caps': p.caps} for p in parts] for kind, parts in self.parts.items()},
                 'frames': self.frames,
                 'caps': self.caps,
             }
@@ -39,7 +39,7 @@ class InstanceRequest:
     def loads(cls, text: str) -> InstanceRequest:
         data = json.loads(text) if text else {}
         return cls(
-            parts={kind: [RequestPart(variant=p['variant'], mount=p.get('mount'), overrides=dict(p.get('overrides') or {}), caps=dict(p.get('caps') or {})) for p in parts] for kind, parts in data.get('parts', {}).items()},
+            parts={kind: [RequestPart(variant=p['variant'], mount=p.get('mount'), params=dict(p.get('params') or {}), overrides=dict(p.get('overrides') or {}), caps=dict(p.get('caps') or {})) for p in parts] for kind, parts in data.get('parts', {}).items()},
             frames={str(k): str(v) for k, v in data.get('frames', {}).items()},
             caps=dict(data.get('caps', {})),
         )

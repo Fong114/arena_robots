@@ -220,7 +220,8 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", request: InstanceR
     robot_state_publisher publishes.
 
     ``request`` is the instance's morphology parts, frame overrides and cap
-    overrides; ``None`` resolves defaults only.
+    overrides; ``None`` resolves defaults only. An override of the arm's
+    ``joint_limits`` writes its effective MoveIt joint limits in place of the component's file.
 
     ``instance`` selects which arm cap instance to build for (dict key from
     ``RobotCaps.arm``). ``None`` selects the sole instance when there is
@@ -285,6 +286,8 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", request: InstanceR
         extras = _gripper_srdf_extras(resolved, arm_key, placement_context.get("prefix", ""))
         srdf_abs = _compose_srdf(robot, srdf_abs, placement_context, extras)
         jl_abs = _render_joint_limits(jl_abs, placement_context)
+    if caps.joints_overridden(arm_key):
+        jl_abs = _write_yaml({"joint_limits": arm.joint_limits})
 
     group = arm.planning_group or arm.name
     builder = MoveItConfigsBuilder(robot_name=builder_name, package_name=config_pkg).robot_description(file_path=str(urdf_abs), mappings=mappings).robot_description_semantic(str(srdf_abs), mappings=mappings).joint_limits(str(jl_abs)).trajectory_execution(file_path=str(_write_yaml(_controller_params(arm))))  # pyright: ignore[reportArgumentType]
