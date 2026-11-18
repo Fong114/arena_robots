@@ -17,10 +17,10 @@ from arena_robots.lockstep_beat import LockstepBeat
 from arena_robots.task_server_handlers import NativeGoals, TaskHandler, _await_within, _executor_sleep
 
 if TYPE_CHECKING:
+    from arena_rclpy_mixins.Time import TimeNode
     from rclpy.action import CancelResponse
     from rclpy.action.server import ServerGoalHandle
     from rclpy.client import Client
-    from rclpy.node import Node
     from tf2_ros import Buffer
 
     from arena_robots.bringup.mobile.nav2 import Nav2Bringup
@@ -51,7 +51,7 @@ def _translate_nav2_status(nav2_status: int) -> tuple[int, str]:
 
 
 class GotoPoseHandlerNav2(TaskHandler[GotoPose.Goal, GotoPose.Feedback, GotoPose.Result]):
-    def __init__(self, bringup: Nav2Bringup, *, tf_buffer: Buffer, node: Node) -> None:
+    def __init__(self, bringup: Nav2Bringup, *, tf_buffer: Buffer, node: TimeNode) -> None:
         self._bringup = bringup
         self._tf_buffer = tf_buffer
         self._node = node
