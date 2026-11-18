@@ -39,6 +39,8 @@ no scans and publishes no TF, and the simulator keeps `map -> odom`. Nav2's life
 manager brings `slam_toolbox` up before the costmaps, and its absolute `/map` and
 `/map_metadata` are remapped into the robot's namespace.
 
+`base_frame` is the robot's effective `body.base_frame`, passed by `Nav2Bringup` and `DrlBringup`.
+
 `mobile_caps` is the mobile cap file the derived nav2 parameters read (default
 the model's `robots/<robot>/caps/mobile.yaml`). `Nav2Bringup` and `DrlBringup`
 pass it only for an instance whose request overrides `mobile.` keys: the

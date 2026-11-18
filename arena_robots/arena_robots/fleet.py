@@ -85,16 +85,16 @@ def instance_caps(model: str, params: Mapping[str, str]) -> RobotCaps:
 @functools.cache
 def _model_facts(model: str, params: frozenset[tuple[str, str]]) -> _ModelFacts:
     view = RobotIdentifier(model).resolve_sync()
-    control = view.model_params.control
     caps = _instance_caps(model, params)
+    body = caps.body
     mobile = caps.mobile if "mobile" in caps.available else None
     try:
         separation = _wheel_separation(view.control)
     except _MODEL_ERRORS:
         separation = None
     return _ModelFacts(
-        base_frame=view.model_params.base_frame.strip("/"),
-        odom_topic=control.odom_topic.strip("/") if control is not None else "",
+        base_frame=body.base_frame.strip("/"),
+        odom_topic=body.odom_topic.strip("/"),
         wheel_separation_m=separation,
         max_linear_mps=float(mobile.velocity_limits.linear.max) if mobile is not None and mobile.velocity_limits is not None else 0.0,
     )

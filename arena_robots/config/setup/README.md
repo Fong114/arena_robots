@@ -98,6 +98,15 @@ the bracket form. Robots whose `arm`, `lift` or `gripper` instances come from
 their static `caps/<cap>.yaml` (no assembly) address them as
 `<cap>.<instance>.<path>`, the instance being the key in that file.
 
+The robot-wide fact blocks of the effective caps are overridable the same way:
+`body.base_frame`, `body.cmd_vel_topic`, `body.odom_topic`, `power.power_system.<key>`
+and `acoustics.<key>` (`power.power_system.rolling_resistance_crr=0.05`). `body.mass`,
+`body.mass.base`, `body.mass.parts` and `body.mass.total` are not overridable and
+raise: mass is what the simulators simulate, and the power model takes it from the
+total of the base and the placed parts. The robot needs the file the block is read
+from (`telemetry/power.yaml`, `telemetry/acoustics.yaml`), otherwise the override
+raises.
+
 Overrides are validated when the robot is parsed: an unknown cap, instance or
 field, an index out of range, a `*` matching nothing, an operation on an unset or
 non-numeric value, or a value its typed field rejects raises with the robot and

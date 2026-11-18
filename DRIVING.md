@@ -92,8 +92,12 @@ surface for agents. `python3 -m arena_mcp ls robots` lists its tools.
   `robots_overrides` lists every cap override path of one instance (same
   `parts`, `frames` and `caps`) with its effective value and a kind (`value`,
   `list`, `map`, or `unset` for a typed field or adapter block the cap leaves
-  out). A part placed through the assembly carries its mount in `part` and the
-  path to write inside its brackets in `relative`.
+  out) and a `provenance` (`override`, `component`, `derived` or `file`). The
+  `body`, `power` and `acoustics` fact blocks are listed too, `body.mass*` is
+  not overridable. A part placed through the assembly carries its mount in
+  `part` and the path to write inside its brackets in `relative`.
+  `robots_definition` also returns `body`, `acoustics`, the `provenance` of
+  every leaf of the effective caps and their `warnings`.
 - Live, in a running env: the fleet from `state/robots` with the task actions
   each robot serves right now (read from the ROS graph) and its active cap
   overrides (`cap_overrides`), goto, reach and

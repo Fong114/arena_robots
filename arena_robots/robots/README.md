@@ -214,6 +214,21 @@ instance that overrides `mobile.velocity_limits` or a placed part's fields (`top
 planned, launched and served with those values, while the model's `caps/` files
 stay untouched.
 
+The same effective caps carry the robot-wide facts as three more blocks. Authoring
+stays in the files, every consumer reads the block:
+
+| Block | Read from | Holds |
+| --- | --- | --- |
+| `body` | `model_params.yaml` and each placed component's `mass.kg` | `base_frame`, `cmd_vel_topic` and `odom_topic` (from `control:`), `mass.base` (`mass.base_kg`), `mass.parts` (`<type>.<mount>` to kg) and `mass.total` |
+| `power` | `telemetry/power.yaml` | the file without `robot_model` and without `power_system.robot_mass_kg` (the power model takes the mass from `body.mass.total`, so placed parts add theirs) |
+| `acoustics` | `telemetry/acoustics.yaml` | the file as authored |
+
+`body.*`, `power.*` and `acoustics.*` take cap overrides like any cap
+(`power.power_system.rolling_resistance_crr=0.05`), except `body.mass*`: mass is
+what the simulators simulate. `RobotCaps.provenance(path)` names where a value
+comes from (`override`, `component`, `derived` or `file`) and `RobotCaps.snapshot()`
+holds the effective caps with every leaf's source and a hash.
+
 #### `caps/arm.yaml`, `caps/lift.yaml`, `caps/gripper.yaml`: dict-keyed
 
 Always a dict of named instances. Single-arm robots use a dict with one entry

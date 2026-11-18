@@ -89,6 +89,7 @@ class Nav2Bringup(Bringup):
             "namespace": self.namespace,
             "use_sim_time": str(use_sim_time).lower(),
             "frame": frame,
+            "base_frame": self.caps.body.base_frame,
             "global_planner": global_planner,
             "local_planner": local_planner,
             "inter_planner": inter_planner,

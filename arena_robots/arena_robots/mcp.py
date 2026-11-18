@@ -280,10 +280,12 @@ def _assembly(view: RobotView) -> dict[str, Any] | None:
 def _definition(view: RobotView, request: InstanceRequest) -> dict[str, Any]:
     params = view.model_params
     caps = request.caps_of(view)
+    snapshot = caps.snapshot()
+    body = caps.body
     out: dict[str, Any] = {
         "model": view.name,
         "path": str(view.path),
-        "base_frame": params.base_frame,
+        "base_frame": body.base_frame,
         "odom_frame": params.odom_frame,
         "z_offset": params.z_offset,
         "control": _attrs(params.control),
@@ -293,7 +295,11 @@ def _definition(view: RobotView, request: InstanceRequest) -> dict[str, Any]:
         "sensors": [_sensor_dict(spec) for spec in view.effective_sensors(request.parts, frames=request.frames)],
         "actions": _actions(caps.available),
         "assembly": _assembly(view),
-        "power": msgs.jsonable(view.power_profile(request.parts)),
+        "power": msgs.jsonable(view.power_profile(caps)),
+        "body": msgs.jsonable(snapshot["effective"].get("body")),
+        "acoustics": msgs.jsonable(snapshot["effective"].get("acoustics")),
+        "provenance": snapshot["provenance"],
+        "warnings": caps.warnings(),
         "model_params": msgs.jsonable(dict(params)),
     }
     return out
@@ -314,7 +320,7 @@ def robots_catalog() -> list[dict[str, Any]]:
 
 @domain.tool(read_only=True)
 def robots_definition(model: str, parts: PartsArg = None, frames: FramesArg = None, caps: CapsArg = None) -> dict[str, Any]:
-    """One robot model resolved offline: frames, control, caps (mobile limits, footprint, arm instances with poses and gestures), sensors, task actions, assembly, power profile. With parts, frames or caps the definition is that of the instance with those morphology directives, frame overrides and cap overrides applied, as the runtime resolves it."""
+    """One robot model resolved offline: frames, control, caps (mobile limits, footprint, arm instances with poses and gestures), sensors, task actions, assembly, power profile, the body and acoustics facts, the source of every leaf (`provenance`: override, component, derived or file) and the caps `warnings`. With parts, frames or caps the definition is that of the instance with those morphology directives, frame overrides and cap overrides applied, as the runtime resolves it."""
     view = _view(model)
     try:
         request = _request(view, parts, frames, caps)
@@ -326,7 +332,7 @@ def robots_definition(model: str, parts: PartsArg = None, frames: FramesArg = No
 
 @domain.tool(read_only=True)
 def robots_overrides(model: str, parts: PartsArg = None, frames: FramesArg = None, caps: CapsArg = None) -> list[dict[str, Any]]:
-    """Every cap override path of one robot instance with its effective value: leaves, lists and mappings of the mobile cap and of each arm, lift and gripper instance, plus the typed fields and adapter blocks the cap leaves unset. A path of a part placed through the assembly carries its mount in `part` and the path to write inside that part's brackets in `relative`. With parts, frames or caps the paths are those of the instance with them applied."""
+    """Every cap override path of one robot instance with its effective value: leaves, lists and mappings of the mobile cap and of each arm, lift and gripper instance, plus the typed fields and adapter blocks the cap leaves unset, and the `body`, `power` and `acoustics` fact blocks (`body.mass*` is not overridable). Each carries its `provenance` (override, component, derived or file). A path of a part placed through the assembly carries its mount in `part` and the path to write inside that part's brackets in `relative`. With parts, frames or caps the paths are those of the instance with them applied."""
     from arena_robots.override_paths import override_paths
 
     view = _view(model)
@@ -336,7 +342,7 @@ def robots_overrides(model: str, parts: PartsArg = None, frames: FramesArg = Non
         paths = override_paths(effective)
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
         raise ToolError(f"instance request of {model!r} is invalid: {_error(exc)}", hint="robots_overrides without parts, frames and caps lists the model's defaults, caps paths are the fields of caps/<cap>.yaml") from exc
-    return [{"path": entry.path, "kind": entry.kind, "value": msgs.jsonable(entry.value), "part": entry.part, "relative": entry.relative, "simulators": sorted(entry.simulators)} for entry in paths]
+    return [{"path": entry.path, "kind": entry.kind, "value": msgs.jsonable(entry.value), "provenance": entry.provenance, "part": entry.part, "relative": entry.relative, "simulators": sorted(entry.simulators)} for entry in paths]
 
 
 @domain.resource("arena://robots/catalog", mime_type="application/json", description="Every robot model with caps and a one-line summary")
@@ -382,6 +388,10 @@ def _definition_findings(view: RobotView, request: InstanceRequest | None = None
             findings.append(_finding(name, "caps.overrides", _error(exc)))
     try:
         findings += [_finding(name, "caps.warnings", warning, "warning") for warning in caps.warnings()]
+        body, power = caps.body, caps.power
+        power_mass = power.power_system.get("robot_mass_kg") if power is not None else None
+        if body.mass_base is not None and power_mass is not None and abs(float(power_mass) - body.mass_base) > 0.05 * body.mass_base:
+            findings.append(_finding(name, "caps.mass", f"telemetry/power.yaml robot_mass_kg {power_mass} differs from model_params.yaml mass.base_kg {body.mass_base}, the power model uses robot_mass_kg", "warning"))
     except (ValueError, FileNotFoundError) as exc:
         findings.append(_finding(name, "caps.warnings", _error(exc)))
     if "mobile" not in available:

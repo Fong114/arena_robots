@@ -285,7 +285,7 @@ def test_overrides_list_the_jackal_mobile_paths_with_their_effective_values_as_j
     json.dumps(paths, allow_nan=False)
     authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())
     by_path = {entry["path"]: entry for entry in paths}
-    assert by_path["mobile.velocity_limits.linear"] == {"path": "mobile.velocity_limits.linear", "kind": "list", "value": authored["velocity_limits"]["linear"], "part": None, "relative": None, "simulators": sorted(simulator_names())}
+    assert by_path["mobile.velocity_limits.linear"] == {"path": "mobile.velocity_limits.linear", "kind": "list", "value": authored["velocity_limits"]["linear"], "provenance": "file", "part": None, "relative": None, "simulators": sorted(simulator_names())}
     assert any(entry["kind"] == "unset" and entry["value"] is None for entry in paths)
 
 
@@ -312,3 +312,16 @@ def test_overrides_of_an_unknown_model_names_the_known_models():
     with pytest.raises(ToolError) as error:
         mcp.robots_overrides("no_such_robot")
     assert "jackal" in error.value.hint
+
+
+def test_definition_findings_warn_when_the_power_model_mass_disagrees_with_the_body():
+    findings = mcp._definition_findings(mcp._view("boxer"))
+    mass = [finding for finding in findings if finding["check"] == "caps.mass"]
+    assert len(mass) == 1
+    assert mass[0]["severity"] == "warning"
+    assert "robot_mass_kg 115" in mass[0]["message"]
+
+
+def test_definition_findings_are_silent_on_the_mass_when_both_files_agree():
+    findings = mcp._definition_findings(mcp._view("jackal"))
+    assert [finding for finding in findings if finding["check"] == "caps.mass"] == []

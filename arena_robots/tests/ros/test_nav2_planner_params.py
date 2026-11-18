@@ -45,6 +45,7 @@ def _planner_params(robot: str, global_planner: str) -> dict:
             "mapping": "static",
             "scan_topic": "",
             "mobile_caps": str(Path(get_package_share_directory("arena_robots")) / "robots" / robot / "caps" / "mobile.yaml"),
+            "base_frame": "base_link",
         }
     )
     (setup,) = [e for e in ld.entities if isinstance(e, OpaqueFunction)]

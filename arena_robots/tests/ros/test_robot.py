@@ -294,7 +294,7 @@ class TestRobotView:
         )
 
         view = RobotView(rd)
-        profile = view.power_profile({})
+        profile = view.power_profile(view.effective_caps({}))
         assert profile is not None
         assert profile["static_power_w"] == 35.0
         assert profile["drivetrain_efficiency"] == 0.70
@@ -340,7 +340,7 @@ class TestRobotView:
         )
 
         view = RobotView(rd)
-        profile = view.power_profile({})
+        profile = view.power_profile(view.effective_caps({}))
         assert profile is not None
         assert profile["static_power_w"] == 35.0
         assert profile["drivetrain_efficiency"] == 0.85

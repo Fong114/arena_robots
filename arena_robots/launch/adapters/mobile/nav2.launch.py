@@ -35,6 +35,7 @@ def generate_launch_description():
     env_namespace = LaunchArgument('env_namespace', default_value='', description='ROS namespace of the env the robot belongs to.')
     namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
     frame = LaunchArgument('frame', description='Frame prefix of the robot.')
+    base_frame = LaunchArgument('base_frame', description='Base link frame of the robot.')
     use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
     global_planner = LaunchArgument('global_planner', description='Nav2 global planner kind.')
     local_planner = LaunchArgument('local_planner', description='Nav2 controller kind.')
@@ -77,7 +78,7 @@ def generate_launch_description():
         YAMLFileSubstitution.from_dict(
             {
                 'frame': frame.substitution,
-                'base_frame': YAMLRetrieveSubstitution(YAMLFileSubstitution(model_params_path), 'base_frame'),
+                'base_frame': base_frame.substitution,
                 **arena_env_node.dict,
                 **env_namespace.dict,
                 'namespace': namespace.substitution,
@@ -217,7 +218,7 @@ def generate_launch_description():
                         'namespace': namespace.substitution,
                         'env_namespace': env_namespace.substitution,
                         'frame': frame.substitution,
-                        'base_frame': YAMLRetrieveSubstitution(YAMLFileSubstitution(model_params_path), 'base_frame'),
+                        'base_frame': base_frame.substitution,
                         'use_sim_time': use_sim_time.substitution,
                         'agent': agent.substitution,
                     }.items(),

@@ -141,7 +141,7 @@ class RosnavRlBringup(Bringup):
                 PythonLaunchDescriptionSource(launch_file),
                 launch_arguments={
                     "agent": agent_name,
-                    "base_frame": self.robot.model_params.base_frame,
+                    "base_frame": self.caps.body.base_frame,
                     "control_rate": str(rate),
                     "frame": frame,
                     "lookahead_time": str(lt),

@@ -9,7 +9,7 @@ from collections.abc import Iterable, Iterator, Mapping
 import attrs
 
 from arena_robots import assembly as assembly_mod
-from arena_robots.caps import CapConfig, RobotCaps, adapter_blocks, simulators_honoring, typed_fields
+from arena_robots.caps import FACT_BLOCKS, CapConfig, RobotCaps, adapter_blocks, simulators_honoring, typed_fields
 from arena_robots.inline import split_top_level
 from arena_robots.Robot import RobotIdentifier, RobotView
 from arena_robots.SetupFile import Config
@@ -28,12 +28,17 @@ class OverridePath:
     path: str
     value: object
     kind: Kind
+    provenance: str = 'file'
     part: str | None = None
     relative: str | None = None
 
     @property
     def simulators(self) -> frozenset[str]:
         return simulators_honoring(self.path)
+
+    @property
+    def overridable(self) -> bool:
+        return self.path != 'body.mass' and not self.path.startswith('body.mass.')
 
 
 def _kind(value: object) -> Kind:
@@ -54,20 +59,26 @@ def _walk(prefix: str, data: Mapping[str, object]) -> Iterator[tuple[str, object
 
 def _relative(spec: CapConfig, cap: str) -> list[tuple[str, object, Kind]]:
     entries = list(_walk('', spec.raw))
+    if cap in FACT_BLOCKS:
+        return entries
     unset = sorted((typed_fields(type(spec)) | adapter_blocks(cap)) - {str(key) for key in spec.raw})
     return entries + [(name, None, 'unset') for name in unset]
 
 
 def override_paths(caps: RobotCaps) -> list[OverridePath]:
-    """Every leaf, list and mapping of the effective caps plus the typed fields and adapter blocks they leave unset."""
+    """Every leaf, list and mapping of the effective caps and fact blocks, each with its provenance, plus the typed fields and adapter blocks the caps leave unset."""
     out: list[OverridePath] = []
     if 'mobile' in caps.available:
-        out += [OverridePath(f'mobile.{relative}', value, kind) for relative, value, kind in _relative(caps.mobile, 'mobile')]
+        out += [OverridePath(f'mobile.{relative}', value, kind, caps.provenance(f'mobile.{relative}')) for relative, value, kind in _relative(caps.mobile, 'mobile')]
     placed = {(placement.type, placement.mount.name) for placement in caps.resolved.placements} if caps.resolved is not None else set()
     for cap in _INSTANCE_CAPS:
         for name, spec in (getattr(caps, cap) or {}).items():
             part = name if (cap, name) in placed else None
-            out += [OverridePath(f'{cap}.{name}.{relative}', value, kind, part, relative if part else None) for relative, value, kind in _relative(spec, cap)]
+            out += [OverridePath(f'{cap}.{name}.{relative}', value, kind, caps.provenance(f'{cap}.{name}.{relative}'), part, relative if part else None) for relative, value, kind in _relative(spec, cap)]
+    for block in FACT_BLOCKS:
+        spec = getattr(caps, block)
+        if spec is not None:
+            out += [OverridePath(f'{block}.{relative}', value, kind, caps.provenance(f'{block}.{relative}')) for relative, value, kind in _relative(spec, block)]
     return out
 
 
@@ -200,7 +211,7 @@ def _complete(entry: str, model: str, done: list[str], current: str, depth: int)
         if '=' in token or '[' in token:
             return []
         paths, _ = _instance(model, directives)
-        return [entry[: len(entry) - len(token)] + candidate for candidate in _fold(token, [(p.path, p.kind) for p in paths if p.part is None])]
+        return [entry[: len(entry) - len(token)] + candidate for candidate in _fold(token, [(p.path, p.kind) for p in paths if p.part is None and p.overridable])]
     if depth != 1:
         return []
     part_head, _, inner = token.partition('[')
@@ -221,7 +232,7 @@ def _complete(entry: str, model: str, done: list[str], current: str, depth: int)
         return []
     variant = value.rpartition('/')[2]
     mounts = {lhs} if lhs in spec.mounts else {mount for placed_type, placed_variant, mount in placements if placed_type == lhs and placed_variant == variant}
-    relative: list[tuple[str, Kind]] = [(p.relative, p.kind) for p in paths if p.part in mounts and p.relative is not None]
+    relative: list[tuple[str, Kind]] = [(p.relative, p.kind) for p in paths if p.part in mounts and p.relative is not None and p.overridable]
     return [entry[: len(entry) - len(inner_token)] + candidate for candidate in _fold(inner_token, relative)]
 
 

@@ -94,7 +94,7 @@ class GotoRig:
             goal_topic=f"{namespace}/goal_pose",
             namespace=lambda *parts: "/".join((namespace, *parts)),
             frame="env_0/",
-            robot=SimpleNamespace(model_params=SimpleNamespace(base_frame="base_link")),
+            caps=SimpleNamespace(body=SimpleNamespace(base_frame="base_link")),
         )
         self.node = TimeNode("task_server", namespace=namespace)
         self.peer = Node("task_peer", namespace=namespace)

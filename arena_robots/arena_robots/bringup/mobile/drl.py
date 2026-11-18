@@ -115,6 +115,7 @@ class DrlBringup(Bringup):
                     "namespace": self.namespace,
                     "use_sim_time": str(use_sim_time).lower(),
                     "frame": frame,
+                    "base_frame": self.caps.body.base_frame,
                     "kind": kind,
                     "arena_env_node": arena_env_node,
                     **self.mobile_caps_launch_arguments(),

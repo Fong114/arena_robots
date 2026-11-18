@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import ast
 import copy
+import hashlib
+import json
 import math
 import subprocess
 import typing
@@ -836,6 +838,89 @@ def overlay(data: dict[str, typing.Any], overrides: typing.Mapping[str, object],
     return out
 
 
+FACT_BLOCKS = ('body', 'power', 'acoustics')
+SNAPSHOT_FORMAT = 'arena-caps/1'
+
+
+@attrs.define(slots=False)
+class BodySpec(CapConfig):
+    """Robot-wide facts read from ``model_params.yaml`` and the placed components: base frame, control topics, mass."""
+
+    @property
+    def base_frame(self) -> str:
+        return str(self.raw['base_frame'])
+
+    @property
+    def cmd_vel_topic(self) -> str:
+        return str(self.raw['cmd_vel_topic'])
+
+    @property
+    def odom_topic(self) -> str:
+        return str(self.raw['odom_topic'])
+
+    @property
+    def mass_base(self) -> float | None:
+        v = self.raw['mass']['base']
+        return None if v is None else float(v)
+
+    @property
+    def mass_parts(self) -> dict[str, float]:
+        return {str(k): float(v) for k, v in self.raw['mass']['parts'].items()}
+
+    @property
+    def mass_total(self) -> float | None:
+        v = self.raw['mass']['total']
+        return None if v is None else float(v)
+
+
+@attrs.define(slots=False)
+class PowerSpec(CapConfig):
+    """The power model's parameters from ``telemetry/power.yaml``."""
+
+    @property
+    def power_system(self) -> dict[str, typing.Any]:
+        return dict(self.raw.get('power_system') or {})
+
+
+@attrs.define(slots=False)
+class AcousticsSpec(CapConfig):
+    """The acoustic emission model's parameters from ``telemetry/acoustics.yaml``."""
+
+
+_FACT_CLASSES: dict[str, type[CapConfig]] = {'body': BodySpec, 'power': PowerSpec, 'acoustics': AcousticsSpec}
+
+
+def _read_mapping(path: Path) -> dict[str, typing.Any] | None:
+    if not path.is_file():
+        return None
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"{path}: top-level structure must be a mapping; got {type(data).__name__}")
+    return data
+
+
+def _leaves(prefix: str, node: object) -> typing.Iterator[str]:
+    if isinstance(node, dict) and node:
+        for key, value in node.items():
+            yield from _leaves(f'{prefix}.{key}', value)
+    else:
+        yield prefix
+
+
+def _leaf_declared(node: object, segments: list[str]) -> bool:
+    for segment in segments:
+        if not isinstance(node, dict) or segment not in node:
+            return False
+        node = node[segment]
+    return True
+
+
+def _matches(pattern: str, path: str) -> bool:
+    want, have = pattern.split('.'), path.split('.')
+    return len(want) <= len(have) and all(w in (WILDCARD, h) for w, h in zip(want, have, strict=False))
+
+
 def simulator_names() -> frozenset[str]:
     """Every simulator name `sim:=` accepts."""
     from arena_bringup.constants import SimSimulator
@@ -987,6 +1072,108 @@ class RobotCaps:
             out[instance] = overlay(entry, instance_rel, label=f'{path} {instance}', known=typed_fields(instance_cls))
         return out
 
+    def _fact_file(self, block: str) -> Path:
+        robot_dir = self.caps_dir.parent
+        return robot_dir / 'model_params.yaml' if block == 'body' else robot_dir / 'telemetry' / f'{block}.yaml'
+
+    def _load_fact(self, block: str) -> dict[str, typing.Any] | None:
+        key = f'fact:{block}'
+        if key in self._cached:
+            return self._cached[key]
+        path = self._fact_file(block)
+        data = _read_mapping(path)
+        if data is not None and block == 'body':
+            control = data.get('control') or {}
+            mass = data.get('mass') or {}
+            parts: dict[str, float] = {}
+            if self.resolved is not None and self.catalog is not None:
+                for placement in self.resolved.placements:
+                    kg = self.catalog.get(placement.type, placement.variant).mass.get('kg')
+                    if kg is not None:
+                        parts[f'{placement.type}.{placement.mount.name}'] = float(typing.cast(float, kg))
+            data = {
+                'base_frame': str(data.get('base_frame', 'base_link')),
+                'cmd_vel_topic': str(control.get('cmd_vel_topic', 'cmd_vel')),
+                'odom_topic': str(control.get('odom_topic', 'odom')),
+                'mass': {'base': mass.get('base_kg'), 'parts': parts},
+            }
+        elif data is not None and block == 'power':
+            data = {k: v for k, v in data.items() if k != 'robot_model'}
+        if data is not None:
+            rel = self._cap_overrides(block)
+            if rel:
+                data = overlay(data, rel, label=str(path), known=typed_fields(_FACT_CLASSES[block]))
+            if block == 'body':
+                base = data['mass']['base']
+                data['mass']['total'] = None if base is None else float(base) + sum(data['mass']['parts'].values())
+        self._cached[key] = data
+        return data
+
+    @property
+    def body(self) -> BodySpec:
+        data = self._load_fact('body')
+        if data is None:
+            raise FileNotFoundError(f"robot facts: {self._fact_file('body')} does not exist")
+        return BodySpec(path=self._fact_file('body'), raw=data)
+
+    @property
+    def power(self) -> PowerSpec | None:
+        data = self._load_fact('power')
+        return None if data is None else PowerSpec(path=self._fact_file('power'), raw=data)
+
+    @property
+    def acoustics(self) -> AcousticsSpec | None:
+        data = self._load_fact('acoustics')
+        return None if data is None else AcousticsSpec(path=self._fact_file('acoustics'), raw=data)
+
+    def effective(self) -> dict[str, typing.Any]:
+        """Every cap and fact block of this instance as plain data, instance caps keyed by instance."""
+        out: dict[str, typing.Any] = {}
+        for cap in sorted(self.available):
+            instance_cls = _INSTANCE_CLASSES.get(cap)
+            if instance_cls is None:
+                out[cap] = copy.deepcopy(self._load_cap_file(cap))
+            else:
+                out[cap] = {name: copy.deepcopy(spec.raw) for name, spec in (self._instances(cap, instance_cls) or {}).items()}
+        for block in FACT_BLOCKS:
+            data = self._load_fact(block)
+            if data is not None:
+                out[block] = copy.deepcopy(data)
+        return out
+
+    def provenance(self, path: str) -> str:
+        """Where the value at ``path`` comes from: ``override``, ``component``, ``derived`` or ``file``."""
+        if any(_matches(pattern, path) for pattern in self.all_overrides):
+            return 'override'
+        head, _, rest = path.partition('.')
+        if head == 'body' and (rest.startswith('mass.parts') or rest == 'mass.total'):
+            return 'derived'
+        if head == 'mobile' and rest.startswith('limits'):
+            declared = (_read_mapping(self.caps_dir / 'mobile.yaml') or {}).get('limits')
+            return 'file' if isinstance(declared, dict) and _leaf_declared(declared, rest.split('.')[1:]) else 'derived'
+        if head in _INSTANCE_CLASSES and self.resolved is not None:
+            instance = rest.partition('.')[0]
+            if any(p.type == head and p.mount.name == instance for p in self.resolved.placements):
+                return 'component'
+        return 'file'
+
+    def caps_hash(self) -> str:
+        """sha256 of the canonical JSON of :meth:`effective`."""
+        return hashlib.sha256(json.dumps(self.effective(), sort_keys=True, separators=(',', ':'), default=str).encode()).hexdigest()
+
+    def snapshot(self) -> dict[str, typing.Any]:
+        """The instance as it ran: model, request, effective caps, the source of every leaf and the hash."""
+        effective = self.effective()
+        parts = {f'{p.type}@{p.mount.name}': p.variant for p in self.resolved.placements} if self.resolved is not None else {}
+        return {
+            'format': SNAPSHOT_FORMAT,
+            'model': self.caps_dir.parent.name,
+            'request': {'parts': parts, 'overrides': copy.deepcopy(self.all_overrides)},
+            'effective': effective,
+            'provenance': {leaf: self.provenance(leaf) for cap, value in effective.items() for leaf in _leaves(cap, value)},
+            'hash': self.caps_hash(),
+        }
+
     def warnings(self, sim: str | None = None) -> list[str]:
         """Odd values of the effective caps, and overrides ``sim`` does not honor, as messages."""
         out: list[str] = []
@@ -1009,9 +1196,16 @@ class RobotCaps:
             mount, _, field = rest.partition('.')
             if (cap, mount) in placed:
                 raise ValueError(f"cap override '{path}' targets the part placed on mount '{mount}', write it in the part's brackets: {mount}={cap}/{placed[cap, mount]}[{field}=...]")
+        for path in self.all_overrides:
+            if _matches('body.mass', path) or path == 'body':
+                raise ValueError(f"cap override '{path}': mass is what the simulators simulate and is not overridable")
         for cap in sorted({path.partition('.')[0] for path in self.all_overrides}):
+            if cap in FACT_BLOCKS:
+                if self._load_fact(cap) is None:
+                    raise ValueError(f"cap override on '{cap}': the robot has no {self._fact_file(cap).name}")
+                continue
             if cap not in self.available:
-                raise ValueError(f"cap override on '{cap}': the robot does not advertise it, caps: {sorted(self.available)}")
+                raise ValueError(f"cap override on '{cap}': the robot does not advertise it, caps: {sorted(self.available)}, facts: {list(FACT_BLOCKS)}")
             rel = self._cap_overrides(cap)
             instance_cls = _INSTANCE_CLASSES.get(cap)
             if instance_cls is None:

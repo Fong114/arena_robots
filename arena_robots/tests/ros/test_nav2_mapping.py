@@ -44,6 +44,7 @@ def _entities(mapping: str, scan_topic: str = f"{NAMESPACE}/lidar") -> tuple[lis
             "mapping": mapping,
             "scan_topic": scan_topic,
             "mobile_caps": str(Path(get_package_share_directory("arena_robots")) / "robots" / "jackal" / "caps" / "mobile.yaml"),
+            "base_frame": "base_link",
         }
     )
     (setup,) = [e for e in ld.entities if isinstance(e, OpaqueFunction)]
