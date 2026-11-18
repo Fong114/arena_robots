@@ -178,9 +178,9 @@ in place of `default`, whose spin recovery it cannot drive, unless
 `limits` is the base's physical velocity and acceleration per axis, the one
 source of the actuator limits: an axis it names replaces the same axis of
 `planar.velocity` or `planar.acceleration`, and the effective cap carries
-`limits` in their place. On every axis `limits` names, `velocity_limits` and
-`acceleration_limits` are clamped to it. Files that leave `limits` out keep
-their planner limits as written.
+`limits` in their place. `velocity_limits` and `acceleration_limits` are
+clamped to it on every axis, and a file whose planner limit exceeds it warns in
+`robots_check`.
 
 `climbs` lists the world stair kinds (`stairs`, `escalator`) the base can
 drive through. Cross-level routing sends the robot through the boarding half of

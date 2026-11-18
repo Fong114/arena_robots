@@ -62,9 +62,9 @@ class TestAffine:
         assert _caps(tmp_path, {"mobile.radius": {"scale": 2.0, "offset": -0.1}}).mobile.radius == pytest.approx(0.5)
 
     def test_offset_on_a_range_shifts_both_ends(self, tmp_path: Path):
-        limits = _caps(tmp_path, {"mobile.velocity_limits.linear": {"offset": 0.5}}).mobile.velocity_limits
+        limits = _caps(tmp_path, {"mobile.limits.velocity.angular": {"offset": 0.5}}).mobile.limits
         assert limits is not None
-        assert (limits.linear.min, limits.linear.max) == pytest.approx((-0.5, 2.5))
+        assert (limits.velocity["angular"].min, limits.velocity["angular"].max) == pytest.approx((-1.5, 2.5))
 
     def test_affine_on_an_unset_value_is_rejected(self, tmp_path: Path):
         with pytest.raises(ValueError, match="cannot scale or offset an unset value"):
@@ -162,11 +162,15 @@ class TestLimits:
         assert "velocity" not in mobile.raw["planar"]
         assert mobile.raw["planar"]["gain"] == {"angular": 0.9}
 
-    def test_model_planner_limits_stay_unclamped(self, tmp_path: Path):
-        mobile = _caps(tmp_path, {}).mobile
+    def test_file_planner_limits_above_limits_are_clamped_and_warn(self, tmp_path: Path):
+        caps = _caps(tmp_path, {})
+        mobile = caps.mobile
         assert mobile.velocity_limits is not None and mobile.acceleration_limits is not None
-        assert mobile.velocity_limits.linear.max == pytest.approx(2.0)
-        assert mobile.acceleration_limits.angular == pytest.approx(4.0)
+        assert mobile.velocity_limits.linear.max == pytest.approx(1.5)
+        assert mobile.acceleration_limits.angular == pytest.approx(3.0)
+        warnings = caps.warnings()
+        assert any("velocity_limits.linear [-1.0, 2.0] exceeds limits.velocity.linear [-1.0, 1.5]" in w for w in warnings)
+        assert any("acceleration_limits.angular 4.0 exceeds limits.acceleration.angular 3.0" in w for w in warnings)
 
     def test_planar_reads_its_velocity_from_limits(self, tmp_path: Path):
         planar = _caps(tmp_path, {"mobile.limits.velocity.linear": [-0.5, 0.5]}).mobile.planar
@@ -179,7 +183,7 @@ class TestLimits:
         mobile = _caps(tmp_path, {"mobile.limits.velocity.linear": [-0.5, 0.5]}).mobile
         assert mobile.velocity_limits is not None
         assert (mobile.velocity_limits.linear.min, mobile.velocity_limits.linear.max) == (-0.5, 0.5)
-        assert (mobile.velocity_limits.angular.min, mobile.velocity_limits.angular.max) == (-3.0, 3.0)
+        assert (mobile.velocity_limits.angular.min, mobile.velocity_limits.angular.max) == (-2.0, 2.0)
 
     def test_scaled_limits_clamp_every_axis(self, tmp_path: Path):
         mobile = _caps(tmp_path, {"mobile.limits": {"scale": 0.5}}).mobile
@@ -198,7 +202,7 @@ class TestLimits:
         assert mobile.limits.velocity["linear"].max == pytest.approx(0.4)
         assert mobile.limits.velocity["angular"].max == pytest.approx(2.0)
         assert mobile.velocity_limits.linear.max == pytest.approx(0.4)
-        assert mobile.velocity_limits.angular.max == pytest.approx(3.0)
+        assert mobile.velocity_limits.angular.max == pytest.approx(2.0)
 
     def test_planar_velocity_override_is_rejected(self, tmp_path: Path):
         with pytest.raises(ValueError, match=r"override 'limits\.velocity\.linear'"):

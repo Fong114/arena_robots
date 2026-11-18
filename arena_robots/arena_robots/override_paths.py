@@ -9,7 +9,7 @@ from collections.abc import Iterable, Iterator, Mapping
 import attrs
 
 from arena_robots import assembly as assembly_mod
-from arena_robots.caps import CapConfig, RobotCaps, adapter_blocks, typed_fields
+from arena_robots.caps import CapConfig, RobotCaps, adapter_blocks, simulators_honoring, typed_fields
 from arena_robots.inline import split_top_level
 from arena_robots.Robot import RobotIdentifier, RobotView
 from arena_robots.SetupFile import Config
@@ -30,6 +30,10 @@ class OverridePath:
     kind: Kind
     part: str | None = None
     relative: str | None = None
+
+    @property
+    def simulators(self) -> frozenset[str]:
+        return simulators_honoring(self.path)
 
 
 def _kind(value: object) -> Kind:

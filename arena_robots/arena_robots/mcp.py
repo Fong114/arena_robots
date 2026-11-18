@@ -336,7 +336,7 @@ def robots_overrides(model: str, parts: PartsArg = None, frames: FramesArg = Non
         paths = override_paths(effective)
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
         raise ToolError(f"instance request of {model!r} is invalid: {_error(exc)}", hint="robots_overrides without parts, frames and caps lists the model's defaults, caps paths are the fields of caps/<cap>.yaml") from exc
-    return [{"path": entry.path, "kind": entry.kind, "value": msgs.jsonable(entry.value), "part": entry.part, "relative": entry.relative} for entry in paths]
+    return [{"path": entry.path, "kind": entry.kind, "value": msgs.jsonable(entry.value), "part": entry.part, "relative": entry.relative, "simulators": sorted(entry.simulators)} for entry in paths]
 
 
 @domain.resource("arena://robots/catalog", mime_type="application/json", description="Every robot model with caps and a one-line summary")
@@ -380,6 +380,10 @@ def _definition_findings(view: RobotView, request: InstanceRequest | None = None
             caps.validate_overrides()
         except (ValueError, FileNotFoundError) as exc:
             findings.append(_finding(name, "caps.overrides", _error(exc)))
+    try:
+        findings += [_finding(name, "caps.warnings", warning, "warning") for warning in caps.warnings()]
+    except (ValueError, FileNotFoundError) as exc:
+        findings.append(_finding(name, "caps.warnings", _error(exc)))
     if "mobile" not in available:
         findings.append(_finding(name, "caps", "caps/mobile.yaml is missing, every robot needs a mobile cap"))
     else:

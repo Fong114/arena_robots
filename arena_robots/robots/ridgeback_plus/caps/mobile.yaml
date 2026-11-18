@@ -19,7 +19,6 @@ footprint_padding: 0.1
 
 velocity_limits:
   linear: [-1.1, 1.1]
-  lateral: [-1.1, 1.1]
   angular: [-2.0, 2.0]
 
 planar:

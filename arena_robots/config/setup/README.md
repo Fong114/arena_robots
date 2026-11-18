@@ -117,10 +117,20 @@ carries it in their place: flatsim drives by it, and an instance that overrides
 `limits` or `planar` gets the base controller's velocity and acceleration limits
 in `control.yaml` replaced from it in Gazebo, MuJoCo and Isaac.
 `velocity_limits` and `acceleration_limits` are what planners, the DRL clamp and
-the training action space use, clamped to `limits` on every axis the file or an
-override gives `limits` explicitly. `mobile.limits.velocity.linear=[-0.5,0.5]`
-or `mobile.limits=*0.5` slows the robot and its planners together, a planner
-limit set narrower stays narrower.
+the training action space use, clamped to `limits` on every axis.
+`mobile.limits.velocity.linear=[-0.5,0.5]` or `mobile.limits=*0.5` slows the
+robot and its planners together, a planner limit set narrower stays narrower. A
+planner limit above `limits` that no `limits` override caused (in the file, or
+from a `velocity_limits` override) is clamped and warns.
+
+Not every override changes every simulator. `mobile.limits` reaches flatsim and
+the drive controllers of Gazebo, MuJoCo and Isaac, `mobile.laser` and the
+`mobile.planar` dynamics (`gain`, `lag`, `traction`, `pivot`, `timeout`) reach
+flatsim only, everything else is planner- or adapter-facing and reaches every
+simulator. An override the env's simulator does not honor logs a warning when the
+robot spawns, and `arena robot paths` marks such paths `only in <sims>`.
+`robots_check` reports range sanity (a min above its max, a non-positive radius or
+acceleration) and clamped planner limits as warnings.
 
 Changing an instance's overrides respawns and relaunches it. The env-wide
 `robot.<cap>.<key>:=` launch arguments only reach the bound adapter's own

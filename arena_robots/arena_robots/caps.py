@@ -344,39 +344,31 @@ def _merged_limits(planar: object, limits: object, label: str) -> dict[str, dict
     return {section: {**(planar_raw.get(section) or {}), **(limits_raw.get(section) or {})} for section in LIMIT_SECTIONS}
 
 
-def _touched_axes(overrides: typing.Mapping[str, object], limits: dict[str, dict[str, typing.Any]]) -> set[tuple[str, str]]:
-    touched: set[tuple[str, str]] = set()
-    for path in overrides:
-        head, *rest = path.split('.')
-        if head not in ('limits', WILDCARD):
-            continue
-        sections = LIMIT_SECTIONS if not rest or rest[0] == WILDCARD else (rest[0],)
-        for section in sections:
-            axes = limits.get(section, {})
-            touched |= {(section, axis) for axis in (axes if len(rest) < 2 or rest[1] == WILDCARD else [rest[1]]) if axis in axes}
-    return touched
-
-
-def _clamp_to_limits(data: dict[str, typing.Any], axes: set[tuple[str, str]]) -> None:
+def _clamp_to_limits(data: dict[str, typing.Any], notes: list[str]) -> None:
     limits = data['limits']
-    for section, axis in sorted(axes):
-        if section == 'velocity':
-            planner = data.get('velocity_limits')
-            if not isinstance(planner, dict) or axis not in planner:
-                continue
-            bound = Range.from_value(limits['velocity'][axis], f'limits.velocity.{axis}')
-            have = Range.from_value(planner[axis], f'velocity_limits.{axis}')
-            lo = min(max(have.min, bound.min), bound.max)
-            hi = max(min(have.max, bound.max), bound.min)
-            planner[axis] = {'min': lo, 'max': hi} if isinstance(planner[axis], dict) else [lo, hi]
-        else:
-            planner = data.get('acceleration_limits')
-            if isinstance(planner, dict) and axis in planner:
-                planner[axis] = min(float(planner[axis]), float(limits['acceleration'][axis]))
+    planner = data.get('velocity_limits')
+    for axis, bound_raw in (limits.get('velocity') or {}).items():
+        if not isinstance(planner, dict) or axis not in planner:
+            continue
+        bound = Range.from_value(bound_raw, f'limits.velocity.{axis}')
+        have = Range.from_value(planner[axis], f'velocity_limits.{axis}')
+        lo = min(max(have.min, bound.min), bound.max)
+        hi = max(min(have.max, bound.max), bound.min)
+        if (lo, hi) != (have.min, have.max):
+            notes.append(f"velocity_limits.{axis} [{have.min}, {have.max}] exceeds limits.velocity.{axis} [{bound.min}, {bound.max}], clamped to [{lo}, {hi}]")
+        planner[axis] = {'min': lo, 'max': hi} if isinstance(planner[axis], dict) else [lo, hi]
+    planner = data.get('acceleration_limits')
+    for axis, bound_raw in (limits.get('acceleration') or {}).items():
+        if not isinstance(planner, dict) or axis not in planner:
+            continue
+        have, bound = float(planner[axis]), float(bound_raw)
+        if have > bound:
+            notes.append(f"acceleration_limits.{axis} {have} exceeds limits.acceleration.{axis} {bound}, clamped")
+            planner[axis] = bound
 
 
-def normalize_mobile(data: dict[str, typing.Any], overrides: typing.Mapping[str, object], *, label: str, known: frozenset[str]) -> dict[str, typing.Any]:
-    """The mobile cap with ``limits`` materialized from ``planar``, ``overrides`` applied, and the planner limits clamped on every axis ``limits`` names explicitly."""
+def normalize_mobile(data: dict[str, typing.Any], overrides: typing.Mapping[str, object], *, label: str, known: frozenset[str], notes: list[str] | None = None) -> dict[str, typing.Any]:
+    """The mobile cap with ``limits`` materialized from ``planar``, ``overrides`` applied, and the planner limits clamped to ``limits`` on every axis, a clamp noted unless an override of ``limits`` caused it."""
     for path in overrides:
         head, _, rest = path.partition('.')
         section = rest.partition('.')[0]
@@ -391,8 +383,8 @@ def normalize_mobile(data: dict[str, typing.Any], overrides: typing.Mapping[str,
     if overrides:
         out = overlay(out, overrides, label=label, known=known)
     if isinstance(out.get('limits'), dict):
-        explicit = {(section, axis) for section in LIMIT_SECTIONS for axis in ((declared or {}).get(section) or {})}
-        _clamp_to_limits(out, explicit | _touched_axes(overrides, out['limits']))
+        intended = any(path.partition('.')[0] in ('limits', WILDCARD) for path in overrides)
+        _clamp_to_limits(out, [] if notes is None or intended else notes)
     return out
 
 
@@ -844,6 +836,54 @@ def overlay(data: dict[str, typing.Any], overrides: typing.Mapping[str, object],
     return out
 
 
+def simulator_names() -> frozenset[str]:
+    """Every simulator name `sim:=` accepts."""
+    from arena_bringup.constants import SimSimulator
+
+    return frozenset(sim.value for sim in SimSimulator)
+
+
+_ACTUATED = frozenset({'flatsim', 'gazebo', 'mujoco', 'isaac'})
+_REACH: dict[tuple[str, ...], frozenset[str]] = {
+    ('mobile', 'limits'): _ACTUATED,
+    ('mobile', 'laser'): frozenset({'flatsim'}),
+    ('mobile', 'planar'): frozenset({'flatsim'}),
+}
+
+
+def simulators_honoring(path: str) -> frozenset[str]:
+    """The simulators in which a cap override at ``path`` changes behavior."""
+    segments = tuple(path.split('.'))
+    for length in range(len(segments), 0, -1):
+        reach = _REACH.get(segments[:length])
+        if reach is not None:
+            return reach
+    return simulator_names()
+
+
+def _mobile_sanity(mobile: MobileSpec) -> list[str]:
+    issues: list[str] = []
+    ranges: list[tuple[str, Range]] = []
+    velocity = mobile.velocity_limits
+    if velocity is not None:
+        ranges += [(f'velocity_limits.{axis}', r) for axis, r in (('linear', velocity.linear), ('angular', velocity.angular), ('lateral', velocity.lateral)) if r is not None]
+    limits = mobile.limits
+    if limits is not None:
+        ranges += [(f'limits.velocity.{axis}', r) for axis, r in limits.velocity.items()]
+    issues += [f'{name} has min {r.min} above max {r.max}' for name, r in ranges if r.min > r.max]
+    accelerations: list[tuple[str, float]] = []
+    acceleration = mobile.acceleration_limits
+    if acceleration is not None:
+        accelerations += [(f'acceleration_limits.{axis}', v) for axis, v in (('linear', acceleration.linear), ('angular', acceleration.angular), ('lateral', acceleration.lateral)) if v is not None]
+    if limits is not None:
+        accelerations += [(f'limits.acceleration.{axis}', v) for axis, v in limits.acceleration.items()]
+    issues += [f'{name} is {v}, not positive' for name, v in accelerations if not v > 0]
+    radius = mobile.radius
+    if radius is not None and not radius > 0:
+        issues.append(f'radius is {radius}, not positive')
+    return issues
+
+
 def adapter_blocks(cap: str) -> frozenset[str]:
     """The bringup kinds registered for ``cap``, each a block its cap file may carry."""
     from arena_robots.bringup import BRINGUPS
@@ -888,6 +928,7 @@ class RobotCaps:
     overrides: dict[str, object] = attrs.field(factory=dict)
 
     _cached: dict[str, typing.Any] = attrs.field(factory=dict, init=False)
+    _notes: list[str] = attrs.field(factory=list, init=False)
 
     @property
     def available(self) -> frozenset[str]:
@@ -927,7 +968,7 @@ class RobotCaps:
     def _overlay_file(self, cap: str, data: dict[str, typing.Any], path: Path) -> dict[str, typing.Any]:
         rel = self._cap_overrides(cap)
         if cap == 'mobile':
-            return normalize_mobile(data, rel, label=str(path), known=typed_fields(MobileSpec) | adapter_blocks(cap))
+            return normalize_mobile(data, rel, label=str(path), known=typed_fields(MobileSpec) | adapter_blocks(cap), notes=self._notes)
         if not rel:
             return data
         instance_cls = _INSTANCE_CLASSES.get(cap)
@@ -944,6 +985,20 @@ class RobotCaps:
             if not isinstance(entry, dict):
                 raise ValueError(f"{path}: cap override targets unknown {cap} instance {instance!r}, instances: {sorted(data)}")
             out[instance] = overlay(entry, instance_rel, label=f'{path} {instance}', known=typed_fields(instance_cls))
+        return out
+
+    def warnings(self, sim: str | None = None) -> list[str]:
+        """Odd values of the effective caps, and overrides ``sim`` does not honor, as messages."""
+        out: list[str] = []
+        if 'mobile' in self.available:
+            mobile = self.mobile
+            out += [f'mobile: {note}' for note in self._notes]
+            out += [f'mobile: {issue}' for issue in _mobile_sanity(mobile)]
+        if sim is not None:
+            for path in self.all_overrides:
+                honoring = simulators_honoring(path)
+                if sim not in honoring:
+                    out.append(f"cap override '{path}' has no effect in sim:={sim}, honored by {', '.join(sorted(honoring))}")
         return out
 
     def validate_overrides(self) -> None:

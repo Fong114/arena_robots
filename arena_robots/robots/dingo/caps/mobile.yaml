@@ -17,7 +17,7 @@ polygons_dict:
 
 velocity_limits:
   linear: [-1.3, 1.3]
-  angular: [-4.0, 4.0]
+  angular: [-3.0, 3.0]
 
 planar:
   velocity: {linear: [-1.3, 1.3], lateral: [0.0, 0.0], angular: [-3.0, 3.0]}

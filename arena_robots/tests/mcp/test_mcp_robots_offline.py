@@ -12,6 +12,7 @@ pytest.importorskip("arena_mcp")
 
 from arena_mcp.core import ToolError, cli
 from arena_robots import mcp
+from arena_robots.caps import simulator_names
 from arena_robots.Robot import RobotView
 
 ROBOTS_DIR = Path(__file__).resolve().parents[2] / "robots"
@@ -284,7 +285,7 @@ def test_overrides_list_the_jackal_mobile_paths_with_their_effective_values_as_j
     json.dumps(paths, allow_nan=False)
     authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())
     by_path = {entry["path"]: entry for entry in paths}
-    assert by_path["mobile.velocity_limits.linear"] == {"path": "mobile.velocity_limits.linear", "kind": "list", "value": authored["velocity_limits"]["linear"], "part": None, "relative": None}
+    assert by_path["mobile.velocity_limits.linear"] == {"path": "mobile.velocity_limits.linear", "kind": "list", "value": authored["velocity_limits"]["linear"], "part": None, "relative": None, "simulators": sorted(simulator_names())}
     assert any(entry["kind"] == "unset" and entry["value"] is None for entry in paths)
 
 
