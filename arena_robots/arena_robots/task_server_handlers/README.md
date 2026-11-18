@@ -127,6 +127,8 @@ entry.
   `task_handlers` or it doesn't; `task_server` skips advertising that
   endpoint when missing instead of silently degrading.
 
+The `task_server` node takes its instance request as the `request_json` parameter (`InstanceRequest.dumps()`: parts, frames and cap overrides) and builds every bringup with it, so handlers read the instance's effective caps through `bringup.caps` and `bringup.arms()`.
+
 ## Goto pose on Nav2
 
 Nav2 ends a `navigate_to_pose` goal once its controller's goal checker passes, at `xy_goal_tolerance` and `yaw_goal_tolerance` from the nav2 config. When a goal's `pose_tolerance` or `yaw_tolerance` is tighter, the handler sets that tolerance on `controller_server` for the goal and restores the configured value afterwards. Looser tolerances, including the task defaults, leave the checker alone. With a tightened checker, a Nav2 success counts only once the base has stopped within the goal's tolerances, since the base coasts after the controller stops. Otherwise the goal is sent again, at most five times.

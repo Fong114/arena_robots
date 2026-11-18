@@ -83,12 +83,13 @@ class TestConfigParseIdentityLaneExtra:
 
 
 class TestConfigParseGrammarRejections:
-    @pytest.mark.parametrize("bad_key", ["mobile.kp", "x.y.z", "arm.speed"])
-    def test_dotted_non_adapter_key_raises(self, bad_key: str):
+    @pytest.mark.parametrize("key", ["mobile.kp", "x.y.z", "arm.speed"])
+    def test_dotted_non_adapter_key_is_a_cap_override(self, key: str):
         from arena_robots.SetupFile import Config
 
-        with pytest.raises(RuntimeError, match=r"mobile\.kp|x\.y\.z|arm\.speed"):
-            Config.parse({"robot": "jackal", bad_key: "1"})
+        (config,) = Config.parse({"robot": "jackal", key: "1"})
+        assert config.caps == {key: 1}
+        assert config.parts == {}
 
     def test_reserved_key_parts_raises(self):
         from arena_robots.SetupFile import Config

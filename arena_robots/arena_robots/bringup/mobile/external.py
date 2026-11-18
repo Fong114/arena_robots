@@ -23,7 +23,7 @@ class ExternalBringup(Bringup):
 
     @property
     def _cfg(self) -> dict:
-        return self.robot.caps.mobile.sub("external")
+        return self.caps.mobile.sub("external")
 
     @property
     def requires(self) -> frozenset[str]:

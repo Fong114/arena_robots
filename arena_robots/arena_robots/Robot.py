@@ -278,18 +278,24 @@ class RobotView(PathView):
             )
         return rendered
 
-    def effective_caps(self, parts: dict[str, list[assembly_mod.RequestPart]], *, frames: dict[str, str] | None = None) -> RobotCaps:
+    def effective_caps(
+        self,
+        parts: dict[str, list[assembly_mod.RequestPart]],
+        *,
+        frames: dict[str, str] | None = None,
+        caps: dict[str, object] | None = None,
+    ) -> RobotCaps:
         """The robot's effective :class:`RobotCaps` for a parts request (``{}`` for
-        pure defaults), mirroring :meth:`effective_sensors`. Robots with no
-        assembly.yaml return ``self.caps`` unchanged; robots with an assembly.yaml get
-        a ``RobotCaps`` with ``resolved``/``catalog`` set so `.available`/instances see
-        placement-derived caps."""
+        pure defaults), mirroring :meth:`effective_sensors`, with the instance's cap
+        overrides ``caps`` applied. Robots with no assembly.yaml and no overrides return
+        ``self.caps`` unchanged; robots with an assembly.yaml get a ``RobotCaps`` with
+        ``resolved``/``catalog`` set so `.available`/instances see placement-derived caps."""
         resolved = self._resolved(parts)
         if resolved is None:
-            return self.caps
+            return RobotCaps(self.caps.caps_dir, overrides=dict(caps)) if caps else self.caps
         assert self.assembly is not None
         resolved = assembly_mod.apply_frame_overrides(resolved, frames or {})
-        return RobotCaps(self.caps.caps_dir, resolved=resolved, catalog=_CATALOG, prefix=self.assembly.prefix)
+        return RobotCaps(self.caps.caps_dir, resolved=resolved, catalog=_CATALOG, prefix=self.assembly.prefix, overrides=dict(caps or {}))
 
     def power_profile(self, parts: dict[str, list[assembly_mod.RequestPart]]) -> dict[str, float | int] | None:
         """Power-publisher parameters, chassis block plus resolved component draw. ``None`` when unpowered."""

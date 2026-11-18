@@ -12,6 +12,7 @@ NAV2_LAUNCH = Path(__file__).resolve().parents[2] / "launch" / "adapters" / "mob
 
 
 def _planner_params(robot: str, global_planner: str) -> dict:
+    from ament_index_python.packages import get_package_share_directory
     from launch import LaunchContext
     from launch.actions import GroupAction, OpaqueFunction
     from launch.substitutions import TextSubstitution
@@ -43,6 +44,7 @@ def _planner_params(robot: str, global_planner: str) -> dict:
             "agent": "",
             "mapping": "static",
             "scan_topic": "",
+            "mobile_caps": str(Path(get_package_share_directory("arena_robots")) / "robots" / robot / "caps" / "mobile.yaml"),
         }
     )
     (setup,) = [e for e in ld.entities if isinstance(e, OpaqueFunction)]

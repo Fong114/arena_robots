@@ -25,6 +25,7 @@ if TYPE_CHECKING:
     from arena_mcp.core import JobHandle
     from arena_robots.assembly import RequestPart
     from arena_robots.caps import ArmSpec, RobotCaps
+    from arena_robots.request import InstanceRequest
     from arena_robots.Robot import RobotView
     from arena_robots.Sensor import SensorSpec
     from arena_robots.task_kinds import TaskKind
@@ -84,13 +85,60 @@ def _sensor_dict(spec: SensorSpec, namespace: str | None = None) -> dict[str, An
     return out
 
 
+PartsArg = Annotated[
+    dict[str, str | list[str]] | None,
+    Field(
+        description="morphology of the instance, the directive mapping of a setup file entry: mount or type to `type/variant`, `variant` or `none`, a bracket after the variant carries that part's cap overrides, e.g. {\"top\": \"arm/fr3[stall_time=2.0]\", \"top_tool\": \"gripper/franka_hand[max_effort=*0.5]\"}, omit for the model's default parts"
+    ),
+]
+FramesArg = Annotated[
+    dict[str, str] | None,
+    Field(description="mount to frame stem overrides of the instance, e.g. {\"top\": \"top_link\"}, a mount the model does not declare is an error, omit for none"),
+]
+CapsArg = Annotated[
+    dict[str, Any] | None,
+    Field(
+        description="cap overrides of the instance, `<cap>.<path>` to a value that replaces the cap's value or to {\"scale\": factor} that multiplies every number below the path, e.g. {\"mobile.velocity_limits.linear\": [-0.5, 1.0]}, an instance cap is `<cap>.<instance>.<path>` only on a robot without an assembly (placed parts take theirs in parts brackets), omit for the model's caps"
+    ),
+]
+
+
+def _request(view: RobotView, parts: dict[str, str | list[str]] | None, frames: dict[str, str] | None, caps: dict[str, Any] | None) -> InstanceRequest:
+    """The instance request built from setup-file entry fields the way the runtime parses a robot."""
+    from arena_robots import assembly
+    from arena_robots.request import InstanceRequest
+    from arena_robots.SetupFile import Config
+
+    if not (parts or frames or caps):
+        return InstanceRequest()
+    config = Config.parse({"robot": view.name, **(parts or {}), "frames": dict(frames or {}), **(caps or {})})[0]
+    unknown = sorted(set(caps or {}) - set(config.caps))
+    if unknown:
+        raise ValueError(f"cap overrides must be '<cap>.<path>' and not '<cap>.adapter', got {unknown}")
+    spec = view.assembly
+    if spec is None:
+        if config.parts or config.frames:
+            raise ValueError(f"morphology and frames need an assembly.yaml, and {view.name!r} has none")
+        return InstanceRequest(caps=dict(config.caps))
+    request, cleared_sockets, cleared_types = assembly.build_request(spec, config.parts)
+    resolved = assembly.resolve(spec, request, cleared_sockets=cleared_sockets, cleared_types=cleared_types)
+    unknown_frames = set(config.frames) - set(spec.mounts)
+    if unknown_frames:
+        raise ValueError(f"frames override targets unknown mount(s) {sorted(unknown_frames)}, declared mounts: {sorted(spec.mounts)}")
+    resolved = assembly.apply_frame_overrides(resolved, config.frames)
+    placed: dict[str, list[RequestPart]] = {}
+    for placement in resolved.placements:
+        placed.setdefault(placement.type, []).append(assembly.RequestPart(variant=placement.variant, mount=placement.mount.name, overrides=placement.overrides, caps=dict(placement.caps)))
+    return InstanceRequest(parts=placed, frames=dict(config.frames), caps=dict(config.caps))
+
+
 def _summary(view: RobotView) -> dict[str, Any]:
     entry: dict[str, Any] = {"model": view.name}
     try:
         caps = view.effective_caps({})
         available = sorted(caps.available)
         sensors = view.effective_sensors({})
-        mobile = view.mobile
+        mobile = caps.mobile if "mobile" in available else None
         arms = caps.arm or {}
     except Exception as exc:
         entry["error"] = _error(exc)
@@ -229,9 +277,9 @@ def _assembly(view: RobotView) -> dict[str, Any] | None:
     return out
 
 
-def _definition(view: RobotView) -> dict[str, Any]:
+def _definition(view: RobotView, request: InstanceRequest) -> dict[str, Any]:
     params = view.model_params
-    caps = view.effective_caps({})
+    caps = request.caps_of(view)
     out: dict[str, Any] = {
         "model": view.name,
         "path": str(view.path),
@@ -242,10 +290,10 @@ def _definition(view: RobotView) -> dict[str, Any]:
         "caps": sorted(caps.available),
         "mobile": _mobile(caps),
         **_instances(caps),
-        "sensors": [_sensor_dict(spec) for spec in view.effective_sensors({})],
+        "sensors": [_sensor_dict(spec) for spec in view.effective_sensors(request.parts, frames=request.frames)],
         "actions": _actions(caps.available),
         "assembly": _assembly(view),
-        "power": msgs.jsonable(view.power_profile({})),
+        "power": msgs.jsonable(view.power_profile(request.parts)),
         "model_params": msgs.jsonable(dict(params)),
     }
     return out
@@ -265,9 +313,30 @@ def robots_catalog() -> list[dict[str, Any]]:
 
 
 @domain.tool(read_only=True)
-def robots_definition(model: str) -> dict[str, Any]:
-    """One robot model resolved offline: frames, control, caps (mobile limits, footprint, arm instances with poses and gestures), default sensors, task actions, assembly, power profile."""
-    return _definition(_view(model))
+def robots_definition(model: str, parts: PartsArg = None, frames: FramesArg = None, caps: CapsArg = None) -> dict[str, Any]:
+    """One robot model resolved offline: frames, control, caps (mobile limits, footprint, arm instances with poses and gestures), sensors, task actions, assembly, power profile. With parts, frames or caps the definition is that of the instance with those morphology directives, frame overrides and cap overrides applied, as the runtime resolves it."""
+    view = _view(model)
+    try:
+        request = _request(view, parts, frames, caps)
+        request.caps_of(view).validate_overrides()
+    except (ValueError, RuntimeError, FileNotFoundError) as exc:
+        raise ToolError(f"instance request of {model!r} is invalid: {_error(exc)}", hint="robots_definition without parts, frames and caps lists the model's defaults, caps paths are the fields of caps/<cap>.yaml") from exc
+    return _definition(view, request)
+
+
+@domain.tool(read_only=True)
+def robots_overrides(model: str, parts: PartsArg = None, frames: FramesArg = None, caps: CapsArg = None) -> list[dict[str, Any]]:
+    """Every cap override path of one robot instance with its effective value: leaves, lists and mappings of the mobile cap and of each arm, lift and gripper instance, plus the typed fields and adapter blocks the cap leaves unset. A path of a part placed through the assembly carries its mount in `part` and the path to write inside that part's brackets in `relative`. With parts, frames or caps the paths are those of the instance with them applied."""
+    from arena_robots.override_paths import override_paths
+
+    view = _view(model)
+    try:
+        effective = _request(view, parts, frames, caps).caps_of(view)
+        effective.validate_overrides()
+        paths = override_paths(effective)
+    except (ValueError, RuntimeError, FileNotFoundError) as exc:
+        raise ToolError(f"instance request of {model!r} is invalid: {_error(exc)}", hint="robots_overrides without parts, frames and caps lists the model's defaults, caps paths are the fields of caps/<cap>.yaml") from exc
+    return [{"path": entry.path, "kind": entry.kind, "value": msgs.jsonable(entry.value), "part": entry.part, "relative": entry.relative} for entry in paths]
 
 
 @domain.resource("arena://robots/catalog", mime_type="application/json", description="Every robot model with caps and a one-line summary")
@@ -284,8 +353,11 @@ def _finding(robot: str, check: str, message: str, severity: str = "error", **ex
     return {"robot": robot, "check": check, "severity": severity, "message": message, **extra}
 
 
-def _definition_findings(view: RobotView) -> list[dict[str, Any]]:
+def _definition_findings(view: RobotView, request: InstanceRequest | None = None) -> list[dict[str, Any]]:
+    from arena_robots.request import InstanceRequest
     from arena_robots.sensors import SENSOR_TYPES
+
+    request = request or InstanceRequest()
 
     name = view.name
     try:
@@ -296,11 +368,18 @@ def _definition_findings(view: RobotView) -> list[dict[str, Any]]:
     if params.get("robot_model") != name:
         findings.append(_finding(name, "model_params", f"robot_model is {params.get('robot_model')!r}, not the directory name", "warning"))
     try:
-        caps = view.effective_caps({})
+        caps = request.caps_of(view)
         available = caps.available
     except Exception as exc:
         findings.append(_finding(name, "assembly", _error(exc)))
+        if request.caps or request.parts or request.frames:
+            return findings
         caps, available = view.caps, view.caps.available
+    if request.caps:
+        try:
+            caps.validate_overrides()
+        except (ValueError, FileNotFoundError) as exc:
+            findings.append(_finding(name, "caps.overrides", _error(exc)))
     if "mobile" not in available:
         findings.append(_finding(name, "caps", "caps/mobile.yaml is missing, every robot needs a mobile cap"))
     else:
@@ -310,7 +389,7 @@ def _definition_findings(view: RobotView) -> list[dict[str, Any]]:
             except Exception as exc:
                 findings.append(_finding(name, "caps.mobile", f"{field}: {_error(exc)}"))
     try:
-        sensors = view.effective_sensors({})
+        sensors = view.effective_sensors(request.parts, frames=request.frames)
     except Exception as exc:
         findings.append(_finding(name, "sensors", _error(exc)))
         sensors = []
@@ -401,10 +480,22 @@ def _component_owners(view: RobotView) -> set[str]:
 def robots_check(
     model: Annotated[str | None, Field(description="one robot model, all models when omitted")] = None,
     include_uninitialized: Annotated[bool, Field(description="also check mesh URIs of robots whose mesh submodules are not checked out (arena feature robots check --all)")] = False,
+    parts: PartsArg = None,
+    frames: FramesArg = None,
+    caps: CapsArg = None,
 ) -> dict[str, Any]:
-    """Validate robot definitions (params, caps, sensors, control, arms) and run `arena feature robots check` for mesh URIs, as structured findings."""
+    """Validate robot definitions (params, caps, sensors, control, arms) and run `arena feature robots check` for mesh URIs, as structured findings. With parts, frames or caps (they need model) the definition checks run on that instance, an invalid morphology, frame or cap override is a finding."""
+    if (parts or frames or caps) and not model:
+        raise ToolError("parts, frames and caps describe one instance, pass model", hint="robots_catalog names the models")
     views = [_view(model)] if model else [_view(name) for name in _models()]
-    findings = [finding for view in views for finding in _definition_findings(view)]
+    findings: list[dict[str, Any]] = []
+    for view in views:
+        try:
+            request = _request(view, parts, frames, caps)
+        except (ValueError, RuntimeError) as exc:
+            findings.append(_finding(view.name, "request", _error(exc)))
+            continue
+        findings.extend(_definition_findings(view, request))
     uri = _uri_check(include_uninitialized)
     owners = ({views[0].name} | _component_owners(views[0])) if model else None
     for miss in uri["missing"]:
@@ -469,12 +560,15 @@ def _served(entry: dict[str, Any], actions: list[str]) -> dict[str, Any]:
 
 @domain.tool(read_only=True)
 async def robots_fleet(env_id: EnvId = None) -> list[dict[str, Any]]:
-    """The live robots of an env: name, model, namespace, frames, caps with bound adapters, morphology, which task actions are served right now and cmd_vel subscribers."""
+    """The live robots of an env: name, model, namespace, frames, caps with bound adapters, morphology, its active cap overrides, which task actions are served right now and cmd_vel subscribers."""
     robots = await fleet(env_id)
     graph = await ROS.graph()
     node = await ROS.node()
+    from arena_robots.fleet import fleet_cap_overrides
+
     for entry in robots:
         entry["actions"] = _served(entry, graph["actions"])
+        entry["cap_overrides"] = fleet_cap_overrides(entry["params"])
         cmd_vel = _topic(entry["ns"], "cmd_vel")
         entry["cmd_vel"] = {"topic": cmd_vel, "subscribers": node.count_subscribers(cmd_vel)}
     return robots
@@ -649,7 +743,9 @@ def _actuator_spec(entry: dict[str, Any], cap: str, instance: str) -> tuple[str,
     if cap not in {item["cap"] for item in entry["caps"]}:
         raise ToolError(f"robot {entry['name']} has no {cap} cap", hint=f"caps: {', '.join(item['cap'] for item in entry['caps'])}")
     view = _view(entry["model"])
-    instances = getattr(view.effective_caps(_parts(view, entry["params"])), cap) or {}
+    from arena_robots.fleet import fleet_cap_overrides, fleet_parts
+
+    instances = getattr(view.effective_caps(fleet_parts(view, entry["params"]), caps=fleet_cap_overrides(entry["params"])), cap) or {}
     if not instance:
         if len(instances) != 1:
             raise ToolError(f"robot {entry['name']} has {len(instances)} {cap} instances, pass instance", hint=f"instances: {', '.join(sorted(instances))}")
@@ -854,27 +950,12 @@ async def robots_pose(env_id: EnvId = None, robot: RobotName = None) -> dict[str
     return cast("dict[str, Any]", msgs.jsonable(out))
 
 
-def _parts(view: RobotView, params: dict[str, str]) -> dict[str, list[RequestPart]]:
-    from arena_robots.assembly import RequestPart
-
-    spec = view.assembly
-    if spec is None:
-        return {}
-    defaults = {(type_, part.mount, part.variant): part for type_, parts in spec.defaults.items() for part in parts}
-    request: dict[str, list[RequestPart]] = {}
-    for key, variant in params.items():
-        type_, sep, mount = key.partition("@")
-        if not sep:
-            continue
-        default = defaults.get((type_, mount, variant)) or defaults.get((type_, None, variant))
-        request.setdefault(type_, []).append(RequestPart(variant=variant, mount=mount, overrides=dict(default.overrides) if default is not None else {}))
-    return request
-
-
 def _live_sensors(entry: dict[str, Any]) -> list[dict[str, Any]]:
     view = _view(entry["model"])
     try:
-        specs = view.effective_sensors(_parts(view, entry["params"]))
+        from arena_robots.fleet import fleet_parts
+
+        specs = view.effective_sensors(fleet_parts(view, entry["params"]))
     except Exception as exc:
         raise ToolError(f"sensors of {entry['name']} ({entry['model']}) do not resolve from its parts {entry['params']}: {_error(exc)}", hint="robots_check validates the model's assembly") from exc
     return [_sensor_dict(spec, entry["ns"]) for spec in specs]

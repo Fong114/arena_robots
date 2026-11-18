@@ -116,6 +116,10 @@ actions:
 
 laser: {angle: {min: -2.35619, max: 2.35619}, num_beams: 720, range: 30.0, update_rate: 10}
 
+limits:                    # optional, per axis, each axis defaults to planar's
+  velocity: {linear: [-2.0, 2.0], angular: [-4.0, 4.0]}
+  acceleration: {linear: 20.0, angular: 25.0}
+
 planar:
   velocity: {linear: [-2.0, 2.0], lateral: [0.0, 0.0], angular: [-4.0, 4.0]}
   acceleration: {linear: 20.0, lateral: .inf, angular: 25.0}
@@ -171,6 +175,13 @@ robot. The nav2 adapter gives such a base the `default_no_spin` behavior tree
 in place of `default`, whose spin recovery it cannot drive, unless
 `robot.mobile.inter_planner` names another tree.
 
+`limits` is the base's physical velocity and acceleration per axis, the one
+source of the actuator limits: an axis it names replaces the same axis of
+`planar.velocity` or `planar.acceleration`, and the effective cap carries
+`limits` in their place. On every axis `limits` names, `velocity_limits` and
+`acceleration_limits` are clamped to it. Files that leave `limits` out keep
+their planner limits as written.
+
 `climbs` lists the world stair kinds (`stairs`, `escalator`) the base can
 drive through. Cross-level routing sends the robot through the boarding half of
 a stair only when its kind is listed, and an explicit `via` naming a stair the
@@ -188,6 +199,20 @@ ground on every level. Returns beyond `obstacle_range` or within the footprint's
 outer radius are dropped. Velocity limits cap the mesh controller. Goals go to
 MBF's Dijkstra mesh planner, `planner: cvp` picks the fast marching planner, whose
 path back-tracking fails across some stair terraces.
+
+`rosnav_rl.agent` names the agent directory under `ROSNAV_AGENTS_DIR` (else
+`$ARENA_DATA_DIR/agents`). At launch the `rosnav_rl` bringup, and the `nav2`
+bringup with `local_planner=rosnav_rl`, compare the continuous action ranges in
+the agent's `training_config.yaml` with the instance's effective
+`velocity_limits` (linear, angular, and lateral on a holonomic base) and log a
+warning naming both ranges when they differ. A missing or unreadable agent
+config logs that the check was skipped.
+
+Bringups and the task server read caps through the instance's effective caps
+(`Bringup.caps`: parts, frames and the request's cap overrides applied), so an
+instance that overrides `mobile.velocity_limits` or a placed part's fields (`top=arm/fr3[stall_time=2.0]`) is
+planned, launched and served with those values, while the model's `caps/` files
+stay untouched.
 
 #### `caps/arm.yaml`, `caps/lift.yaml`, `caps/gripper.yaml`: dict-keyed
 

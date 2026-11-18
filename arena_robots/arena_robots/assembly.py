@@ -11,6 +11,8 @@ import typing
 
 import attrs
 
+from arena_robots.inline import split_part
+
 
 class AssemblyError(RuntimeError):
     """Infeasible or malformed assembly request. The message is the product: name the
@@ -112,6 +114,8 @@ class RequestPart:
     mount: str | None = None
     params: dict[str, object] = attrs.field(factory=dict)
     overrides: dict[str, str] = attrs.field(factory=dict)
+    caps: dict[str, object] = attrs.field(factory=dict)
+    """Cap overrides of this part (field path within its cap instance to a value or an operation)."""
 
 
 def _validate_mount_dag(mounts: dict[str, Mount]) -> None:
@@ -216,6 +220,8 @@ class Placement:
     overrides: dict[str, str] = attrs.field(factory=dict)
     """Copied verbatim from the originating ``DefaultPart`` or ``RequestPart``; consumed
     only by ``catalog.render_effective_sensors``."""
+    caps: dict[str, object] = attrs.field(factory=dict)
+    """The originating ``RequestPart``'s cap overrides."""
 
 
 @attrs.define
@@ -234,6 +240,7 @@ class _Item:
     params: dict[str, object]
     local_index: int
     overrides: dict[str, str] = attrs.field(factory=dict)
+    caps: dict[str, object] = attrs.field(factory=dict)
 
 
 def build_request(spec: AssemblySpec, directives: dict[str, list[str]]) -> tuple[dict[str, list[RequestPart]], frozenset[str], frozenset[str]]:
@@ -253,7 +260,17 @@ def build_request(spec: AssemblySpec, directives: dict[str, list[str]]) -> tuple
     cleared_sockets: set[str] = set()
     cleared_types: set[str] = set()
 
-    for lhs, values in directives.items():
+    for lhs, raw_values in directives.items():
+        split: list[tuple[str, dict[str, object]]] = []
+        for raw in raw_values:
+            try:
+                split.append(split_part(raw))
+            except ValueError as e:
+                raise AssemblyError(f"'{lhs}': {e}") from e
+        values = [value for value, _ in split]
+        part_caps = {value: caps for value, caps in split}
+        if any(caps for value, caps in split if value == 'none'):
+            raise AssemblyError(f"'{lhs}': 'none' takes no cap overrides")
         if lhs in spec.mounts:
             mount = spec.mounts[lhs]
             has_clear = 'none' in values
@@ -275,7 +292,7 @@ def build_request(spec: AssemblySpec, directives: dict[str, list[str]]) -> tuple
                         raise AssemblyError(f"socket '{lhs}' accepts multiple types {sorted(mount.accepts)}; use type/variant")
                     typ = mount.accepts[0]
                     variant = value
-                request.setdefault(typ, []).append(RequestPart(variant=variant, mount=lhs))
+                request.setdefault(typ, []).append(RequestPart(variant=variant, mount=lhs, caps=part_caps[value]))
         elif lhs in known_types:
             has_clear = 'none' in values
             fills = [v for v in values if v != 'none']
@@ -284,8 +301,9 @@ def build_request(spec: AssemblySpec, directives: dict[str, list[str]]) -> tuple
             if has_clear:
                 cleared_types.add(lhs)
                 continue
-            for value in fills:
-                request.setdefault(lhs, []).append(RequestPart(variant=value, mount=None))
+            for value, caps in split:
+                if value != 'none':
+                    request.setdefault(lhs, []).append(RequestPart(variant=value, mount=None, caps=caps))
         else:
             raise AssemblyError(f"unknown '{lhs}': not a mount {sorted(spec.mounts)} nor an accepted type {sorted(known_types)}")
 
@@ -346,8 +364,8 @@ def _match(items: list[_Item], mounts_pool: list[str], mounts: dict[str, Mount])
 
 def _pinned_item(part_type: str, part: RequestPart, default: DefaultPart | None, index: int) -> _Item:
     if default is None:
-        return _Item(type=part_type, variant=part.variant, mount=part.mount, params={}, overrides=part.overrides, local_index=index)
-    return _Item(type=part_type, variant=part.variant, mount=part.mount, params=dict(default.params), overrides={**default.overrides, **part.overrides}, local_index=index)
+        return _Item(type=part_type, variant=part.variant, mount=part.mount, params={}, overrides=part.overrides, local_index=index, caps=dict(part.caps))
+    return _Item(type=part_type, variant=part.variant, mount=part.mount, params=dict(default.params), overrides={**default.overrides, **part.overrides}, local_index=index, caps=dict(part.caps))
 
 
 def resolve(
@@ -448,6 +466,7 @@ def resolve(
                 mount=spec.mounts[mount_name],
                 params=dict(item.params),
                 overrides=dict(item.overrides),
+                caps=dict(item.caps),
             )
         )
 

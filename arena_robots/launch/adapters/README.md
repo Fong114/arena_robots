@@ -39,6 +39,22 @@ no scans and publishes no TF, and the simulator keeps `map -> odom`. Nav2's life
 manager brings `slam_toolbox` up before the costmaps, and its absolute `/map` and
 `/map_metadata` are remapped into the robot's namespace.
 
+`mobile_caps` is the mobile cap file the derived nav2 parameters read (default
+the model's `robots/<robot>/caps/mobile.yaml`). `Nav2Bringup` and `DrlBringup`
+pass it only for an instance whose request overrides `mobile.` keys: the
+effective `mobile` cap is written to a per-instance temp YAML named
+`mobile_caps_<host>_<namespace>.yaml` in the temp dir and its path is the argument. Without such an
+override the model file is used. [`global_planner/nav2.launch.py`](../global_planner/nav2.launch.py)
+forwards the argument to this file.
+
+### `arm/moveit.launch.py`
+
+Internals of `arena_robots.bringup.arm.moveit.MoveItArmBringup`. Starts one
+`move_group` for the arm instance named by `instance` (empty = the only arm).
+`request_json` carries the instance request (`parts`, `frames`, cap overrides,
+`InstanceRequest.dumps()`), from which `build_moveit_params` resolves the
+effective arm caps.
+
 ### `none.launch.py`
 
 Internals of `arena_robots.bringup.none.NoneBringup`. Spins up no navigation

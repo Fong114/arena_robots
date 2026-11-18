@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import functools
+import os
+import socket
+import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, ClassVar
 
 import attrs
+import yaml
 
 if TYPE_CHECKING:
+    from arena_robots.caps import RobotCaps
     from arena_robots.Robot import RobotView
     from arena_robots.Sensor import SensorSpec
     from arena_robots.task_server_handlers import TaskHandler
@@ -14,6 +20,7 @@ if TYPE_CHECKING:
 from arena_rclpy_mixins.shared import Namespace
 from launch import Action
 
+from arena_robots.request import InstanceRequest
 from arena_robots.task_kinds import TaskKind
 
 
@@ -50,11 +57,30 @@ class Bringup(ABC):
     _bringup_meta: ClassVar[BringupMeta]
     task_handlers: ClassVar[dict[TaskKind, Callable[[], type[TaskHandler]]]] = {}
 
-    def __init__(self, robot: RobotView, namespace: str, *, frame: str = "", parts: dict[str, list] | None = None) -> None:
+    def __init__(self, robot: RobotView, namespace: str, *, frame: str = "", request: InstanceRequest | None = None) -> None:
         self.robot = robot
         self.namespace = Namespace(namespace)
         self.frame = frame
-        self.parts: dict[str, list] = parts if parts is not None else {}
+        self.request = request if request is not None else InstanceRequest()
+
+    @property
+    def parts(self) -> dict[str, list]:
+        return self.request.parts
+
+    @functools.cached_property
+    def caps(self) -> RobotCaps:
+        """The instance's effective caps: parts, frame overrides and cap overrides applied."""
+        return self.request.caps_of(self.robot)
+
+    def mobile_caps_launch_arguments(self) -> dict[str, str]:
+        """`mobile_caps` pointing at the per-host, per-namespace temp file of the effective mobile cap when the request overrides it, else empty."""
+        if not any(key.startswith("mobile.") for key in self.request.caps):
+            return {}
+        label = str(self.namespace).strip("/").replace("/", "_") or self.robot.name
+        path = os.path.join(tempfile.gettempdir(), f"mobile_caps_{socket.gethostname()}_{label}.yaml")
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(self.caps.mobile.raw, f)
+        return {"mobile_caps": path}
 
     @property
     def cap(self) -> str:
@@ -120,7 +146,7 @@ class Bringup(ABC):
 
 
 def check_caps(bringup: Bringup) -> None:
-    available = bringup.robot.effective_caps(bringup.parts).available
+    available = bringup.caps.available
     missing = bringup.requires - available
     if missing:
         raise AdapterCapMismatch(f"Bringup {bringup.kind!r} requires caps {sorted(missing)} but robot {bringup.robot.name!r} only advertises {sorted(available)}")

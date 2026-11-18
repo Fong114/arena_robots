@@ -4,6 +4,7 @@ from pathlib import Path
 
 from arena_rclpy_mixins.launch_argument import LaunchArgument
 from arena_robots.bringup import check_caps, BRINGUPS
+from arena_robots.request import InstanceRequest
 from arena_robots.Robot import RobotIdentifier
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription, OpaqueFunction
@@ -35,14 +36,12 @@ def generate_launch_description():
         use_sim_time = use_sim_time_str.lower() in ('true', '1', 'yes')
 
         view = RobotIdentifier(name).resolve_sync()
-        bringup = BRINGUPS[cap].get(kind)(robot=view, namespace=ns)
+        bringup = BRINGUPS[cap].get(kind)(robot=view, namespace=ns, request=InstanceRequest())
         check_caps(bringup)
 
         simulation_setup_root = FindPackageShare('arena_simulation_setup')
         state_publisher = IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                PathJoinSubstitution([simulation_setup_root, 'launch', 'state_publisher.launch.py'])
-            ),
+            PythonLaunchDescriptionSource(PathJoinSubstitution([simulation_setup_root, 'launch', 'state_publisher.launch.py'])),
             launch_arguments={
                 'namespace': ns,
                 'robot': name,
@@ -58,4 +57,3 @@ def generate_launch_description():
         return actions
 
     return LaunchDescription([*ld_items, OpaqueFunction(function=_compose)])
-

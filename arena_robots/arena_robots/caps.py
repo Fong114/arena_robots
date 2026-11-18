@@ -31,6 +31,7 @@ from arena_simulation_setup.tree.Gesture import GestureSpec
 
 from arena_robots.assembly import ResolvedAssembly
 from arena_robots.catalog import Catalog, _frame_stem, resolve_mount_parent
+from arena_robots.inline import APPEND_KEY, OFFSET_KEY, SCALE_KEY, WILDCARD, is_affine, is_append, is_delete
 
 _CAPS_PREFIX = 'robot_'
 """Frame-templating prefix for placement-rendered caps; matches
@@ -307,6 +308,94 @@ class PlanarSpec:
         )
 
 
+LIMIT_SECTIONS = ('velocity', 'acceleration')
+
+
+@attrs.define(slots=False)
+class LimitsSpec:
+    """What the base can physically do per axis, the one source of the actuator limits and the bound of the planner-facing ones."""
+
+    velocity: dict[str, Range]
+    acceleration: dict[str, float]
+
+    @classmethod
+    def from_dict(cls, d: dict[str, typing.Any]) -> LimitsSpec:
+        def axes(key: str) -> dict[str, typing.Any]:
+            raw = d.get(key, {})
+            if not isinstance(raw, dict) or not set(raw) <= set(PLANAR_AXES):
+                raise ValueError(f"limits.{key}: expected a mapping over {list(PLANAR_AXES)}; got {raw!r}")
+            return raw
+
+        unknown = set(d) - set(LIMIT_SECTIONS)
+        if unknown:
+            raise ValueError(f"limits: unknown keys {sorted(unknown)}, known: {list(LIMIT_SECTIONS)}")
+        return cls(
+            velocity={axis: Range.from_value(v, f'limits.velocity.{axis}') for axis, v in axes('velocity').items()},
+            acceleration={axis: float(v) for axis, v in axes('acceleration').items()},
+        )
+
+
+def _merged_limits(planar: object, limits: object, label: str) -> dict[str, dict[str, typing.Any]]:
+    for name, value in (('planar', planar), ('limits', limits)):
+        if value is not None and not isinstance(value, dict):
+            raise ValueError(f"{label}: '{name}' must be a mapping; got {type(value).__name__}")
+    planar_raw = typing.cast(dict[str, typing.Any], planar or {})
+    limits_raw = typing.cast(dict[str, typing.Any], limits or {})
+    return {section: {**(planar_raw.get(section) or {}), **(limits_raw.get(section) or {})} for section in LIMIT_SECTIONS}
+
+
+def _touched_axes(overrides: typing.Mapping[str, object], limits: dict[str, dict[str, typing.Any]]) -> set[tuple[str, str]]:
+    touched: set[tuple[str, str]] = set()
+    for path in overrides:
+        head, *rest = path.split('.')
+        if head not in ('limits', WILDCARD):
+            continue
+        sections = LIMIT_SECTIONS if not rest or rest[0] == WILDCARD else (rest[0],)
+        for section in sections:
+            axes = limits.get(section, {})
+            touched |= {(section, axis) for axis in (axes if len(rest) < 2 or rest[1] == WILDCARD else [rest[1]]) if axis in axes}
+    return touched
+
+
+def _clamp_to_limits(data: dict[str, typing.Any], axes: set[tuple[str, str]]) -> None:
+    limits = data['limits']
+    for section, axis in sorted(axes):
+        if section == 'velocity':
+            planner = data.get('velocity_limits')
+            if not isinstance(planner, dict) or axis not in planner:
+                continue
+            bound = Range.from_value(limits['velocity'][axis], f'limits.velocity.{axis}')
+            have = Range.from_value(planner[axis], f'velocity_limits.{axis}')
+            lo = min(max(have.min, bound.min), bound.max)
+            hi = max(min(have.max, bound.max), bound.min)
+            planner[axis] = {'min': lo, 'max': hi} if isinstance(planner[axis], dict) else [lo, hi]
+        else:
+            planner = data.get('acceleration_limits')
+            if isinstance(planner, dict) and axis in planner:
+                planner[axis] = min(float(planner[axis]), float(limits['acceleration'][axis]))
+
+
+def normalize_mobile(data: dict[str, typing.Any], overrides: typing.Mapping[str, object], *, label: str, known: frozenset[str]) -> dict[str, typing.Any]:
+    """The mobile cap with ``limits`` materialized from ``planar``, ``overrides`` applied, and the planner limits clamped on every axis ``limits`` names explicitly."""
+    for path in overrides:
+        head, _, rest = path.partition('.')
+        section = rest.partition('.')[0]
+        if head == 'planar' and section in LIMIT_SECTIONS:
+            raise ValueError(f"{label}: cap override '{path}': the base's {section} limits live in 'limits', override 'limits.{rest}' (planar keeps gain, lag, traction, pivot and timeout)")
+    declared = data.get('limits')
+    out = copy.deepcopy(data)
+    if out.get('planar') is not None or declared is not None:
+        out['limits'] = _merged_limits(out.get('planar'), declared, label)
+        if isinstance(out.get('planar'), dict):
+            out['planar'] = {k: v for k, v in out['planar'].items() if k not in LIMIT_SECTIONS}
+    if overrides:
+        out = overlay(out, overrides, label=label, known=known)
+    if isinstance(out.get('limits'), dict):
+        explicit = {(section, axis) for section in LIMIT_SECTIONS for axis in ((declared or {}).get(section) or {})}
+        _clamp_to_limits(out, explicit | _touched_axes(overrides, out['limits']))
+    return out
+
+
 @attrs.define(slots=False)
 class CapConfig:
     """Raw cap file content + the path it came from, for error messages and
@@ -433,11 +522,16 @@ class MobileSpec(CapConfig):
     @property
     def planar(self) -> PlanarSpec | None:
         v = self.raw.get('planar')
-        if v is None:
+        if v is None and self.raw.get('limits') is None:
             return None
-        if not isinstance(v, dict):
-            raise ValueError(f"{self.path}: 'planar' must be a mapping; got {type(v).__name__}")
-        return PlanarSpec.from_dict(v)
+        merged = _merged_limits(v, self.raw.get('limits'), str(self.path))
+        return PlanarSpec.from_dict({**typing.cast(dict[str, typing.Any], v or {}), **merged})
+
+    @property
+    def limits(self) -> LimitsSpec | None:
+        if self.raw.get('planar') is None and self.raw.get('limits') is None:
+            return None
+        return LimitsSpec.from_dict(_merged_limits(self.raw.get('planar'), self.raw.get('limits'), str(self.path)))
 
     @property
     def laser(self) -> LaserSpec | None:
@@ -646,6 +740,127 @@ _INSTANCE_CLASSES: dict[str, type[InstanceSpec]] = {
 }
 
 
+def typed_fields(cls: type[CapConfig]) -> frozenset[str]:
+    return frozenset(name for klass in cls.__mro__ for name, member in vars(klass).items() if isinstance(member, property))
+
+
+def _affine(value: object, scale: float, offset: float, path: str) -> object:
+    if isinstance(value, bool) or not isinstance(value, int | float | list | dict):
+        raise ValueError(f"cap override '{path}': cannot scale or offset {value!r}")
+    if isinstance(value, list):
+        return [_affine(v, scale, offset, path) for v in value]
+    if isinstance(value, dict):
+        return {k: _affine(v, scale, offset, f'{path}.{k}') for k, v in value.items()}
+    return value * scale + offset
+
+
+def _number(ops: typing.Mapping[str, object], key: str, default: float, label: str) -> float:
+    v = ops.get(key, default)
+    if isinstance(v, bool) or not isinstance(v, int | float):
+        raise ValueError(f"{label}: {key} must be a number, got {v!r}")
+    return float(v)
+
+
+def _operate(current: object, present: bool, value: object, *, path: str, label: str) -> object:
+    if is_append(value):
+        if not isinstance(current, list):
+            raise ValueError(f"{label}: cap override '{path}': append needs a list, got {current!r}")
+        return [*current, *copy.deepcopy(typing.cast(dict[str, list[object]], value)[APPEND_KEY])]
+    if is_affine(value):
+        if not present:
+            raise ValueError(f"{label}: cap override '{path}': cannot scale or offset an unset value")
+        ops = typing.cast(dict[str, object], value)
+        return _affine(current, _number(ops, SCALE_KEY, 1.0, label), _number(ops, OFFSET_KEY, 0.0, label), path)
+    return copy.deepcopy(value)
+
+
+def _apply_leaf(node: dict[str, typing.Any] | list[typing.Any], key: str | int, value: object, *, path: str, label: str) -> None:
+    if isinstance(node, dict):
+        assert isinstance(key, str)
+        if is_delete(value):
+            if key not in node:
+                raise ValueError(f"{label}: cap override '{path}': cannot delete an unset value")
+            del node[key]
+            return
+        node[key] = _operate(node.get(key), key in node, value, path=path, label=label)
+        return
+    assert isinstance(key, int)
+    if is_delete(value):
+        del node[key]
+        return
+    node[key] = _operate(node[key], True, value, path=path, label=label)
+
+
+def _apply(node: object, segments: list[str], value: object, *, path: str, label: str, known: frozenset[str], depth: int, created: bool = False) -> None:
+    key, rest = segments[0], segments[1:]
+    if isinstance(node, list):
+        if key == WILDCARD:
+            indices = list(reversed(range(len(node))))
+        else:
+            try:
+                index = int(key)
+            except ValueError:
+                raise ValueError(f"{label}: cap override '{path}': '{key}' indexes a list, use an integer or '{WILDCARD}'") from None
+            if not -len(node) <= index < len(node):
+                raise ValueError(f"{label}: cap override '{path}': index {index} out of range for a list of {len(node)}")
+            indices = [index]
+        if not indices:
+            raise ValueError(f"{label}: cap override '{path}': '{WILDCARD}' matches nothing")
+        for index in indices:
+            if rest:
+                _apply(node[index], rest, value, path=path, label=label, known=known, depth=depth + 1, created=created)
+            else:
+                _apply_leaf(node, index, value, path=path, label=label)
+        return
+    if not isinstance(node, dict):
+        raise ValueError(f"{label}: cap override '{path}': cannot descend into {node!r}")
+    if key == WILDCARD:
+        names = list(node)
+        if not names:
+            raise ValueError(f"{label}: cap override '{path}': '{WILDCARD}' matches nothing")
+    else:
+        if key not in node and not created and (rest or depth == 0) and not (depth == 0 and key in known):
+            raise ValueError(f"{label}: cap override '{path}': unknown field '{key}', known: {sorted(set(node) | (known if depth == 0 else frozenset()))}")
+        names = [key]
+    for name in names:
+        if not rest:
+            _apply_leaf(node, name, value, path=path, label=label)
+            continue
+        fresh = name not in node
+        if fresh:
+            node[name] = {}
+        _apply(node[name], rest, value, path=path, label=label, known=known, depth=depth + 1, created=created or fresh)
+
+
+def overlay(data: dict[str, typing.Any], overrides: typing.Mapping[str, object], *, label: str, known: frozenset[str] = frozenset()) -> dict[str, typing.Any]:
+    """A deep copy of one cap entry with ``overrides`` (path relative to the entry) applied in order.
+
+    A path segment is a key, an integer list index or ``*`` for every key or element. Every parent must exist,
+    except a top-level field in ``known`` the entry leaves unset. A value sets, or is an affine, append or delete operation.
+    """
+    out = copy.deepcopy(data)
+    for path, value in overrides.items():
+        _apply(out, path.split('.'), value, path=path, label=label, known=known, depth=0)
+    return out
+
+
+def adapter_blocks(cap: str) -> frozenset[str]:
+    """The bringup kinds registered for ``cap``, each a block its cap file may carry."""
+    from arena_robots.bringup import BRINGUPS
+
+    return frozenset(BRINGUPS[cap].keys()) if cap in BRINGUPS else frozenset()
+
+
+def _split_instance_overrides(cap: str, overrides: typing.Mapping[str, object]) -> dict[str, dict[str, object]]:
+    grouped: dict[str, dict[str, object]] = {}
+    for path, value in overrides.items():
+        instance, _, field_path = path.partition('.')
+        if not field_path:
+            raise ValueError(f"cap override '{cap}.{path}': an instance cap override names '<instance>.<field>'")
+        grouped.setdefault(instance, {})[field_path] = value
+    return grouped
+
+
 @attrs.define(slots=False)
 class RobotCaps:
     """Lazy, typed view over a robot's caps/ directory.
@@ -659,6 +874,10 @@ class RobotCaps:
     without a static `caps/<type>.yaml` file, and instances render one spec per
     placement instead of reading the static file. Leaving both `None` (the
     default) reproduces the file-only behavior byte-identically.
+
+    ``overrides`` (``<cap>.<path>`` to a value or an operation) are one robot
+    instance's cap overrides, applied on top of the files and placement-rendered instances
+    together with each placement's own ``caps`` (as ``<type>.<mount>.<path>``).
     """
 
     caps_dir: Path
@@ -666,6 +885,7 @@ class RobotCaps:
     catalog: Catalog | None = None
     # chassis assembly prefix (${prefix}); robots with no prefix convention (jackal) pass ""
     prefix: str = _CAPS_PREFIX
+    overrides: dict[str, object] = attrs.field(factory=dict)
 
     _cached: dict[str, typing.Any] = attrs.field(factory=dict, init=False)
 
@@ -690,8 +910,70 @@ class RobotCaps:
             data = yaml.safe_load(f) or {}
         if not isinstance(data, dict):
             raise ValueError(f"{path}: top-level structure must be a mapping; got {type(data).__name__}")
+        data = self._overlay_file(cap, data, path)
         self._cached[cap] = data
         return data
+
+    @property
+    def all_overrides(self) -> dict[str, object]:
+        """The placements' part overrides as ``<type>.<mount>.<path>``, then ``overrides``."""
+        placed = {f'{p.type}.{p.mount.name}.{path}': value for p in self.resolved.placements for path, value in p.caps.items()} if self.resolved is not None else {}
+        return {**placed, **self.overrides}
+
+    def _cap_overrides(self, cap: str) -> dict[str, object]:
+        prefix = f'{cap}.'
+        return {path.removeprefix(prefix): value for path, value in self.all_overrides.items() if path.startswith(prefix)}
+
+    def _overlay_file(self, cap: str, data: dict[str, typing.Any], path: Path) -> dict[str, typing.Any]:
+        rel = self._cap_overrides(cap)
+        if cap == 'mobile':
+            return normalize_mobile(data, rel, label=str(path), known=typed_fields(MobileSpec) | adapter_blocks(cap))
+        if not rel:
+            return data
+        instance_cls = _INSTANCE_CLASSES.get(cap)
+        if instance_cls is None:
+            return overlay(data, rel, label=str(path), known=adapter_blocks(cap))
+        out = dict(data)
+        grouped = _split_instance_overrides(cap, rel)
+        every = grouped.pop(WILDCARD, {})
+        for instance, entry in data.items():
+            if every and isinstance(entry, dict):
+                out[instance] = overlay(entry, every, label=f'{path} {instance}', known=typed_fields(instance_cls))
+        for instance, instance_rel in grouped.items():
+            entry = out.get(instance)
+            if not isinstance(entry, dict):
+                raise ValueError(f"{path}: cap override targets unknown {cap} instance {instance!r}, instances: {sorted(data)}")
+            out[instance] = overlay(entry, instance_rel, label=f'{path} {instance}', known=typed_fields(instance_cls))
+        return out
+
+    def validate_overrides(self) -> None:
+        """Applies every override and reads each overridden typed field, raising ``ValueError`` on the first bad one."""
+        placed = {(p.type, p.mount.name): p.variant for p in self.resolved.placements} if self.resolved is not None else {}
+        for path in self.overrides:
+            cap, _, rest = path.partition('.')
+            mount, _, field = rest.partition('.')
+            if (cap, mount) in placed:
+                raise ValueError(f"cap override '{path}' targets the part placed on mount '{mount}', write it in the part's brackets: {mount}={cap}/{placed[cap, mount]}[{field}=...]")
+        for cap in sorted({path.partition('.')[0] for path in self.all_overrides}):
+            if cap not in self.available:
+                raise ValueError(f"cap override on '{cap}': the robot does not advertise it, caps: {sorted(self.available)}")
+            rel = self._cap_overrides(cap)
+            instance_cls = _INSTANCE_CLASSES.get(cap)
+            if instance_cls is None:
+                if cap != 'mobile':
+                    self._load_cap_file(cap)
+                    continue
+                mobile = self.mobile
+                for field in {path.partition('.')[0] for path in rel} & typed_fields(MobileSpec):
+                    getattr(mobile, field)
+                continue
+            instances = self._instances(cap, instance_cls) or {}
+            for instance, instance_rel in _split_instance_overrides(cap, rel).items():
+                if instance != WILDCARD and instance not in instances:
+                    raise ValueError(f"cap override targets unknown {cap} instance {instance!r}, instances: {sorted(instances)}")
+                for name in instances if instance == WILDCARD else [instance]:
+                    for field in {path.partition('.')[0] for path in instance_rel} & typed_fields(instance_cls):
+                        getattr(instances[name], field)
 
     @property
     def mobile(self) -> MobileSpec:
@@ -717,6 +999,7 @@ class RobotCaps:
     ) -> dict[str, typing.Any] | None:
         placements = [p for p in self.resolved.placements if p.type == cap] if self.resolved is not None else []
         if placements:
+            rel = _split_instance_overrides(cap, self._cap_overrides(cap))
             assert self.resolved is not None and self.catalog is not None
             path = self.caps_dir / f'{cap}.yaml'
             out: dict[str, typing.Any] = {}
@@ -734,7 +1017,13 @@ class RobotCaps:
                 rendered = _substitute_keys(rendered, context)
                 if not isinstance(rendered, dict):
                     raise ValueError(f"{placement.type} component {placement.variant!r}: 'caps' must render to a mapping; got {type(rendered).__name__}")
+                for instance_rel in (rel.get(WILDCARD), rel.get(placement.mount.name)):
+                    if instance_rel:
+                        rendered = overlay(rendered, instance_rel, label=f'{placement.type} {placement.mount.name}', known=typed_fields(cls))
                 out[placement.mount.name] = cls(path=path, raw=rendered, name=placement.mount.name)
+            unknown = set(rel) - set(out) - {WILDCARD}
+            if unknown:
+                raise ValueError(f"cap override targets unknown {cap} instance(s) {sorted(unknown)}, instances: {sorted(out)}")
             return out
 
         if cap not in self.available:

@@ -5,11 +5,12 @@ from __future__ import annotations
 import dataclasses
 import logging
 import math
-import pathlib
+import typing
 from collections.abc import Sequence
 from enum import StrEnum
 
-import yaml
+if typing.TYPE_CHECKING:
+    from arena_robots.caps import MobileSpec
 
 _log = logging.getLogger(__name__)
 
@@ -114,12 +115,11 @@ def _dwell(dwell_s: float, speed: float, label: str) -> float | None:
 
 
 def resolve_envelope(
-    robot_name: str | None = None,
+    mobile: MobileSpec | None = None,
     *,
-    caps_dir: pathlib.Path | None = None,
     fallback: tuple[float, float] | None = None,
 ) -> dict[str, float | bool]:
-    """Resolve the operating envelope (vx_max, vy_max, wz_max, radius, is_holonomic) for a robot."""
+    """Resolve the operating envelope (vx_max, vy_max, wz_max, radius, is_holonomic) of an instance's effective mobile cap."""
     vx_max = VX_MAX
     vy_max = VY_MAX
     wz_max = WZ_MAX
@@ -129,39 +129,24 @@ def resolve_envelope(
     if fallback is not None:
         vx_max, wz_max = fallback
 
-    mobile: pathlib.Path | None = None
-    try:
-        if caps_dir is not None:
-            mobile = pathlib.Path(caps_dir) / f"{robot_name}/caps/mobile.yaml" if robot_name else None
-            if mobile is None or not mobile.is_file():
-                return {"vx_max": vx_max, "vy_max": vy_max, "wz_max": wz_max, "radius": radius, "is_holonomic": is_holonomic}
-        else:
-            from ament_index_python.packages import get_package_share_directory
-
-            mobile = pathlib.Path(get_package_share_directory("arena_robots")) / "robots" / (robot_name or "") / "caps" / "mobile.yaml"
-
-        cfg = yaml.safe_load(mobile.read_text()) or {}
-        is_holonomic = bool(cfg.get("is_holonomic", False))
-        if cfg.get("radius") is not None:
-            radius = float(cfg["radius"])
-
-        continuous = cfg.get("actions", {}).get("continuous", {})
-        if isinstance(continuous, dict):
-            linear = continuous.get("linear")
-            if isinstance(linear, dict) and linear.get("max") is not None:
-                vx_max = float(linear["max"])
-            lateral = continuous.get("lateral")
-            if isinstance(lateral, dict) and lateral.get("max") is not None:
-                vy_max = float(lateral["max"])
-                is_holonomic = True
-            elif is_holonomic:
-                vy_max = vx_max
-                _log.info(f"characterization: robot {robot_name!r} declares no lateral limit, sweeping vy up to vx_max={vy_max}")
-            angular = continuous.get("angular")
-            if isinstance(angular, dict) and angular.get("max") is not None:
-                wz_max = float(angular["max"])
-    except (OSError, KeyError, TypeError, ValueError, AttributeError, yaml.YAMLError) as e:
-        _log.warning(f"characterization: robot {robot_name!r} envelope falls back to vx_max={vx_max} wz_max={wz_max} radius={radius}, could not read {mobile}: {e!r}")
+    if mobile is not None:
+        try:
+            is_holonomic = mobile.is_holonomic
+            if mobile.radius is not None:
+                radius = mobile.radius
+            actions = mobile.actions
+            if actions is not None:
+                continuous = actions.continuous
+                vx_max = continuous.linear.max
+                wz_max = continuous.angular.max
+                if continuous.lateral is not None:
+                    vy_max = continuous.lateral.max
+                    is_holonomic = True
+                elif is_holonomic:
+                    vy_max = vx_max
+                    _log.info(f"characterization: robot declares no lateral limit, sweeping vy up to vx_max={vy_max}")
+        except (KeyError, TypeError, ValueError, AttributeError) as e:
+            _log.warning(f"characterization: envelope falls back to vx_max={vx_max} wz_max={wz_max} radius={radius}, could not read the mobile cap: {e!r}")
     return {"vx_max": vx_max, "vy_max": vy_max, "wz_max": wz_max, "radius": radius, "is_holonomic": is_holonomic}
 
 

@@ -13,6 +13,7 @@ from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 from arena_robots.bringup import Bringup, BringupMeta
+from arena_robots.bringup.mobile.rosnav_rl import agent_range_actions
 from arena_robots.Sensor import SensorSpec, SensorType
 from arena_robots.sensor_geometry import sensor_geometry
 from arena_robots.task_kinds import TaskKind
@@ -65,7 +66,7 @@ class Nav2Bringup(Bringup):
         mapping: str = "static",
         **_: object,
     ) -> list[Action]:
-        agent_name = agent or str(self.robot.caps.mobile.sub("rosnav_rl").get("agent", ""))
+        agent_name = agent or str(self.caps.mobile.sub("rosnav_rl").get("agent", ""))
         if local_planner == "rosnav_rl" and not agent_name:
             raise ValueError(f"nav2 bringup for '{self.robot.name}' with local_planner=rosnav_rl missing required 'agent': set caps/mobile.yaml 'rosnav_rl.agent' or pass robot.mobile.agent:=<name>")
         if inter_planner == DEFAULT_INTER_PLANNER and self.robot.caps.mobile.min_turning_radius > 0.0:
@@ -98,6 +99,7 @@ class Nav2Bringup(Bringup):
             "agent": agent_name,
             "mapping": mapping,
             "scan_topic": scan_topic(sensors or [], str(self.namespace)),
+            **self.mobile_caps_launch_arguments(),
         }
         if sensors is not None:
             geometry = sensor_geometry(self.robot, self.parts)
@@ -114,9 +116,12 @@ class Nav2Bringup(Bringup):
                     for s in sensors
                 ]
             )
-        return [
+        actions: list[Action] = [
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(launch_file),
                 launch_arguments=launch_arguments.items(),
             )
         ]
+        if local_planner == "rosnav_rl":
+            actions.extend(agent_range_actions(self.robot.name, self.caps.mobile, agent_name))
+        return actions

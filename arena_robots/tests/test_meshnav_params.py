@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from arena_robots.bringup.mobile.meshnav import MeshNavBringup
+from arena_robots.request import InstanceRequest
 from arena_robots.Robot import RobotIdentifier
 from arena_robots.Sensor import SensorSpec, SensorType
 
@@ -41,9 +42,8 @@ def test_frames_are_the_robot_odom_and_base():
 
 def _bringup(robot: str, meshnav: dict | None = None) -> MeshNavBringup:
     view = RobotIdentifier(robot).resolve_sync()
-    if meshnav is not None:
-        view.caps.mobile.raw["meshnav"] = meshnav
-    return MeshNavBringup(view, f"/arena/env_0/arena_env_node/{robot}")
+    request = InstanceRequest(caps={f"mobile.meshnav.{key}": value for key, value in (meshnav or {}).items()})
+    return MeshNavBringup(view, f"/arena/env_0/arena_env_node/{robot}", request=request)
 
 
 def _obstacle_params(bringup: MeshNavBringup, sensors: list[SensorSpec] | None = None) -> dict:
@@ -160,5 +160,4 @@ def test_goals_go_to_the_dijkstra_planner_unless_the_robot_picks_cvp():
     assert bringup.planner == "dijkstra"
     assert set(params["planners"]) == {"dijkstra", "cvp"}
     view = RobotIdentifier("jackal").resolve_sync()
-    view.caps.mobile.raw["meshnav"] = {"planner": "cvp"}
-    assert MeshNavBringup(view, "/arena/env_0/arena_env_node/jackal").planner == "cvp"
+    assert MeshNavBringup(view, "/arena/env_0/arena_env_node/jackal", request=InstanceRequest(caps={"mobile.meshnav.planner": "cvp"})).planner == "cvp"

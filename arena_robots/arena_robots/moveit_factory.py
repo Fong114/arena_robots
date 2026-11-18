@@ -15,8 +15,10 @@ from arena_rclpy_mixins.yaml_replace import YAMLReplacer
 from moveit_configs_utils import MoveItConfigsBuilder
 
 import arena_robots.Robot
+from arena_robots.assembly import apply_frame_overrides
 from arena_robots.caps import ArmSpec, _substitute_keys
 from arena_robots.catalog import render_wrapper_xacro
+from arena_robots.request import InstanceRequest
 
 if TYPE_CHECKING:
     from arena_robots.assembly import ResolvedAssembly
@@ -207,7 +209,7 @@ def _controller_params(arm: ArmSpec) -> dict[str, object]:
     }
 
 
-def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, list] | None = None, instance: str | None = None) -> dict[str, object] | None:
+def build_moveit_params(robot_name: str, tf_prefix: str = "", request: InstanceRequest | None = None, instance: str | None = None) -> dict[str, object] | None:
     """Return a flat parameter dict (URDF, SRDF, kinematics, joint limits,
     arm controller mapping) for ``robot_name`` if it advertises ``arm`` with a
     ``caps.moveit`` block carrying a ``package`` or an ``srdf``; ``None`` otherwise.
@@ -217,11 +219,8 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, l
     planning-scene monitor looks up the same frame ids that
     robot_state_publisher publishes.
 
-    ``parts`` is the robot's morphology request (allocation-derived
-    caps); ``None``/``{}`` resolves defaults only. Both current callers
-    (moveit.launch.py, rviz_config.py) run across a launch/process boundary
-    from the env node that holds the real request and can't
-    supply it yet, so they get defaults.
+    ``request`` is the instance's morphology parts, frame overrides and cap
+    overrides; ``None`` resolves defaults only.
 
     ``instance`` selects which arm cap instance to build for (dict key from
     ``RobotCaps.arm``). ``None`` selects the sole instance when there is
@@ -237,7 +236,8 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, l
     unchanged: static chassis/SRDF/joint_limits paths.
     """
     robot = arena_robots.Robot.RobotIdentifier(robot_name).resolve_sync()
-    caps = robot.effective_caps(parts or {})
+    request = request if request is not None else InstanceRequest()
+    caps = request.caps_of(robot)
     if "arm" not in caps.available:
         return None
 
@@ -258,7 +258,9 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, l
     if "ur_type" in mappings:
         mappings.setdefault("name", mappings["ur_type"])
 
-    resolved = robot._resolved(parts or {})
+    resolved = robot._resolved(request.parts)
+    if resolved is not None:
+        resolved = apply_frame_overrides(resolved, request.frames)
 
     if resolved is not None:
         wrapper_xml = render_wrapper_xacro(robot, resolved)

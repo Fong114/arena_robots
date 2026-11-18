@@ -41,7 +41,7 @@ class DrlBringup(Bringup):
 
     @property
     def _cfg(self) -> dict:
-        return self.robot.caps.mobile.sub("drl")
+        return self.caps.mobile.sub("drl")
 
     @property
     def planner(self) -> str:
@@ -117,6 +117,7 @@ class DrlBringup(Bringup):
                     "frame": frame,
                     "kind": kind,
                     "arena_env_node": arena_env_node,
+                    **self.mobile_caps_launch_arguments(),
                 }.items(),
             )
         ]

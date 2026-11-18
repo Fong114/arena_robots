@@ -87,7 +87,7 @@ class MeshNavBringup(Bringup):
     @property
     def self_radius(self) -> float:
         """Radius about the base origin within which range returns hit the robot's own body."""
-        mobile = self.robot.caps.mobile
+        mobile = self.caps.mobile
         if mobile.footprint:
             return max(math.hypot(x, y) for x, y in mobile.footprint) + (mobile.footprint_padding or 0.0)
         return mobile.radius or 0.3
@@ -95,7 +95,7 @@ class MeshNavBringup(Bringup):
     @property
     def settings(self) -> dict[str, Any]:
         """The robot's `meshnav:` block over defaults derived from its padded footprint or radius and the stair kinds it climbs."""
-        mobile = self.robot.caps.mobile
+        mobile = self.caps.mobile
         climbs = "stairs" in mobile.climbs
         radius = _inscribed(mobile.footprint, mobile.footprint_padding or 0.0) if mobile.footprint else mobile.radius or 0.3
         laser = mobile.laser
@@ -121,7 +121,7 @@ class MeshNavBringup(Bringup):
         settings = self.settings
         with open(os.path.join(get_package_share_directory("arena_robots"), "config", "meshnav", "meshnav.yaml"), encoding="utf-8") as f:
             params = yaml.safe_load(f)["move_base_flex"]["ros__parameters"]
-        velocity = self.robot.caps.mobile.raw.get("velocity_limits", {})
+        velocity = self.caps.mobile.raw.get("velocity_limits", {})
         mesh_map = params["mesh_map"]
         mesh_map["height_diff"]["threshold"] = float(settings["max_step"])
         mesh_map["steepness"]["threshold"] = float(settings["max_slope"])

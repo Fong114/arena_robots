@@ -21,12 +21,18 @@ def generate_launch_description() -> LaunchDescription:
     namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
     frame = LaunchArgument('frame', description='Frame prefix of the robot.')
     use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
+    mobile_caps = LaunchArgument('mobile_caps', default_value=PathJoinSubstitution([FindPackageShare('arena_robots'), 'robots', robot.substitution, 'caps', 'mobile.yaml']), description='Path of the mobile cap file the nav2 parameters derive from, default the robot model caps/mobile.yaml.')
     kind = LaunchArgument('kind', description='Nav2 global planner kind.')
 
-    nav2_launch = PathJoinSubstitution([
-        FindPackageShare('arena_robots'),
-        'launch', 'adapters', 'mobile', 'nav2.launch.py',
-    ])
+    nav2_launch = PathJoinSubstitution(
+        [
+            FindPackageShare('arena_robots'),
+            'launch',
+            'adapters',
+            'mobile',
+            'nav2.launch.py',
+        ]
+    )
 
     nav2_include = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(nav2_launch),
@@ -41,6 +47,7 @@ def generate_launch_description() -> LaunchDescription:
             'train_mode': 'true',
             'planner_only': 'true',
             'arena_env_node': arena_env_node.substitution,
+            'mobile_caps': mobile_caps.substitution,
         }.items(),
     )
 

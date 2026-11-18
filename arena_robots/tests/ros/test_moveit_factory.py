@@ -10,6 +10,8 @@ from collections.abc import Callable
 
 import pytest
 
+from arena_robots.request import InstanceRequest
+
 _XACRO = shutil.which("xacro")
 
 
@@ -119,7 +121,7 @@ class TestBuildMoveitParamsAllocationMatchesPlus:
         from arena_robots.moveit_factory import build_moveit_params
 
         require_installed("rbvogui_plus")
-        mine = build_moveit_params("rbvogui", tf_prefix="robot_", parts={"arm": [RequestPart(variant="ur5e")]})
+        mine = build_moveit_params("rbvogui", tf_prefix="robot_", request=InstanceRequest(parts={"arm": [RequestPart(variant="ur5e")]}))
         plus = build_moveit_params("rbvogui_plus", tf_prefix="robot_")
         assert mine is not None
         assert plus is not None
@@ -168,7 +170,7 @@ class TestBuildMoveitParamsZeroPrefixChassis(_SrdfLinksExist):
         from arena_robots.moveit_factory import build_moveit_params
 
         require_installed("arm/ur")
-        p = build_moveit_params("jackal", tf_prefix="", parts={"arm": [RequestPart(variant="ur5e", mount="top")]}, instance="top")
+        p = build_moveit_params("jackal", tf_prefix="", request=InstanceRequest(parts={"arm": [RequestPart(variant="ur5e", mount="top")]}), instance="top")
         assert p is not None
         return p
 
@@ -196,7 +198,7 @@ class TestBuildMoveitParamsWithGripper(_SrdfLinksExist):
         p = build_moveit_params(
             "jackal",
             tf_prefix="",
-            parts={"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]},
+            request=InstanceRequest(parts={"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]}),
             instance="top",
         )
         assert p is not None
@@ -224,7 +226,7 @@ class TestBuildMoveitParamsWithGripper(_SrdfLinksExist):
         p = build_moveit_params(
             "jackal",
             tf_prefix="env_0/jackal/",
-            parts={"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]},
+            request=InstanceRequest(parts={"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]}),
             instance="top",
         )
         ee = next(iter(ET.fromstring(p["robot_description_semantic"]).iter("end_effector")))
@@ -244,7 +246,7 @@ class TestBuildMoveitParamsSmallUrComponents(_SrdfLinksExist):
         from arena_robots.moveit_factory import build_moveit_params
 
         require_installed("arm/ur")
-        p = build_moveit_params("jackal", tf_prefix="", parts={"arm": [RequestPart(variant=request.param, mount="top")]}, instance="top")
+        p = build_moveit_params("jackal", tf_prefix="", request=InstanceRequest(parts={"arm": [RequestPart(variant=request.param, mount="top")]}), instance="top")
         assert p is not None
         return p
 
@@ -294,7 +296,7 @@ class TestBuildMoveitParamsFr3(_SrdfLinksExist):
         p = build_moveit_params(
             "rbkairos",
             tf_prefix="",
-            parts={"arm": [RequestPart(variant="fr3", mount="arm_mount")], "gripper": [RequestPart(variant="franka_hand", mount="gripper_mount")]},
+            request=InstanceRequest(parts={"arm": [RequestPart(variant="fr3", mount="arm_mount")], "gripper": [RequestPart(variant="franka_hand", mount="gripper_mount")]}),
         )
         assert p is not None
         return p
@@ -334,7 +336,7 @@ class TestBuildMoveitParamsJackalFr3:
         from arena_robots.moveit_factory import build_moveit_params
 
         require_installed("arm/fr3")
-        p = build_moveit_params("jackal", tf_prefix="", parts={"arm": [RequestPart(variant="fr3", mount="top")]}, instance="top")
+        p = build_moveit_params("jackal", tf_prefix="", request=InstanceRequest(parts={"arm": [RequestPart(variant="fr3", mount="top")]}), instance="top")
         assert p is not None
         return p
 
