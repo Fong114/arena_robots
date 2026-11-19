@@ -83,7 +83,6 @@ class PowerSpec:
     drivetrain_damping: float = 0.0
     drivetrain_friction: float = 0.0
     rolling_resistance_crr: float = 0.0
-    robot_mass_kg: float = 0.0
     wheel_radius_m: float = 0.0
     num_wheels: int = 1
 

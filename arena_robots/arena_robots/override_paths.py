@@ -9,7 +9,7 @@ from collections.abc import Iterable, Iterator, Mapping
 import attrs
 
 from arena_robots import assembly as assembly_mod
-from arena_robots.caps import FACT_BLOCKS, CapConfig, MobileSpec, RobotCaps, adapter_blocks, simulator_names, simulators_honoring, typed_fields
+from arena_robots.caps import FACT_BLOCKS, BodySpec, CapConfig, MobileSpec, RobotCaps, adapter_blocks, simulator_names, simulators_honoring, typed_fields
 from arena_robots.inline import split_top_level
 from arena_robots.Robot import RobotIdentifier, RobotView
 from arena_robots.SetupFile import Config
@@ -18,7 +18,7 @@ Kind = typing.Literal['value', 'list', 'map', 'unset', 'arg']
 
 _INSTANCE_CAPS = ('arm', 'lift', 'gripper')
 _SUFFIXES: dict[Kind, tuple[str, ...]] = {'value': ('=',), 'list': ('=',), 'map': ('.',), 'unset': ('=', '.'), 'arg': ('=',)}
-_NOT_OVERRIDABLE = ('body.mass', 'body.mass_urdf', 'body.outline', 'mobile.laser')
+_NOT_OVERRIDABLE = ('body.mass', 'body.outline', 'mobile.laser')
 _COMPLETION_ERRORS = (ValueError, RuntimeError, FileNotFoundError, KeyError)
 
 
@@ -61,6 +61,10 @@ def _relative(spec: CapConfig, cap: str) -> list[tuple[str, object, Kind]]:
         laser = spec.laser_block()
         if laser is not None:
             raw['laser'] = laser
+    if isinstance(spec, BodySpec) and spec.urdf is not None:
+        mass = spec.mass
+        if mass is not None:
+            raw['mass'] = mass
     entries = list(_walk('', raw))
     if cap in FACT_BLOCKS:
         return entries

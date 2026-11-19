@@ -217,17 +217,16 @@ stays in the files, every consumer reads the block:
 
 | Block | Read from | Holds |
 | --- | --- | --- |
-| `body` | `model_params.yaml` and each placed component's `mass.kg` | `base_frame`, `cmd_vel_topic` and `odom_topic` (from `control:`), `mass.base` (`mass.base_kg`), `mass.parts` (`<type>.<mount>` to kg) and `mass.total` |
-| `power` | `telemetry/power.yaml` | the file without `robot_model` and without `power_system.robot_mass_kg` (the power model takes the mass from `body.mass.total`, so placed parts add theirs) |
+| `body` | `model_params.yaml` and the rendered URDF | `base_frame`, `cmd_vel_topic` and `odom_topic` (from `control:`), `mass` (the summed inertial mass of the rendered URDF, placed parts included) |
+| `power` | `telemetry/power.yaml` | the file without `robot_model` (the power model takes the mass from `body.mass`) |
 | `acoustics` | `telemetry/acoustics.yaml` | the file as authored |
 
 `body.*`, `power.*` and `acoustics.*` take cap overrides like any cap
-(`power.power_system.rolling_resistance_crr=0.05`), except `body.mass*`: mass is
-what the simulators simulate. `RobotCaps.provenance(path)` names where a value
+(`power.power_system.rolling_resistance_crr=0.05`), except `body.mass`. `RobotCaps.provenance(path)` names where a value
 comes from (`override`, `component`, `derived`, `urdf` or `file`) and `RobotCaps.snapshot()`
 holds the effective caps with every leaf's source and a hash. `body.outline` (the
-convex ground outline of the base's collision geometry) and `body.mass_urdf` (the
-summed inertial mass) are read lazily from the rendered URDF and are not overridable.
+convex ground outline of the base's collision geometry) and `body.mass` are read
+lazily from the rendered URDF and are not overridable.
 
 #### Where each value is authored
 
@@ -243,7 +242,7 @@ from the effective caps, or `robots_check` warns where it differs.
 | Lidar geometry (`mobile.laser`) | the lidar component's xacro arguments (a bracket on the part) or the URDF | read from the scan sensor of the rendered URDF on the primary lidar (the first `laserscan` sensor), never authored in `caps/mobile.yaml` |
 | MoveIt joint limits (`arm.<mount>.joint_limits`) | the component's `joint_limits/` file | `moveit_factory`, overridable per instance, tightened-only against the URDF `<limit>` |
 | Joint position, velocity and effort limits | the URDF | the simulators, the bound of the MoveIt limits |
-| Body mass | `model_params.yaml` `mass.base_kg` and each component's `mass.kg` | `body.mass.*`, the power model through `power.yaml` `robot_mass_kg`, `robots_check` lists both beside the URDF sum |
+| Body mass | the URDF inertials, each component's in its xacro | `body.mass`, the power model, the evaluation metrics through the caps snapshot |
 | Collision geometry | the URDF | `body.outline` |
 
 #### `caps/arm.yaml`, `caps/lift.yaml`, `caps/gripper.yaml`: dict-keyed

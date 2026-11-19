@@ -314,12 +314,9 @@ def test_overrides_of_an_unknown_model_names_the_known_models():
     assert "jackal" in error.value.hint
 
 
-def test_definition_findings_warn_when_the_power_model_mass_disagrees_with_the_body():
+def test_definition_findings_carry_no_mass_check_for_a_robot_whose_files_disagreed():
     findings = mcp._definition_findings(mcp._view("turtlebot"))
-    mass = [finding for finding in findings if finding["check"] == "caps.mass"]
-    assert len(mass) == 1
-    assert mass[0]["severity"] == "warning"
-    assert "robot_mass_kg 3.5" in mass[0]["message"]
+    assert [finding for finding in findings if finding["check"] == "caps.mass"] == []
 
 
 def test_definition_findings_are_silent_on_the_mass_when_both_files_agree():

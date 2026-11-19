@@ -317,7 +317,7 @@ class RobotView(PathView):
         crr = float(ps.get('rolling_resistance_crr', 0.0))
         wheel_r = float(ps.get('wheel_radius_m', 0.0))
         num_wheels = int(ps.get('num_wheels', 1))
-        mass_kg = float(ps['robot_mass_kg']) if 'robot_mass_kg' in ps else float(caps.body.mass_total or 0.0)
+        mass_kg = float(caps.body.mass or 0.0)
 
         if assembly_power is not None:
             spec = assembly_power
@@ -335,8 +335,6 @@ class RobotView(PathView):
                 friction = spec.drivetrain_friction
             if crr == 0.0:
                 crr = spec.rolling_resistance_crr
-            if mass_kg == 0.0:
-                mass_kg = spec.robot_mass_kg
             if wheel_r == 0.0:
                 wheel_r = spec.wheel_radius_m
             if num_wheels <= 1 and spec.num_wheels > 1:

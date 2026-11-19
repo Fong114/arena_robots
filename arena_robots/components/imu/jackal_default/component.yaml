@@ -17,5 +17,3 @@ sensor:
       sensor: imu_sensor
 power:
   static_power_w: 0.5
-mass:
-  kg: 0.001

@@ -47,6 +47,11 @@ def _request_key(view: RobotView, parts: dict[str, list[RequestPart]], frames: d
     return json.dumps([str(view.path), canonical, sorted((frames or {}).items())], sort_keys=True, default=str)
 
 
+def source(view: RobotView) -> Path:
+    """The robot's own top-level URDF xacro."""
+    return view.path / "urdf" / f"{view.name}.urdf.xacro"
+
+
 @functools.lru_cache(maxsize=256)
 def _render(request: _RenderRequest) -> str:
     import tempfile
@@ -59,7 +64,7 @@ def _render(request: _RenderRequest) -> str:
     view = request.view
     resolved = view._resolved(request.parts)
     if resolved is None:
-        return xacro.process_file(str(view.path / "urdf" / f"{view.name}.urdf.xacro")).toxml()  # pyright: ignore[reportAttributeAccessIssue]
+        return xacro.process_file(str(source(view))).toxml()  # pyright: ignore[reportAttributeAccessIssue]
     resolved = apply_frame_overrides(resolved, request.frames or {})
     with tempfile.NamedTemporaryFile("w", suffix=".urdf.xacro", delete=False) as wrapper:
         wrapper.write(render_wrapper_xacro(view, resolved))

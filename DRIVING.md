@@ -95,7 +95,7 @@ surface for agents. `python3 -m arena_mcp ls robots` lists its tools.
   out, or `arg` for an xacro argument of a placed part) and a `provenance`
   (`override`, `component`, `derived`, `urdf` or `file`). The `body`, `power`
   and `acoustics` fact blocks are listed too, with each arm's `joint_limits`.
-  `overridable` is false for `body.mass*`, `body.outline` and `mobile.laser*`,
+  `overridable` is false for `body.mass`, `body.outline` and `mobile.laser*`,
   and `simulators` names the simulators that honor the path. A part placed
   through the assembly carries its mount in `part` and the path to write inside
   its brackets in `relative`, an xacro argument is written there too

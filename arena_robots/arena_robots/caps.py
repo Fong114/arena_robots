@@ -877,7 +877,7 @@ SNAPSHOT_FORMAT = 'arena-caps/1'
 
 @attrs.define(slots=False)
 class BodySpec(CapConfig):
-    """Robot-wide facts read from ``model_params.yaml`` and the placed components: base frame, control topics, mass, and the collision outline and mass of the rendered URDF."""
+    """Robot-wide facts: base frame and control topics from ``model_params.yaml``, mass and collision outline from the rendered URDF."""
 
     urdf: Callable[[], str] | None = None
 
@@ -894,22 +894,8 @@ class BodySpec(CapConfig):
         return str(self.raw['odom_topic'])
 
     @property
-    def mass_base(self) -> float | None:
-        v = self.raw['mass']['base']
-        return None if v is None else float(v)
-
-    @property
-    def mass_parts(self) -> dict[str, float]:
-        return {str(k): float(v) for k, v in self.raw['mass']['parts'].items()}
-
-    @property
-    def mass_total(self) -> float | None:
-        v = self.raw['mass']['total']
-        return None if v is None else float(v)
-
-    @property
-    def mass_urdf(self) -> float | None:
-        """Summed inertial mass of the rendered URDF."""
+    def mass(self) -> float | None:
+        """Summed inertial mass of the rendered URDF, placed parts included."""
         if self.urdf is None:
             return None
         from arena_robots import urdf_facts
@@ -1201,18 +1187,10 @@ class RobotCaps:
         data = _read_mapping(path)
         if data is not None and block == 'body':
             control = data.get('control') or {}
-            mass = data.get('mass') or {}
-            parts: dict[str, float] = {}
-            if self.resolved is not None and self.catalog is not None:
-                for placement in self.resolved.placements:
-                    kg = self.catalog.get(placement.type, placement.variant).mass.get('kg')
-                    if kg is not None:
-                        parts[f'{placement.type}.{placement.mount.name}'] = float(typing.cast(float, kg))
             data = {
                 'base_frame': str(data.get('base_frame', 'base_link')),
                 'cmd_vel_topic': str(control.get('cmd_vel_topic', 'cmd_vel')),
                 'odom_topic': str(control.get('odom_topic', 'odom')),
-                'mass': {'base': mass.get('base_kg'), 'parts': parts},
             }
         elif data is not None and block == 'power':
             data = {k: v for k, v in data.items() if k != 'robot_model'}
@@ -1220,9 +1198,6 @@ class RobotCaps:
             rel = self._cap_overrides(block)
             if rel:
                 data = overlay(data, rel, label=str(path), known=typed_fields(_FACT_CLASSES[block]))
-            if block == 'body':
-                base = data['mass']['base']
-                data['mass']['total'] = None if base is None else float(base) + sum(data['mass']['parts'].values())
         self._cached[key] = data
         return data
 
@@ -1231,7 +1206,10 @@ class RobotCaps:
         data = self._load_fact('body')
         if data is None:
             raise FileNotFoundError(f"robot facts: {self._fact_file('body')} does not exist")
-        return BodySpec(path=self._fact_file('body'), raw=data, urdf=self.rendered_urdf if self.view is not None else None)
+        from arena_robots import urdf_facts
+
+        has_urdf = self.view is not None and urdf_facts.source(self.view).is_file()
+        return BodySpec(path=self._fact_file('body'), raw=data, urdf=self.rendered_urdf if has_urdf else None)
 
     @property
     def power(self) -> PowerSpec | None:
@@ -1260,6 +1238,10 @@ class RobotCaps:
             data = self._load_fact(block)
             if data is not None:
                 out[block] = copy.deepcopy(data)
+        if 'body' in out:
+            mass = self.body.mass
+            if mass is not None:
+                out['body']['mass'] = mass
         return out
 
     def provenance(self, path: str) -> str:
@@ -1269,8 +1251,8 @@ class RobotCaps:
         head, _, rest = path.partition('.')
         if head == 'mobile' and rest.partition('.')[0] == 'laser' and self.laser_block() is not None:
             return 'urdf'
-        if head == 'body' and (rest.startswith('mass.parts') or rest == 'mass.total'):
-            return 'derived'
+        if head == 'body' and rest == 'mass':
+            return 'urdf'
         if head == 'mobile' and rest.startswith('limits'):
             declared = (_read_mapping(self.caps_dir / 'mobile.yaml') or {}).get('limits')
             return 'file' if isinstance(declared, dict) and _leaf_declared(declared, rest.split('.')[1:]) else 'derived'
@@ -1321,9 +1303,7 @@ class RobotCaps:
             if (cap, mount) in placed:
                 raise ValueError(f"cap override '{path}' targets the part placed on mount '{mount}', write it in the part's brackets: {mount}={cap}/{placed[cap, mount]}[{field}=...]")
         for path in self.all_overrides:
-            if _matches('body.mass', path) or path == 'body':
-                raise ValueError(f"cap override '{path}': mass is what the simulators simulate and is not overridable")
-            if _matches('body.mass_urdf', path) or _matches('body.outline', path):
+            if _matches('body.mass', path) or _matches('body.outline', path) or path == 'body':
                 raise ValueError(f"cap override '{path}': it is read from the rendered URDF and is not overridable")
         for cap in sorted({path.partition('.')[0] for path in self.all_overrides}):
             if cap in FACT_BLOCKS:

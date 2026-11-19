@@ -34,8 +34,6 @@ decides what a placement's sensor declarations *say*, not how they get instantia
       <name>: <template>   # e.g. {top: "${prefix}${mount}_ewellix_lift_top_link"}
     power:             # OPTIONAL; absent -> {}
       static_power_w: <W drawn while idle>
-    mass:              # OPTIONAL; absent -> {} (no contribution)
-      kg: <kg added on top of the robot's model_params.yaml mass.base_kg>
 
 Every string value in a ``sensor.gz`` entry is a template rendered per-placement through
 ``arena_rclpy_mixins.yaml_replace.YAMLReplacer``. The substitution context is::
@@ -118,8 +116,6 @@ class ComponentSpec:
     placement by :func:`resolve_mount_parent`."""
     power: dict[str, object] = attrs.field(factory=dict)
     """Static power parameters of this component."""
-    mass: dict[str, object] = attrs.field(factory=dict)
-    """Mass contribution of this component, added on top of the robot's base mass."""
     variants: list[str] = attrs.field(factory=list)
     """Variant names this component serves when no dedicated ``<variant>/`` dir exists
     (family component, e.g. one ``arm/ur`` serving the whole UR family, parameterized
@@ -167,10 +163,6 @@ class ComponentSpec:
         if not isinstance(power, dict):
             raise ValueError(f"component.yaml at {path}: 'power' must be a mapping; got {type(power).__name__}")
 
-        mass = data.get('mass', {})
-        if not isinstance(mass, dict):
-            raise ValueError(f"component.yaml at {path}: 'mass' must be a mapping; got {type(mass).__name__}")
-
         return cls(
             xacro_include=str(xacro['include']),
             xacro_macro=str(xacro['macro']),
@@ -182,7 +174,6 @@ class ComponentSpec:
             caps=dict(caps),
             frames={str(k): str(v) for k, v in frames.items()},
             power=dict(power),
-            mass=dict(mass),
             variants=[str(v) for v in variants],
         )
 
@@ -369,8 +360,10 @@ def render_wrapper_xacro(view: RobotView, resolved: ResolvedAssembly, *, catalog
     :func:`render_control_joints`'s control-joint patch, computed independently from
     ``resolved`` (not by parsing this wrapper's xacro output).
     """
+    from arena_robots import urdf_facts
+
     catalog = catalog if catalog is not None else Catalog()
-    chassis_path = view.path / 'urdf' / f'{view.name}.urdf.xacro'
+    chassis_path = urdf_facts.source(view)
     args = _chassis_args(chassis_path)
 
     body_lines: list[str] = []

@@ -1,8 +1,6 @@
 robot_model: p3at
 base_frame: base_link
 z_offset: 0.111
-mass:
-  base_kg: 12.0
 sensors:
   - name: lidar
     type: laserscan

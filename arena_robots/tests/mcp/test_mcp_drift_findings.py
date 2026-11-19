@@ -29,18 +29,18 @@ def _rendering() -> None:
     pytest.importorskip("xacro", reason="xacro is not importable, run under the Arena container")
 
 
-def test_boxer_masses_agree_with_its_datasheet_urdf(require_installed: Callable[[str], None]):
+def test_boxer_weighs_its_vendor_mass(require_installed: Callable[[str], None]):
     require_installed("boxer")
-    checks = _checks("boxer")
-    assert "laser" not in checks
-    assert "caps.mass" not in checks
+    assert "laser" not in _checks("boxer")
+    assert mcp._view("boxer").effective_caps({}).body.mass == pytest.approx(107.0)
 
 
-def test_turtlebot_warns_about_its_upstream_urdf_mass(require_installed: Callable[[str], None]):
+def test_turtlebot_power_model_takes_its_upstream_urdf_mass(require_installed: Callable[[str], None]):
     require_installed("turtlebot")
-    [message] = _checks("turtlebot")["caps.mass"]
-    assert "URDF 4.454" in message
-    assert "robot_mass_kg 3.5" in message
+    view = mcp._view("turtlebot")
+    profile = view.power_profile(view.effective_caps({}))
+    assert profile is not None
+    assert profile["robot_mass_kg"] == pytest.approx(4.454)
 
 
 def test_rbvogui_wheels_match_the_urdf(require_installed: Callable[[str], None]):

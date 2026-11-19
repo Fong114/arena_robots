@@ -125,10 +125,9 @@ rendered from the effective values.
 
 The robot-wide fact blocks of the effective caps are overridable the same way:
 `body.base_frame`, `body.cmd_vel_topic`, `body.odom_topic`, `power.power_system.<key>`
-and `acoustics.<key>` (`power.power_system.rolling_resistance_crr=0.05`). `body.mass`,
-`body.mass.base`, `body.mass.parts` and `body.mass.total` are not overridable and
-raise: mass is what the simulators simulate, and the power model takes it from the
-total of the base and the placed parts. The robot needs the file the block is read
+and `acoustics.<key>` (`power.power_system.rolling_resistance_crr=0.05`). `body.mass` is
+not overridable and raises: it is the summed inertial mass of the rendered URDF, which
+the simulators simulate and the power model reads. The robot needs the file the block is read
 from (`telemetry/power.yaml`, `telemetry/acoustics.yaml`), otherwise the override
 raises.
 

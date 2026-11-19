@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import itertools
 import math
 import re
 import time
@@ -24,7 +23,7 @@ if TYPE_CHECKING:
     from sensor_msgs.msg import LaserScan
 
     from arena_mcp.core import JobHandle
-    from arena_robots.caps import ArmSpec, BodySpec, RobotCaps
+    from arena_robots.caps import ArmSpec, RobotCaps
     from arena_robots.request import InstanceRequest
     from arena_robots.Robot import RobotView
     from arena_robots.Sensor import SensorSpec
@@ -329,7 +328,7 @@ def robots_definition(model: str, parts: PartsArg = None, frames: FramesArg = No
 
 @domain.tool(read_only=True)
 def robots_overrides(model: str, parts: PartsArg = None, frames: FramesArg = None, caps: CapsArg = None) -> list[dict[str, Any]]:
-    """Every cap override path of one robot instance with its effective value: leaves, lists and mappings of the mobile cap and of each arm, lift and gripper instance, plus the typed fields and adapter blocks the cap leaves unset, and the `body`, `power` and `acoustics` fact blocks (`body.mass*`, `body.outline` and `mobile.laser*` are not overridable, `overridable` says so), the joint limits of each arm as `arm.<mount>.joint_limits.<joint>.<key>`, and the xacro arguments of each placed part as kind `arg` entries. Each carries its `provenance` (override, component, derived, urdf or file) and the `simulators` that honor it. A path of a part placed through the assembly carries its mount in `part` and the path to write inside that part's brackets in `relative`. With parts, frames or caps the paths are those of the instance with them applied."""
+    """Every cap override path of one robot instance with its effective value: leaves, lists and mappings of the mobile cap and of each arm, lift and gripper instance, plus the typed fields and adapter blocks the cap leaves unset, and the `body`, `power` and `acoustics` fact blocks (`body.mass`, `body.outline` and `mobile.laser*` are not overridable, `overridable` says so), the joint limits of each arm as `arm.<mount>.joint_limits.<joint>.<key>`, and the xacro arguments of each placed part as kind `arg` entries. Each carries its `provenance` (override, component, derived, urdf or file) and the `simulators` that honor it. A path of a part placed through the assembly carries its mount in `part` and the path to write inside that part's brackets in `relative`. With parts, frames or caps the paths are those of the instance with them applied."""
     from arena_robots.override_paths import override_paths
 
     view = _view(model)
@@ -356,29 +355,11 @@ def _finding(robot: str, check: str, message: str, severity: str = "error", **ex
     return {"robot": robot, "check": check, "severity": severity, "message": message, **extra}
 
 
-_MASS_TOLERANCE = 0.05
-
-
 def _drift_findings(name: str, check: str, call: Callable[[], list[str]]) -> list[dict[str, Any]]:
     try:
         return [_finding(name, check, message, "warning") for message in call()]
     except Exception as exc:
         return [_finding(name, check, _error(exc), "warning")]
-
-
-def _mass_findings(name: str, body: BodySpec, power_mass: object) -> list[dict[str, Any]]:
-    findings: list[dict[str, Any]] = []
-    urdf_mass: float | None = None
-    try:
-        urdf_mass = body.mass_urdf
-    except ImportError:
-        pass
-    except Exception as exc:
-        findings.append(_finding(name, "caps.mass", f"the URDF mass is not readable: {_error(exc)}", "warning"))
-    figures = [value for value in (body.mass_total, urdf_mass, None if power_mass is None else float(cast("float", power_mass))) if value is not None]
-    if any(abs(a - b) > _MASS_TOLERANCE * max(a, b) for a, b in itertools.combinations(figures, 2)):
-        findings.append(_finding(name, "caps.mass", f"mass differs: model_params.yaml mass.base_kg {body.mass_base} plus parts {body.mass_total}, URDF {urdf_mass}, telemetry/power.yaml robot_mass_kg {power_mass}, the power model uses robot_mass_kg", "warning"))
-    return findings
 
 
 def _file_drift_findings(view: RobotView, caps: RobotCaps) -> list[dict[str, Any]]:
@@ -430,9 +411,6 @@ def _definition_findings(view: RobotView, request: InstanceRequest | None = None
             findings.append(_finding(name, "caps.overrides", _error(exc)))
     try:
         findings += [_finding(name, "caps.warnings", warning, "warning") for warning in caps.warnings()]
-        body, power = caps.body, caps.power
-        power_mass = power.power_system.get("robot_mass_kg") if power is not None else None
-        findings += _mass_findings(name, body, power_mass)
         findings += _file_drift_findings(view, caps)
     except (ValueError, FileNotFoundError) as exc:
         findings.append(_finding(name, "caps.warnings", _error(exc)))

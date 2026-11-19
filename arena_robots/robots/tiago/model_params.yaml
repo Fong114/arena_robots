@@ -1,8 +1,6 @@
 robot_model: tiago
 base_frame: base_link
 z_offset: 0.0985
-mass:
-  base_kg: 72.0
 sensors:
   - name: lidar
     type: laserscan
