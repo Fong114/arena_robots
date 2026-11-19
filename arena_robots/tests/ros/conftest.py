@@ -83,6 +83,7 @@ class GotoRig:
     """A goto_pose handler behind a real action server, a client, and the lockstep register service."""
 
     def __init__(self, namespace: str) -> None:
+        from arena_rclpy_mixins.Time import TimeNode
         from arena_runtime_msgs.srv import LockstepRegister
         from rclpy.executors import SingleThreadedExecutor
         from rclpy.node import Node
@@ -95,7 +96,7 @@ class GotoRig:
             frame="env_0/",
             robot=SimpleNamespace(model_params=SimpleNamespace(base_frame="base_link")),
         )
-        self.node = Node("task_server", namespace=namespace)
+        self.node = TimeNode("task_server", namespace=namespace)
         self.peer = Node("task_peer", namespace=namespace)
         self.registrations: list[list[Any]] = []
         self.handles: list[Any] = []

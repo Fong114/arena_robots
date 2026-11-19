@@ -11,7 +11,7 @@ from __future__ import annotations
 import contextlib
 import typing
 
-from arena_rclpy_mixins.Time import TimeNode
+from arena_rclpy_mixins.Time import ClockEcho, TimeNode
 from arena_runtime_msgs.msg import LockstepChannel, LockstepHeartbeat, LockstepRegistration
 from arena_runtime_msgs.srv import LockstepRegister
 from builtin_interfaces.msg import Time as TimeMsg
@@ -44,7 +44,7 @@ class LockstepBeat:
         self._name = f"{kind}/{ns.rsplit('/', 1)[-1]}"
         self._topic = f"{ns}/lockstep/{kind}"
         self._env = ns.rsplit("/", 1)[0] or "/"
-        self._pub = node.create_publisher(LockstepHeartbeat, self._topic, 10)
+        self._pub: ClockEcho[LockstepHeartbeat] = ClockEcho(node, node.create_publisher(LockstepHeartbeat, self._topic, 10))
         self._client = node.create_client(LockstepRegister, _REGISTER_SERVICE)
         self._active = 0
         self._registered = False
