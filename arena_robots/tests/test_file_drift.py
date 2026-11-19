@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socket
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -89,11 +90,16 @@ class TestChampGaitFile:
 
 
 class TestSimulatorReach:
-    def test_a_swerve_robot_limits_reach_flatsim_only(self):
-        caps = RobotIdentifier("mpo700").resolve_sync().effective_caps({})
-        reach = simulators_honoring("mobile.limits.velocity.linear", caps)
-        assert reach == frozenset({"flatsim"})
-        assert "gazebo" not in reach
+    @pytest.mark.parametrize("model", ("mpo700", "rbvogui", "rbvogui_plus", "rskomnidirectional", "a1", "go1"))
+    def test_swerve_omni_and_champ_robot_limits_reach_every_simulator(self, model: str):
+        caps = RobotIdentifier(model).resolve_sync().effective_caps({})
+        assert {"flatsim", "gazebo", "mujoco", "isaac"} <= simulators_honoring("mobile.limits.velocity.linear", caps)
+
+    def test_a_robot_without_limit_keys_reaches_flatsim_only(self, tmp_path: Path):
+        robot = tmp_path / "bare"
+        robot.mkdir()
+        (robot / "control.yaml").write_text("base_controller:\n  ros__parameters:\n    wheel_radius: 0.1\n")
+        assert not drift.declares_limit_keys(SimpleNamespace(path=robot))  # pyright: ignore[reportArgumentType]
 
     def test_a_diff_drive_robot_limits_reach_the_drive_controllers(self):
         caps = RobotIdentifier("jackal").resolve_sync().effective_caps({})
@@ -106,7 +112,7 @@ class TestSimulatorReach:
         caps = RobotIdentifier("mpo700").resolve_sync().effective_caps({})
         assert "gazebo" in simulators_honoring("mobile.velocity_limits.linear", caps)
 
-    def test_the_override_warning_of_a_swerve_robot_names_flatsim(self):
+    def test_a_swerve_robot_limits_override_raises_no_reach_warning(self):
         caps = RobotIdentifier("mpo700").resolve_sync().effective_caps({}, caps=HALF)
-        assert caps.warnings("gazebo") == ["cap override 'mobile.limits' has no effect in sim:=gazebo, honored by flatsim"]
+        assert not any("mobile.limits" in warning for warning in caps.warnings("gazebo"))
         assert caps.warnings("flatsim") == []

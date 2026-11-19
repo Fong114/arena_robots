@@ -45,12 +45,14 @@ def _controllers(path: Path) -> Iterator[tuple[str, dict[str, typing.Any]]]:
 
 @functools.lru_cache(maxsize=128)
 def _declares_limit_keys(view_path: str) -> bool:
+    if (Path(view_path) / 'champ' / 'gait.yaml').is_file():
+        return True
     keys = {f'{prefix}.{suffix}' for prefix in AXES.values() for suffix in LIMIT_SUFFIXES}
     return any(keys & set(params) for file in sorted(Path(view_path).glob('control*.yaml')) for _, params in _controllers(file))
 
 
 def declares_limit_keys(view: RobotView) -> bool:
-    """Whether a drive controller of the robot declares velocity or acceleration limit parameters."""
+    """Whether the robot's drive controller declares velocity or acceleration limit parameters, or a CHAMP gait carries its speeds."""
     return _declares_limit_keys(str(view.path))
 
 

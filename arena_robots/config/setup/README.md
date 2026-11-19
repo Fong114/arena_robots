@@ -150,8 +150,8 @@ takes it from `planar.velocity` and `planar.acceleration`, and the effective cap
 carries it in their place: flatsim drives by it, and an instance that overrides
 `limits` or `planar` gets the base controller's velocity and acceleration limits
 in `control.yaml` replaced from it in Gazebo, MuJoCo and Isaac, on the keys the
-controller declares (DiffDrive and Mecanum do, the swerve and omni controllers
-declare none, so `mobile.limits` reaches flatsim only there). `a1` and `go1` take
+controller declares (DiffDrive, Mecanum and the swerve and omni controllers do,
+the swerve and omni robots declare them unbounded as `.nan`). `a1` and `go1` take
 the CHAMP gait speeds from it the same way: an override of `mobile.limits` renders
 `gait.yaml` per instance (`RobotCaps.champ_gait_file`, symmetric `max(|min|, |max|)`
 per axis) and passes it to the CHAMP bringup as `gait_config`.
