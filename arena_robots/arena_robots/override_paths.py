@@ -9,7 +9,7 @@ from collections.abc import Iterable, Iterator, Mapping
 import attrs
 
 from arena_robots import assembly as assembly_mod
-from arena_robots.caps import FACT_BLOCKS, CapConfig, RobotCaps, adapter_blocks, simulator_names, simulators_honoring, typed_fields
+from arena_robots.caps import FACT_BLOCKS, CapConfig, MobileSpec, RobotCaps, adapter_blocks, simulator_names, simulators_honoring, typed_fields
 from arena_robots.inline import split_top_level
 from arena_robots.Robot import RobotIdentifier, RobotView
 from arena_robots.SetupFile import Config
@@ -56,10 +56,15 @@ def _walk(prefix: str, data: Mapping[str, object]) -> Iterator[tuple[str, object
 
 
 def _relative(spec: CapConfig, cap: str) -> list[tuple[str, object, Kind]]:
-    entries = list(_walk('', spec.raw))
+    raw = dict(spec.raw)
+    if isinstance(spec, MobileSpec) and spec.laser_block is not None:
+        laser = spec.laser_block()
+        if laser is not None:
+            raw['laser'] = laser
+    entries = list(_walk('', raw))
     if cap in FACT_BLOCKS:
         return entries
-    unset = sorted((typed_fields(type(spec)) | adapter_blocks(cap)) - {str(key) for key in spec.raw})
+    unset = sorted((typed_fields(type(spec)) | adapter_blocks(cap)) - {str(key) for key in raw})
     return entries + [(name, None, 'unset') for name in unset]
 
 

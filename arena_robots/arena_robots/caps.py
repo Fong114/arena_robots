@@ -37,8 +37,8 @@ from arena_rclpy_mixins.yaml_replace import YAMLReplacer
 from arena_simulation_setup.tree.Gesture import GestureSpec
 
 from arena_robots import drift
-from arena_robots.assembly import Placement, RequestPart, ResolvedAssembly
-from arena_robots.catalog import Catalog, _frame_stem, _render_sensor_templates, resolve_mount_parent
+from arena_robots.assembly import RequestPart, ResolvedAssembly
+from arena_robots.catalog import Catalog, _frame_stem, resolve_mount_parent
 from arena_robots.inline import APPEND_KEY, OFFSET_KEY, SCALE_KEY, WILDCARD, is_affine, is_append, is_delete
 
 if typing.TYPE_CHECKING:
@@ -422,7 +422,9 @@ CLIMBABLE = ('stairs', 'escalator')
 
 @attrs.define(slots=False)
 class MobileSpec(CapConfig):
-    """Primitives from caps/mobile.yaml (flat, single-instance)."""
+    """Primitives from caps/mobile.yaml (flat, single-instance), and the laser block of the rendered URDF."""
+
+    laser_block: Callable[[], dict[str, typing.Any] | None] | None = None
 
     @property
     def odom_frame(self) -> str:
@@ -538,12 +540,9 @@ class MobileSpec(CapConfig):
 
     @property
     def laser(self) -> LaserSpec | None:
-        v = self.raw.get('laser')
-        if v is None:
-            return None
-        if not isinstance(v, dict):
-            raise ValueError(f"{self.path}: 'laser' must be a mapping; got {type(v).__name__}")
-        return LaserSpec.from_dict(v)
+        """The scan geometry of the instance's primary lidar in the rendered URDF."""
+        block = None if self.laser_block is None else self.laser_block()
+        return None if block is None else LaserSpec.from_dict(block)
 
 
 @attrs.define(slots=False)
@@ -1125,28 +1124,24 @@ class RobotCaps:
                 return f", e.g. {placement.mount.name}=lidar/{placement.variant}[{'max_range' if 'max_range' in declared else next(iter(declared))}=...]"
         return ''
 
-    def _laser_part(self) -> Placement | None:
-        if self.resolved is None or self.catalog is None:
+    def _primary_lidar_frame(self) -> str | None:
+        if self.view is None:
             return None
-        for placement in self.resolved.placements:
-            if placement.type == 'lidar' and placement.args and any(str(entry.get('type')) == 'laserscan' for entry in self.catalog.get(placement.type, placement.variant).sensor_gz):
-                return placement
-        return None
+        return next((sensor.frame for sensor in self.view.effective_sensors(self.parts, frames=self.frames or None) if str(sensor.type) == 'laserscan'), None)
 
-    def _with_urdf_laser(self, data: dict[str, typing.Any]) -> dict[str, typing.Any]:
-        placement = self._laser_part()
-        if placement is None or self.view is None:
-            return data
-        assert self.catalog is not None
+    def laser_block(self) -> dict[str, typing.Any] | None:
+        """The `mobile.laser` mapping of the first laserscan sensor in the rendered URDF, None without one."""
+        key = 'derived:laser'
+        if key in self._cached:
+            return copy.deepcopy(self._cached[key])
         from arena_robots import urdf_facts
 
-        context: dict[str, typing.Any] = {'mount': _frame_stem(placement.mount), 'variant': placement.variant, 'prefix': self.prefix, **placement.params, **placement.overrides}
-        frame = next(str(entry['frame']) for entry in _render_sensor_templates(self.catalog.get(placement.type, placement.variant), context) if str(entry['type']) == 'laserscan')
-        block = urdf_facts.laser_block(self.rendered_urdf(), frame)
-        if block is None:
-            self._notes.append(f"laser: the rendered URDF has no lidar sensor on {frame}, the cap file's block stays")
-            return data
-        return {**data, 'laser': block}
+        frame = self._primary_lidar_frame()
+        block = None if frame is None else urdf_facts.laser_block(self.rendered_urdf(), frame)
+        if frame is not None and block is None:
+            self._notes.append(f"laser: the rendered URDF has no lidar sensor on {frame}")
+        self._cached[key] = block
+        return copy.deepcopy(block)
 
     def joints_overridden(self, instance: str) -> bool:
         """Whether an override changes the MoveIt joint limits of arm ``instance``."""
@@ -1175,7 +1170,7 @@ class RobotCaps:
         if cap == 'mobile':
             if any(key.partition('.')[0] == 'laser' for key in rel):
                 raise ValueError(f"{path}: cap override 'mobile.laser': the laser block is read from the rendered URDF, set the xacro arguments of the lidar part in its brackets{self._lidar_form()}")
-            return self._with_urdf_laser(normalize_mobile(data, rel, label=str(path), known=typed_fields(MobileSpec) | adapter_blocks(cap), notes=self._notes))
+            return normalize_mobile(data, rel, label=str(path), known=typed_fields(MobileSpec) | adapter_blocks(cap), notes=self._notes)
         if not rel:
             return data
         instance_cls = _INSTANCE_CLASSES.get(cap)
@@ -1255,6 +1250,10 @@ class RobotCaps:
             instance_cls = _INSTANCE_CLASSES.get(cap)
             if instance_cls is None:
                 out[cap] = copy.deepcopy(self._load_cap_file(cap))
+                if cap == 'mobile':
+                    laser = self.laser_block()
+                    if laser is not None:
+                        out[cap]['laser'] = laser
             else:
                 out[cap] = {name: copy.deepcopy(spec.raw) for name, spec in (self._instances(cap, instance_cls) or {}).items()}
         for block in FACT_BLOCKS:
@@ -1268,7 +1267,7 @@ class RobotCaps:
         if any(_matches(pattern, path) for pattern in self.all_overrides):
             return 'override'
         head, _, rest = path.partition('.')
-        if head == 'mobile' and rest.partition('.')[0] == 'laser' and self._laser_part() is not None:
+        if head == 'mobile' and rest.partition('.')[0] == 'laser' and self.laser_block() is not None:
             return 'urdf'
         if head == 'body' and (rest.startswith('mass.parts') or rest == 'mass.total'):
             return 'derived'
@@ -1376,7 +1375,7 @@ class RobotCaps:
     @property
     def mobile(self) -> MobileSpec:
         data = self._load_cap_file('mobile')
-        return MobileSpec(path=self.caps_dir / 'mobile.yaml', raw=data)
+        return MobileSpec(path=self.caps_dir / 'mobile.yaml', raw=data, laser_block=self.laser_block)
 
     @property
     def arm(self) -> dict[str, ArmSpec] | None:

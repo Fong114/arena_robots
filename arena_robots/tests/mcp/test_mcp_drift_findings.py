@@ -29,10 +29,10 @@ def _rendering() -> None:
     pytest.importorskip("xacro", reason="xacro is not importable, run under the Arena container")
 
 
-def test_boxer_warns_only_about_its_rear_lidar(require_installed: Callable[[str], None]):
+def test_boxer_masses_agree_with_its_datasheet_urdf(require_installed: Callable[[str], None]):
     require_installed("boxer")
     checks = _checks("boxer")
-    assert "laser" in checks
+    assert "laser" not in checks
     assert "caps.mass" not in checks
 
 

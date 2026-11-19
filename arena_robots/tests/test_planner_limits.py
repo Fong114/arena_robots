@@ -102,7 +102,7 @@ class TestSimulatorReach:
         assert simulators_honoring("mobile.limits.velocity.linear") == frozenset({"flatsim", "gazebo", "mujoco", "isaac"})
 
     def test_laser_override_raises(self, tmp_path: Path):
-        caps = _caps(tmp_path, {"mobile.laser.range": 5.0}, laser={"range": 10.0})
+        caps = _caps(tmp_path, {"mobile.laser.range": 5.0})
         with pytest.raises(ValueError, match="rendered URDF"):
             caps.mobile
 

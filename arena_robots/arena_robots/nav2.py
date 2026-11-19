@@ -21,7 +21,7 @@ _TYPE_TO_NAV2: dict[str, str] = {
     SensorType.POINTCLOUD.value: "PointCloud2",
 }
 
-# Fallback raytrace/obstacle range when caps/mobile.yaml carries no `laser:` block.
+# Fallback raytrace/obstacle range when the mobile cap carries no laser block
 _DEFAULT_LIDAR_RANGE = 10.0
 
 _CLEARING_SUFFIX = "_clearing"

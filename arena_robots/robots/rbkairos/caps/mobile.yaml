@@ -36,13 +36,4 @@ actions:
     - {name: turn_right, linear: 0.0, angular: -2.0}
     - {name: stop, linear: 0.0, angular: 0.0}
 
-laser:
-  angle:
-    increment: 0.00872665
-    max: 2.3561945
-    min: -2.3561945
-  num_beams: 541
-  range: 30.0
-  update_rate: 25
-
 nav2: {}

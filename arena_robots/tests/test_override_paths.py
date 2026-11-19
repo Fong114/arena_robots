@@ -39,8 +39,9 @@ class TestOverridePaths:
         assert unset_blocks
         for block in unset_blocks:
             assert found[f"mobile.{block}"].kind == "unset" and found[f"mobile.{block}"].value is None
-        for field in typed_fields(MobileSpec) - raw:
+        for field in typed_fields(MobileSpec) - raw - {"laser"}:
             assert found[f"mobile.{field}"].kind == "unset"
+        assert found["mobile.laser"].kind == "map"
         for key in raw:
             assert found[f"mobile.{key}"].kind != "unset"
 

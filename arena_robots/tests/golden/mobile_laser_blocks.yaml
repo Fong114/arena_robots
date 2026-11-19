@@ -1,0 +1,184 @@
+WLP311D:
+  angle:
+    increment: 0.00872664626
+    max: 3.14159
+    min: -3.14159
+  num_beams: 720
+  range: 30.0
+  update_rate: 10
+WLP311E:
+  angle:
+    increment: 0.00872664626
+    max: 3.14159
+    min: -3.14159
+  num_beams: 720
+  range: 30.0
+  update_rate: 10
+a1:
+  angle:
+    increment: 0.009817477
+    max: 3.14159
+    min: -3.14159
+  num_beams: 640
+  range: 12.0
+  update_rate: 10
+boxer:
+  angle:
+    increment: 0.00218166156
+    max: 2.35619449
+    min: -2.35619449
+  num_beams: 2161
+  range: 20.0
+  update_rate: 33
+dingo:
+  angle:
+    increment: 0.00872664626
+    max: 3.14159
+    min: -3.14159
+  num_beams: 720
+  range: 30.0
+  update_rate: 10
+go1:
+  angle:
+    increment: 0.009817477
+    max: 3.14159
+    min: -3.14159
+  num_beams: 640
+  range: 12.0
+  update_rate: 10
+husky:
+  angle:
+    increment: 0.00872664626
+    max: 3.14159
+    min: -3.14159
+  num_beams: 720
+  range: 30.0
+  update_rate: 10
+jackal:
+  angle:
+    increment: 0.009817477
+    max: 3.14159
+    min: -3.14159
+  num_beams: 640
+  range: 12.0
+  update_rate: 10
+mpo700:
+  angle:
+    increment: 0.00872665
+    max: 2.3561945
+    min: -2.3561945
+  num_beams: 541
+  range: 30.0
+  update_rate: 25
+p3at:
+  angle:
+    increment: 0.00872664626
+    max: 3.14159
+    min: -3.14159
+  num_beams: 720
+  range: 30.0
+  update_rate: 10
+rbkairos:
+  angle:
+    increment: 0.00872665
+    max: 2.3561945
+    min: -2.3561945
+  num_beams: 541
+  range: 30.0
+  update_rate: 25
+rbkairos_plus:
+  angle:
+    increment: 0.00872665
+    max: 2.3561945
+    min: -2.3561945
+  num_beams: 541
+  range: 30.0
+  update_rate: 25
+rbrobout:
+  angle:
+    increment: 0.00174532925
+    max: 2.30383461
+    min: -2.30383461
+  num_beams: 2641
+  range: 64.0
+  update_rate: 33
+rbsummit:
+  angle:
+    increment: 0.0034906585
+    max: 3.14159265
+    min: -3.14159265
+  num_beams: 1800
+  range: 150.0
+  update_rate: 10
+rbtheron:
+  angle:
+    increment: 0.00436332313
+    max: 2.35619449
+    min: -2.35619449
+  num_beams: 1081
+  range: 20.0
+  update_rate: 40
+rbvogui:
+  angle:
+    increment: 0.00872665
+    max: 2.3561945
+    min: -2.3561945
+  num_beams: 541
+  range: 30.0
+  update_rate: 25
+rbvogui_plus:
+  angle:
+    increment: 0.00872665
+    max: 2.3561945
+    min: -2.3561945
+  num_beams: 541
+  range: 30.0
+  update_rate: 25
+ridgeback:
+  angle:
+    increment: 0.00872664626
+    max: 3.14159
+    min: -3.14159
+  num_beams: 720
+  range: 30.0
+  update_rate: 10
+ridgeback_plus:
+  angle:
+    increment: 0.00872664626
+    max: 3.14159
+    min: -3.14159
+  num_beams: 720
+  range: 30.0
+  update_rate: 10
+rskomnidirectional:
+  angle:
+    increment: 0.00872664626
+    max: 3.14159
+    min: -3.14159
+  num_beams: 720
+  range: 30.0
+  update_rate: 10
+temi:
+  angle:
+    increment: 0.00873362445
+    max: 2.0
+    min: -2.0
+  num_beams: 459
+  range: 30.0
+  update_rate: 10
+tiago:
+  angle:
+    increment: 0.00872664626
+    max: 1.74533
+    min: -1.74533
+  num_beams: 401
+  range: 25.0
+  update_rate: 10
+turtlebot:
+  angle:
+    increment: 0.00785398163
+    max: 3.14159265
+    min: -3.14159265
+  num_beams: 800
+  range: 12.0
+  update_rate: 10

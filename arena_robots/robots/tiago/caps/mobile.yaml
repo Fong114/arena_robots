@@ -61,12 +61,3 @@ actions:
     - angular: 0.0
       linear: 0.0
       name: stop
-
-laser:
-  angle:
-    increment: 0.00872664626
-    max: 1.74533
-    min: -1.74533
-  num_beams: 401
-  range: 25.0
-  update_rate: 10

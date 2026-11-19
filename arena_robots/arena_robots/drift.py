@@ -1,17 +1,17 @@
-"""Robot values written in two places, compared with their owner: controller limits, wheel geometry, gait limits, laser blocks and joint limits."""
+"""Robot values written in two places, compared with their owner: controller limits, wheel geometry, gait limits and joint limits."""
 
 from __future__ import annotations
 
 import functools
 import math
 import typing
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from pathlib import Path
 
 import yaml
 
 if typing.TYPE_CHECKING:
-    from arena_robots.caps import ArmSpec, LaserSpec, LimitsSpec
+    from arena_robots.caps import ArmSpec, LimitsSpec
     from arena_robots.Robot import RobotView
 
 AXES = {'linear': 'linear.x', 'lateral': 'linear.y', 'angular': 'angular.z'}
@@ -19,9 +19,6 @@ LIMIT_SUFFIXES = ('min_velocity', 'max_velocity', 'min_acceleration', 'max_accel
 GAIT_KEYS = {'linear': 'max_linear_velocity_x', 'lateral': 'max_linear_velocity_y', 'angular': 'max_angular_velocity_z'}
 WHEEL_RELATIVE_TOLERANCE = 0.01
 WHEEL_ABSOLUTE_TOLERANCE = 1e-4
-LASER_ANGLE_TOLERANCE = 5e-3
-LASER_INCREMENT_TOLERANCE = 1e-2
-LASER_RANGE_TOLERANCE = 1e-3
 JOINT_LIMIT_TOLERANCE = 1e-6
 
 
@@ -119,47 +116,6 @@ def gait_drift(view: RobotView, limits: LimitsSpec | None) -> list[str]:
         return []
     gait = yaml.safe_load(path.read_text())['/**']['ros__parameters']['gait']
     return [f'champ/gait.yaml: {key} {gait[key]} differs from mobile.limits {want}' for key, want in gait_limits(limits).items() if key in gait and not math.isclose(float(gait[key]), want, rel_tol=1e-9, abs_tol=1e-9)]
-
-
-def laser_differences(laser: LaserSpec, block: Mapping[str, typing.Any]) -> list[str]:
-    """The fields of a `mobile.laser` file block that differ from a URDF `laser_block`."""
-    angle = block['angle']
-    out: list[str] = []
-    for key, have, want, tolerance in (
-        ('angle.min', laser.angle.min, angle['min'], LASER_ANGLE_TOLERANCE),
-        ('angle.max', laser.angle.max, angle['max'], LASER_ANGLE_TOLERANCE),
-    ):
-        if not math.isclose(have, float(want), abs_tol=tolerance):
-            out.append(f'{key} {have} vs {want}')
-    if not math.isclose(laser.angle.increment, float(angle['increment']), rel_tol=LASER_INCREMENT_TOLERANCE):
-        out.append(f"angle.increment {laser.angle.increment} vs {angle['increment']}")
-    if laser.num_beams != int(block['num_beams']):
-        out.append(f"num_beams {laser.num_beams} vs {block['num_beams']}")
-    if not math.isclose(laser.range, float(block['range']), rel_tol=LASER_RANGE_TOLERANCE):
-        out.append(f"range {laser.range} vs {block['range']}")
-    if laser.update_rate != round(float(block['update_rate'])):
-        out.append(f"update_rate {laser.update_rate} vs {block['update_rate']}")
-    return out
-
-
-def laser_drift(view: RobotView, urdf: str) -> list[str]:
-    """Scan sensors of the default URDF whose block differs from the `mobile.laser` the cap file writes."""
-    from arena_robots import urdf_facts
-
-    if 'mobile' not in view.caps.available:
-        return []
-    laser = view.caps.mobile.laser
-    if laser is None:
-        return []
-    out: list[str] = []
-    for sensor in view.effective_sensors({}):
-        if str(sensor.type) != 'laserscan':
-            continue
-        block = urdf_facts.laser_block(urdf, sensor.frame)
-        differences = laser_differences(laser, block) if block is not None else []
-        if differences:
-            out.append(f'mobile.laser differs from the URDF scan sensor {sensor.name} on {sensor.frame}: {", ".join(differences)}')
-    return out
 
 
 def joint_drift(instance: str, arm: ArmSpec, urdf: str) -> list[str]:

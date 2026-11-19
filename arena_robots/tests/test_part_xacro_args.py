@@ -121,14 +121,17 @@ class TestRenderedLaser:
         assert laser.angle.min == pytest.approx(-1.74533)
         assert laser.angle.increment == pytest.approx((laser.angle.max - laser.angle.min) / 400)
 
-    def test_the_laser_provenance_is_the_urdf_only_with_an_argument(self):
+    def test_the_laser_provenance_is_the_urdf(self):
         view = _tiago()
         assert _caps_with_args(view).provenance("mobile.laser.range") == "urdf"
-        assert view.effective_caps({}).provenance("mobile.laser.range") == "file"
+        assert view.effective_caps({}).provenance("mobile.laser.range") == "urdf"
 
-    def test_a_part_without_arguments_keeps_the_file_laser(self):
+    def test_a_part_without_arguments_has_the_default_urdf_laser(self):
         view = _tiago()
-        assert view.effective_caps({}).mobile.laser == view.caps.mobile.laser
+        laser = view.effective_caps({}).mobile.laser
+        assert laser is not None
+        assert laser.range == pytest.approx(25.0)
+        assert laser == view.caps.mobile.laser
 
     def test_the_fleet_params_rebuild_the_same_effective_caps(self):
         view = _tiago()
@@ -147,7 +150,7 @@ class TestLaserOverride:
         with pytest.raises(ValueError, match=r"base_front=lidar/arena_default\[max_range=\.\.\.\]"):
             caps.validate_overrides()
 
-    def test_a_laser_override_raises_without_a_lidar_part_with_arguments(self):
+    def test_a_laser_override_raises_on_a_robot_without_lidar_parts_with_arguments(self):
         caps = RobotIdentifier("jackal").resolve_sync().effective_caps({}, caps={"mobile.laser": {"scale": 0.5}})
         with pytest.raises(ValueError, match="rendered URDF"):
             caps.validate_overrides()

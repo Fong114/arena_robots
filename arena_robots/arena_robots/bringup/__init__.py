@@ -80,10 +80,11 @@ class Bringup(ABC):
         return path
 
     def mobile_caps_launch_arguments(self) -> dict[str, str]:
-        """`mobile_caps` pointing at the per-host, per-namespace temp file of the effective mobile cap when the request overrides it, else empty."""
-        if not any(key.startswith("mobile.") for key in self.request.caps):
+        """`mobile_caps` pointing at the per-host, per-namespace temp file of the effective mobile cap with the laser block of the rendered URDF, else empty when the robot has no lidar and the request does not override the cap."""
+        laser = self.caps.laser_block()
+        if laser is None and not any(key.startswith("mobile.") for key in self.request.caps):
             return {}
-        return {"mobile_caps": self._temp_yaml("mobile_caps", self.caps.mobile.raw)}
+        return {"mobile_caps": self._temp_yaml("mobile_caps", {**self.caps.mobile.raw, **({} if laser is None else {"laser": laser})})}
 
     @property
     def cap(self) -> str:

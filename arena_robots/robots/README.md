@@ -84,7 +84,7 @@ variant of `caps/arm.yaml`.
 
 A robot has exactly one mobile base by construction. All robot-physical
 primitives live at top level; adapter sub-blocks are reserved for
-adapter-specific wiring only. `actions` and `laser` are top-level fields. The
+adapter-specific wiring only. `actions` is a top-level field, `laser` is not authored, see "Where each value is authored". The
 optional `nav2:` sub-block carries nav2-only wiring such as
 `global_observation` and `local_observation` (the cloud sources' `min_obstacle_height` and `max_obstacle_height`, 0.1 and 0.8 m by default). The global planner's settings come from the selected
 planner config.
@@ -113,8 +113,6 @@ acceleration_limits:
 actions:
   continuous: {linear: {min: -2.0, max: 2.0}, angular: {min: -4.0, max: 4.0}}
   discrete: [{name: move_forward, linear: 0.3, angular: 0.0}, ...]
-
-laser: {angle: {min: -2.35619, max: 2.35619}, num_beams: 720, range: 30.0, update_rate: 10}
 
 limits:                    # optional, per axis, each axis defaults to planar's
   velocity: {linear: [-2.0, 2.0], angular: [-4.0, 4.0]}
@@ -242,7 +240,7 @@ from the effective caps, or `robots_check` warns where it differs.
 | Controller limit literals | `control*.yaml`, only to declare which keys exist | the controller, overlaid from `mobile.limits` on an override, `robots_check` warns on a different literal |
 | Wheel radius, separation | `control.yaml` | the controller, `robots_check` compares them with the URDF's wheel joints |
 | CHAMP gait speeds | `champ/gait.yaml` | the CHAMP bringup, rendered per instance from `mobile.limits` on an override |
-| Lidar geometry (`mobile.laser`) | the lidar component's xacro arguments (a bracket on the part) or the URDF | `mobile.laser` file block until a part carries arguments, then the rendered URDF's scan sensor |
+| Lidar geometry (`mobile.laser`) | the lidar component's xacro arguments (a bracket on the part) or the URDF | read from the scan sensor of the rendered URDF on the primary lidar (the first `laserscan` sensor), never authored in `caps/mobile.yaml` |
 | MoveIt joint limits (`arm.<mount>.joint_limits`) | the component's `joint_limits/` file | `moveit_factory`, overridable per instance, tightened-only against the URDF `<limit>` |
 | Joint position, velocity and effort limits | the URDF | the simulators, the bound of the MoveIt limits |
 | Body mass | `model_params.yaml` `mass.base_kg` and each component's `mass.kg` | `body.mass.*`, the power model through `power.yaml` `robot_mass_kg`, `robots_check` lists both beside the URDF sum |

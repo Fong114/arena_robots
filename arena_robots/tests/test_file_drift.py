@@ -12,7 +12,6 @@ from arena_robots.Robot import RobotIdentifier
 ROBOTS_DIR = Path(ARENA_ROBOTS_DIR) / "robots"
 GOLDEN_DIR = Path(__file__).parent / "golden"
 MODELS = sorted(p.parent.parent.name for p in ROBOTS_DIR.glob("*/caps/mobile.yaml"))
-GOLDEN = sorted(p.name.removesuffix("_default.urdf") for p in GOLDEN_DIR.glob("*_default.urdf"))
 HALF = {"mobile.limits": {"scale": 0.5}}
 
 
@@ -22,17 +21,6 @@ def _golden(robot: str) -> str:
 
 def _gait(path: str) -> dict[str, float]:
     return yaml.safe_load(Path(path).read_text())["/**"]["ros__parameters"]["gait"]
-
-
-@pytest.mark.parametrize("robot", [name for name in GOLDEN if name != "boxer"])
-def test_file_laser_equals_the_rendered_scan_sensor(robot: str):
-    assert drift.laser_drift(RobotIdentifier(robot).resolve_sync(), _golden(robot)) == []
-
-
-def test_boxer_rear_lidar_differs_from_the_single_file_block():
-    found = drift.laser_drift(RobotIdentifier("boxer").resolve_sync(), _golden("boxer"))
-    assert found
-    assert all("differs from the URDF scan sensor" in message for message in found)
 
 
 @pytest.mark.parametrize("model", MODELS)

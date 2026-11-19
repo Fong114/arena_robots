@@ -21,6 +21,10 @@ def _make_mock_robot(name: str = "test_robot") -> object:
     mock_robot = MagicMock()
     mock_robot.name = name
     mock_robot.caps.mobile.min_turning_radius = 0.0
+
+    caps = mock_robot.effective_caps.return_value
+    caps.laser_block.return_value = {"angle": {"min": -3.14159, "max": 3.14159, "increment": 0.0098}, "num_beams": 640, "range": 12.0, "update_rate": 10.0}
+    caps.mobile.raw = {}
     return mock_robot
 
 

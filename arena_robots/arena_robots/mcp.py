@@ -170,7 +170,7 @@ def _mobile(caps: RobotCaps) -> dict[str, Any] | None:
             out[field] = _attrs(getattr(mobile, field))
         except Exception as exc:
             out[field] = {"error": _error(exc)}
-    out["adapter_blocks"] = sorted(key for key, value in mobile.raw.items() if isinstance(value, dict) and key not in ("polygons_dict", "planar", "actions", "laser", "velocity_limits", "acceleration_limits"))
+    out["adapter_blocks"] = sorted(key for key, value in mobile.raw.items() if isinstance(value, dict) and key not in ("polygons_dict", "planar", "actions", "velocity_limits", "acceleration_limits"))
     return cast("dict[str, Any]", msgs.jsonable(out))
 
 
@@ -395,7 +395,6 @@ def _file_drift_findings(view: RobotView, caps: RobotCaps) -> list[dict[str, Any
         return findings
     except Exception as exc:
         return [*findings, _finding(name, "urdf", f"the default URDF does not render, the URDF checks are skipped: {_error(exc)}", "warning")]
-    findings += _drift_findings(name, "laser", lambda: drift.laser_drift(view, urdf))
     findings += _drift_findings(name, "control.wheels", lambda: drift.wheel_drift(view, urdf, view.caps.body.base_frame))
     for instance, arm in (caps.arm or {}).items():
         findings += _drift_findings(name, "joint_limits", lambda instance=instance, arm=arm: drift.joint_drift(instance, arm, caps.rendered_urdf()))

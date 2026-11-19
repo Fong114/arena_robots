@@ -65,15 +65,6 @@ actions:
       linear: 0.0
       name: stop
 
-laser:
-  angle:
-    increment: 0.009817477
-    max: 3.14159
-    min: -3.14159
-  num_beams: 640
-  range: 12.0
-  update_rate: 10
-
 nav2:
   local_observation:
     min_obstacle_height: 0.2

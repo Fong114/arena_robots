@@ -13,6 +13,7 @@ from arena_robots.urdf_facts import collision_outline, joint_limits, laser_block
 PKG = Path(__file__).resolve().parents[2] / "arena_robots"
 ROBOTS_DIR = PKG / "robots"
 GOLDEN_DIR = Path(__file__).parent / "golden"
+AUTHORED_LASERS = yaml.safe_load((GOLDEN_DIR / "mobile_laser_blocks.yaml").read_text())
 
 
 def _golden(robot: str) -> str:
@@ -105,8 +106,8 @@ def test_tiago_arm_joint_limits_equal_moveit_limits() -> None:
         assert limits[name].upper == pytest.approx(moveit[name]["max_position"])
 
 
-def test_jackal_laser_block_equals_mobile_caps() -> None:
-    expected = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())["laser"]
+def test_jackal_laser_block_equals_the_formerly_authored_block() -> None:
+    expected = AUTHORED_LASERS["jackal"]
     block = laser_block(_golden("jackal"))
     assert block is not None
     assert block["num_beams"] == expected["num_beams"] == 640
@@ -119,7 +120,7 @@ def test_jackal_laser_block_equals_mobile_caps() -> None:
 
 
 def test_tiago_laser_block_uses_partial_fan_increment() -> None:
-    expected = yaml.safe_load((ROBOTS_DIR / "tiago" / "caps" / "mobile.yaml").read_text())["laser"]
+    expected = AUTHORED_LASERS["tiago"]
     block = laser_block(_golden("tiago"))
     assert block is not None
     assert block["num_beams"] == 401
@@ -129,7 +130,7 @@ def test_tiago_laser_block_uses_partial_fan_increment() -> None:
 
 
 def test_rbkairos_laser_block_selects_the_front_frame() -> None:
-    expected = yaml.safe_load((ROBOTS_DIR / "rbkairos" / "caps" / "mobile.yaml").read_text())["laser"]
+    expected = AUTHORED_LASERS["rbkairos"]
     block = laser_block(_golden("rbkairos"), "robot_front_laser_link")
     assert block is not None
     assert block["num_beams"] == expected["num_beams"] == 541

@@ -56,13 +56,4 @@ actions:
       linear: 0.0
       name: rotate_right
 
-laser:
-  angle:
-    increment: 0.00872664626
-    max: 3.14159
-    min: -3.14159
-  num_beams: 720
-  range: 30.0
-  update_rate: 10
-
 nav2: {}

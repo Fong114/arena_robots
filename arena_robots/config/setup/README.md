@@ -108,11 +108,12 @@ entries with the path to write inside its brackets. They travel in the fleet par
 as `param:<type>@<mount>.<arg>` entries holding a JSON value, next to the
 `<type>@<mount>` entry that names the variant.
 
-`mobile.laser` stays authored in `caps/mobile.yaml` until a lidar part carries
-xacro arguments in its brackets. The effective `mobile.laser` is then read from the
-scan sensor of the rendered URDF on that part's frame (increment `2 pi / n` for a
-full circle, else `(max - min) / (n - 1)`) and its provenance is `urdf`. A
-`mobile.laser` override raises and names the bracket form.
+`mobile.laser` is not authored. The effective `mobile.laser` is read from the scan
+sensor of the instance's rendered URDF on the frame of its primary lidar, the first
+`laserscan` entry of the effective sensors (increment `2 pi / n` for a full circle,
+else `(max - min) / (n - 1)`), and its provenance is `urdf`. A robot without a
+`laserscan` sensor has no laser. A `mobile.laser` override raises and names the
+bracket form of the lidar part.
 
 `arm.<mount>.joint_limits.<joint>.<key>` are the arm's MoveIt joint limits (`max_velocity`,
 `max_acceleration`, `max_effort`, `min_position`, `max_position` and their `has_*`
@@ -171,7 +172,7 @@ robot spawns, and `arena robot paths` marks such paths `only in <sims>`.
 acceleration) and clamped planner limits as warnings. It also warns where a value
 written in two places differs from its owner: a `control*.yaml` limit literal from
 `mobile.limits`, `control.yaml` wheel geometry from the URDF, `champ/gait.yaml` from
-`mobile.limits`, the file's `mobile.laser` from the default URDF's scan sensor, a
+`mobile.limits`, a
 `joint_limits/` file value above the URDF `<limit>`, and the masses of
 `model_params.yaml` (base plus parts), the URDF and `telemetry/power.yaml`.
 
