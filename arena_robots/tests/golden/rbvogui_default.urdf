@@ -52,9 +52,9 @@
   <!-- BASE_LINK -->
   <link name="robot_base_link">
     <inertial>
-      <mass value="25.0"/>
+      <mass value="90.0"/>
       <origin xyz="-0.012 0 0.2775"/>
-      <inertia ixx="1.4744666666666666" ixy="0" ixz="0" iyy="3.434635416666666" iyz="0" izz="4.707435416666667"/>
+      <inertia ixx="5.30808" ixy="0" ixz="0" iyy="12.364687499999997" iyz="0" izz="16.9467675"/>
     </inertial>
   </link>
   <!-- Chassis -->

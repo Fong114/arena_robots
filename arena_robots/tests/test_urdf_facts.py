@@ -143,8 +143,8 @@ def test_laser_block_of_unknown_frame_is_none() -> None:
 
 
 def test_total_mass_sums_link_inertials() -> None:
-    assert total_mass(_golden("jackal")) == pytest.approx(18.532, abs=1e-3)
-    assert total_mass(_golden("boxer")) == pytest.approx(451.172, abs=1e-3)
+    assert total_mass(_golden("jackal")) == pytest.approx(17.101, abs=1e-3)
+    assert total_mass(_golden("boxer")) == pytest.approx(107.0, abs=1e-3)
 
 
 def test_jackal_wheel_geometry_equals_control_yaml() -> None:

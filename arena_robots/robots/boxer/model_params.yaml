@@ -2,7 +2,7 @@ robot_model: boxer
 base_frame: base_link
 z_offset: 0.005
 mass:
-  base_kg: 451.1
+  base_kg: 107.0
 sensors:
   - name: front_laser
     type: laserscan

@@ -134,7 +134,7 @@ class TestSrdfFragment:
 class TestJointLimits:
     """Per-variant MoveIt planning joint_limits under `arm/ur/joint_limits/<variant>.yaml`:
     velocity from ur_description (matches the URDF/controller), uniform `max_acceleration`,
-    templated `${prefix}${mount}_*` keys. ur5e keeps its shipped 360deg/s wrists."""
+    templated `${prefix}${mount}_*` keys."""
 
     def _limits(self, variant: str) -> dict:
         return yaml.safe_load((FAMILY / "joint_limits" / f"{variant}.yaml").read_text())["joint_limits"]
@@ -147,23 +147,21 @@ class TestJointLimits:
             assert entry["has_velocity_limits"] is True
             assert entry["max_acceleration"] == 15.0
 
-    def test_ur5e_keeps_shipped_360_wrists(self) -> None:
+    def test_ur5e_moves_every_joint_at_its_vendor_180_degrees_per_second(self) -> None:
         limits = self._limits("ur5e")
-        assert limits["${prefix}${mount}_shoulder_pan_joint"]["max_velocity"] == pytest.approx(math.pi)
-        assert limits["${prefix}${mount}_wrist_1_joint"]["max_velocity"] == pytest.approx(2 * math.pi)
+        for joint in ARM_JOINTS:
+            assert limits[f"${{prefix}}${{mount}}_{joint}"]["max_velocity"] == pytest.approx(math.pi)
 
     def test_ur10e_differs_from_ur5e(self) -> None:
         """ur10e's shipped limits once byte-copied ur5e's, the family derives correct
-        per-variant values: ur10e shoulders are slower (120deg/s) and wrists are
-        180deg/s, not 360deg/s."""
+        per-variant values: ur10e shoulders are slower (120deg/s)."""
         ur5e, ur10e = self._limits("ur5e"), self._limits("ur10e")
         assert ur5e != ur10e
         assert ur10e["${prefix}${mount}_shoulder_pan_joint"]["max_velocity"] == pytest.approx(math.radians(120))
         assert ur10e["${prefix}${mount}_wrist_1_joint"]["max_velocity"] == pytest.approx(math.radians(180))
 
     def test_cb_ur5_follows_ur_description_not_ur5e(self) -> None:
-        """CB-series ur5 has no shipped consumer, so it takes ur_description's conservative
-        180deg/s wrists (the URDF/controller value), unlike ur5e's authored 360deg/s."""
+        """CB-series ur5 takes ur_description's 180deg/s wrists (the URDF/controller value)."""
         assert self._limits("ur5")["${prefix}${mount}_wrist_1_joint"]["max_velocity"] == pytest.approx(math.pi)
 
 

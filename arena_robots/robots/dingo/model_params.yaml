@@ -2,7 +2,7 @@ robot_model: dingo
 base_frame: base_link
 z_offset: 0.0151
 mass:
-  base_kg: 10.323
+  base_kg: 12.0
 sensors:
   - name: lidar
     type: laserscan

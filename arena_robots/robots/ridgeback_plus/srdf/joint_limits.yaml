@@ -31,7 +31,7 @@ joint_limits:
     max_effort: 150.0
   arm_wrist_1_joint:
     has_velocity_limits: true
-    max_velocity: 6.283185307179586
+    max_velocity: 3.141592653589793
     has_acceleration_limits: true
     max_acceleration: 15.0
     has_position_limits: true
@@ -41,7 +41,7 @@ joint_limits:
     max_effort: 28.0
   arm_wrist_2_joint:
     has_velocity_limits: true
-    max_velocity: 6.283185307179586
+    max_velocity: 3.141592653589793
     has_acceleration_limits: true
     max_acceleration: 15.0
     has_position_limits: true
@@ -51,7 +51,7 @@ joint_limits:
     max_effort: 28.0
   arm_wrist_3_joint:
     has_velocity_limits: true
-    max_velocity: 6.283185307179586
+    max_velocity: 3.141592653589793
     has_acceleration_limits: true
     max_acceleration: 15.0
     has_position_limits: true

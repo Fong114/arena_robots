@@ -2,7 +2,7 @@ robot_model: ridgeback
 base_frame: base_link
 z_offset: 0.0259
 mass:
-  base_kg: 195.039
+  base_kg: 135.0
 sensors:
   - name: lidar
     type: laserscan

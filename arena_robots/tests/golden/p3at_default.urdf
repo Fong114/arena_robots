@@ -45,8 +45,8 @@
     </collision>
     <inertial>
       <origin rpy="0 0 0" xyz="0 0 0.06599999999999999"/>
-      <mass value="10.0"/>
-      <inertia ixx="0.09605333333333334" ixy="0" ixz="0" iyy="0.23739" iyz="0" izz="0.2720033333333334"/>
+      <mass value="8.9"/>
+      <inertia ixx="0.08548746666666668" ixy="0" ixz="0" iyy="0.21127710000000002" iyz="0" izz="0.2420829666666667"/>
     </inertial>
   </link>
   <joint name="top_plate_joint" type="fixed">

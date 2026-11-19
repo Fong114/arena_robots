@@ -8,8 +8,8 @@ power_system:
   drivetrain_damping: 0.08
   drivetrain_friction: 0.2
   rolling_resistance_crr: 0.035
-  robot_mass_kg: 60.0
-  wheel_radius_m: 0.127
+  robot_mass_kg: 70.0
+  wheel_radius_m: 0.0762
   num_wheels: 4
 
 joint_metrics:

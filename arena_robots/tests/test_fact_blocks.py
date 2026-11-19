@@ -36,14 +36,14 @@ def test_jackal_body_carries_the_frame_and_the_control_topics():
 def test_jackal_body_mass_base_is_the_model_params_value():
     body = _jackal_caps().body
     assert body is not None
-    assert body.mass_base == pytest.approx(18.431)
+    assert body.mass_base == pytest.approx(17.0)
 
 
 def test_jackal_power_holds_the_power_system_without_the_model_name():
     power = _jackal_caps().power
     assert power is not None
     assert power.power_system["rolling_resistance_crr"] == pytest.approx(0.035)
-    assert power.power_system["robot_mass_kg"] == pytest.approx(18.431)
+    assert power.power_system["robot_mass_kg"] == pytest.approx(17.0)
     assert "robot_model" not in power.raw
 
 
@@ -58,7 +58,7 @@ def test_placed_default_parts_add_their_component_mass_to_the_total():
     body = caps.body
     assert body is not None
     assert body.mass_parts["lidar.front"] == pytest.approx(Catalog().get("lidar", "jackal_default").mass["kg"])
-    assert body.mass_total == pytest.approx(18.431 + sum(body.mass_parts.values()))
+    assert body.mass_total == pytest.approx(17.0 + sum(body.mass_parts.values()))
     assert body.mass_total > body.mass_base
 
 
@@ -69,7 +69,7 @@ def test_ur5e_component_mass_enters_the_parts_and_the_total():
     body = _jackal_with_ur5e().body
     assert body is not None
     assert body.mass_parts["arm.top"] == pytest.approx(kg)
-    assert body.mass_total == pytest.approx(18.431 + sum(body.mass_parts.values()))
+    assert body.mass_total == pytest.approx(17.0 + sum(body.mass_parts.values()))
 
 
 def test_power_override_applies_to_the_power_system():
@@ -96,7 +96,7 @@ def test_power_profile_takes_the_power_model_mass():
     caps = view.effective_caps({})
     profile = view.power_profile(caps)
     assert profile is not None
-    assert profile["robot_mass_kg"] == pytest.approx(18.431)
+    assert profile["robot_mass_kg"] == pytest.approx(17.0)
     assert profile["rolling_resistance_crr"] == pytest.approx(0.035)
 
 

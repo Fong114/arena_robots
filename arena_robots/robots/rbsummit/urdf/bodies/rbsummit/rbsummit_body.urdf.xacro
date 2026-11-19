@@ -7,7 +7,7 @@
 
 	  <!-- Robot mechanical and motor parameters -->
 	  <xacro:property name="PI" value="3.1415926535897931"/>
-	  <xacro:property name="wheel_radius" value="0.11"/>
+	  <xacro:property name="wheel_radius" value="0.1175"/>
 
 	  <!-- BASE FOOTPRINT -->
 	<link name="${prefix}base_footprint">
@@ -28,9 +28,9 @@
 	  <!-- BASE_LINK -->
 	  <link name="${prefix}base_link">
 		<inertial>
-		  <mass value="25.0" />
+		  <mass value="37.8" />
 		  <origin xyz="0 0 0" />
-		  <xacro:solid_cuboid_inertia m="25.0" h="0.38" d="0.62" w="0.36"/>
+		  <xacro:solid_cuboid_inertia m="37.8" h="0.38" d="0.62" w="0.36"/>
 		</inertial>
 		<visual>
 		   <origin xyz="0 0 0" rpy="0 0 0" />

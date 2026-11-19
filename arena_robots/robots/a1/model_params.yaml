@@ -3,7 +3,7 @@ priority: 3
 base_frame: base
 z_offset: 0.32
 mass:
-  base_kg: 12.777
+  base_kg: 12.0
 sensors:
   - name: camera_face_image
     type: image

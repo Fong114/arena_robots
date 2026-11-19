@@ -2,7 +2,7 @@ robot_model: rbkairos
 base_frame: robot_base_footprint
 z_offset: 0.0
 mass:
-  base_kg: 151.0
+  base_kg: 115.0
 sensors:
   - name: lidar
     type: laserscan

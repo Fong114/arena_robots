@@ -36,8 +36,8 @@
     </collision>
     <inertial>
       <origin xyz="0 0 ${0.177 - axle_z}" rpy="0 0 0" />
-      <mass value="10.0" />
-      <xacro:solid_cuboid_inertia m="10.0" w="0.498" h="0.28" d="0.192" />
+      <mass value="8.9" />
+      <xacro:solid_cuboid_inertia m="8.9" w="0.498" h="0.28" d="0.192" />
     </inertial>
   </link>
 

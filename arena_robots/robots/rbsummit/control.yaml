@@ -17,7 +17,7 @@ rbsummit_velocity_controller:
     right_wheel_names: [ "robot_front_right_wheel_joint", "robot_back_right_wheel_joint" ]
 
     wheel_separation: 0.47
-    wheel_radius: 0.1125
+    wheel_radius: 0.1175
 
     # 4-wheel skid steer scrubs during rotation, so the effective lever arm is
     # wider than the physical track; 1.5 is empirical (same as husky).

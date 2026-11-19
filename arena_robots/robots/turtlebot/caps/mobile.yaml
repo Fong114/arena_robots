@@ -20,7 +20,7 @@ velocity_limits:
   angular: [-1.9, 1.9]
 
 planar:
-  velocity: {linear: [-0.4, 0.4], lateral: [0.0, 0.0], angular: [-1.9, 1.9]}
+  velocity: {linear: [-0.31, 0.31], lateral: [0.0, 0.0], angular: [-1.9, 1.9]}
   acceleration: {linear: .inf, lateral: .inf, angular: .inf}
   gain: {linear: 1.0, lateral: 1.0, angular: 1.0}
   lag: 0.0

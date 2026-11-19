@@ -29,18 +29,23 @@ def _rendering() -> None:
     pytest.importorskip("xacro", reason="xacro is not importable, run under the Arena container")
 
 
-def test_boxer_warns_about_its_rear_lidar_and_its_masses(require_installed: Callable[[str], None]):
+def test_boxer_warns_only_about_its_rear_lidar(require_installed: Callable[[str], None]):
     require_installed("boxer")
     checks = _checks("boxer")
     assert "laser" in checks
-    assert len(checks["caps.mass"]) == 1
-    assert "URDF 451" in checks["caps.mass"][0]
-    assert "robot_mass_kg 115" in checks["caps.mass"][0]
+    assert "caps.mass" not in checks
 
 
-def test_rbvogui_warns_about_its_wheel_radius(require_installed: Callable[[str], None]):
+def test_turtlebot_warns_about_its_upstream_urdf_mass(require_installed: Callable[[str], None]):
+    require_installed("turtlebot")
+    [message] = _checks("turtlebot")["caps.mass"]
+    assert "URDF 4.454" in message
+    assert "robot_mass_kg 3.5" in message
+
+
+def test_rbvogui_wheels_match_the_urdf(require_installed: Callable[[str], None]):
     require_installed("rbvogui")
-    assert any("wheel_radius 0.1125" in message for message in _checks("rbvogui")["control.wheels"])
+    assert "control.wheels" not in _checks("rbvogui")
 
 
 def test_jackal_raises_no_drift_finding(require_installed: Callable[[str], None]):
@@ -50,8 +55,6 @@ def test_jackal_raises_no_drift_finding(require_installed: Callable[[str], None]
 
 @pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH, run under the Arena container")
 @pytest.mark.skipif(not _UR_MACRO.is_file(), reason="deps/ur_description not initialized, run `arena feature robots add arm/ur`")
-def test_ur5e_wrists_exceed_the_urdf_velocity(require_installed: Callable[[str], None]):
+def test_ur5e_joint_limits_stay_within_the_urdf(require_installed: Callable[[str], None]):
     require_installed("arm/ur")
-    messages = _checks("jackal", {"top": "arm/ur5e"})["joint_limits"]
-    assert any("top_wrist_1_joint" in message and "max_velocity" in message for message in messages)
-    assert not any("top_shoulder_pan_joint" in message for message in messages)
+    assert "joint_limits" not in _checks("jackal", {"top": "arm/ur5e"})
