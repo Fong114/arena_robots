@@ -115,7 +115,7 @@ def _mobile(caps: RobotCaps) -> dict[str, Any] | None:
         return None
     mobile = caps.mobile
     out: dict[str, Any] = {"odom_frame": mobile.odom_frame, "sensor_frame": mobile.sensor_frame, "radius": mobile.radius, "is_holonomic": mobile.is_holonomic}
-    for field in ("footprint", "footprint_padding", "inflation_radius"):
+    for field in ("min_turning_radius", "footprint", "footprint_padding", "inflation_radius"):
         try:
             out[field] = getattr(mobile, field)
         except Exception as exc:
@@ -304,7 +304,7 @@ def _definition_findings(view: RobotView) -> list[dict[str, Any]]:
     if "mobile" not in available:
         findings.append(_finding(name, "caps", "caps/mobile.yaml is missing, every robot needs a mobile cap"))
     else:
-        for field in ("velocity_limits", "acceleration_limits", "actions", "planar", "laser", "footprint", "polygons_dict"):
+        for field in ("min_turning_radius", "velocity_limits", "acceleration_limits", "actions", "planar", "laser", "footprint", "polygons_dict"):
             try:
                 getattr(caps.mobile, field)
             except Exception as exc:
