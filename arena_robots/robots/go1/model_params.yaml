@@ -6,21 +6,18 @@ sensors:
   - name: camera_face_image
     type: image
     topic: ${namespace}/camera_face/image
-    frame: camera_face
     sensor: camera_face
   - name: camera_face_info
     type: camera_info
     topic: ${namespace}/camera_face/camera_info
-    frame: camera_face
     sensor: camera_face
   - name: camera_face_points
     type: pointcloud
     topic: ${namespace}/camera_face/points
-    frame: camera_face
     sensor: camera_face
   # Only the front (face) camera is active for now. The chin/left/right/rearDown
   # sensors are commented out to save render cost; re-enable alongside the xacro
-  # instantiations + mappings.yaml bridges.
+  # instantiations.
   # - name: camera_chin_image
   #   type: image
   #   topic: ${namespace}/camera_chin/image
@@ -72,12 +69,10 @@ sensors:
   - name: lidar
     type: laserscan
     topic: ${namespace}/lidar
-    frame: lidar
     sensor: gpu_lidar
   - name: lidar_points
     type: pointcloud
     topic: ${namespace}/lidar/points
-    frame: lidar
     sensor: gpu_lidar
 control:
   mode: ros2_control

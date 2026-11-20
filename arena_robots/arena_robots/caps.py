@@ -21,10 +21,7 @@ import functools
 import hashlib
 import json
 import math
-import re
-import socket
 import subprocess
-import tempfile
 import typing
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -756,8 +753,8 @@ def _joint_limits_file(path: str, context: tuple[tuple[str, str], ...]) -> dict[
     return limits if isinstance(limits, dict) else {}
 
 
-def moveit_joint_limits(raw: typing.Mapping[str, typing.Any]) -> dict[str, dict[str, object]]:
-    """The joint_limits file an arm entry's ``moveit`` block names, re-keyed for its mount, empty when it names none."""
+def moveit_joint_limits(raw: typing.Mapping[str, typing.Any], urdf_limits: Callable[[], typing.Mapping[str, JointLimit]] | None = None) -> dict[str, dict[str, object]]:
+    """The joint_limits file an arm entry's ``moveit`` block names, re-keyed for its mount and with the URDF limits of its joints filled in where it authors none, empty when it names no file."""
     moveit = raw.get('moveit')
     if not isinstance(moveit, dict):
         return {}
@@ -768,14 +765,29 @@ def moveit_joint_limits(raw: typing.Mapping[str, typing.Any]) -> dict[str, dict[
     path = _resolve_find_ref(f"$(find {package})/{ref.get('path', 'config/joint_limits.yaml')}")
     args = moveit.get('args') or {}
     context = tuple((key, str(args[key])) for key in ('prefix', 'mount', 'parent') if key in args)
-    return copy.deepcopy(_joint_limits_file(str(path), context))
+    joints = copy.deepcopy(_joint_limits_file(str(path), context))
+    if urdf_limits is not None and any(key not in entry for entry in joints.values() for key in _URDF_JOINT_KEYS):
+        bounds = urdf_limits()
+        for joint, entry in joints.items():
+            for key, value in _urdf_joint_entry(bounds.get(joint)).items():
+                entry.setdefault(key, value)
+    return joints
 
 
-def _with_joints(raw: dict[str, typing.Any]) -> dict[str, typing.Any]:
-    if 'joint_limits' in raw:
-        return raw
-    joints = moveit_joint_limits(raw)
-    return {**raw, 'joint_limits': joints} if joints else raw
+_URDF_JOINT_KEYS = ('max_velocity', 'max_position', 'min_position', 'max_effort')
+
+
+def _urdf_joint_entry(bound: JointLimit | None) -> dict[str, object]:
+    if bound is None:
+        return {}
+    out: dict[str, object] = {}
+    if bound.velocity is not None:
+        out.update(has_velocity_limits=True, max_velocity=bound.velocity)
+    if bound.lower is not None and bound.upper is not None:
+        out.update(has_position_limits=True, min_position=bound.lower, max_position=bound.upper)
+    if bound.effort is not None:
+        out.update(has_effort_limits=True, max_effort=bound.effort)
+    return out
 
 
 _INSTANCE_CLASSES: dict[str, type[InstanceSpec]] = {
@@ -1188,17 +1200,29 @@ class RobotCaps:
             self._cached[key] = out
         return copy.deepcopy(self._cached[key])
 
-    def _joint_limit(self, joint: str) -> JointLimit | None:
+    def _urdf_joint_limits(self) -> dict[str, JointLimit]:
         if self.view is None:
-            return None
+            return {}
         from arena_robots import urdf_facts
 
         if not urdf_facts.source(self.view).is_file():
-            return None
+            return {}
         key = 'derived:joint_limits'
         if key not in self._cached:
             self._cached[key] = urdf_facts.joint_limits(self.rendered_urdf())
-        return self._cached[key].get(joint)
+        return self._cached[key]
+
+    def _with_joints(self, raw: dict[str, typing.Any], name: str) -> dict[str, typing.Any]:
+        if 'joint_limits' in raw:
+            return raw
+        authored = moveit_joint_limits(raw)
+        joints = moveit_joint_limits(raw, self._urdf_joint_limits)
+        for joint, entry in joints.items():
+            self._urdf_leaves.update(f'arm.{name}.joint_limits.{joint}.{key}' for key in entry if key not in authored.get(joint, {}))
+        return {**raw, 'joint_limits': joints} if joints else raw
+
+    def _joint_limit(self, joint: str) -> JointLimit | None:
+        return self._urdf_joint_limits().get(joint)
 
     def _with_urdf_defaults(self, cap: str, name: str, entry: dict[str, typing.Any]) -> dict[str, typing.Any]:
         """The lift or gripper entry with the joint's URDF limit or effort filled in where it does not author one."""
@@ -1225,20 +1249,6 @@ class RobotCaps:
                 return True
         return False
 
-    def champ_gait_file(self, label: str) -> str | None:
-        """Path of a CHAMP gait file with this instance's ``mobile.limits`` written into the gait speeds, None unless an override touches ``mobile.limits``."""
-        source = self.caps_dir.parent / 'champ' / 'gait.yaml'
-        if not source.is_file() or not any(drift.touches_limits(path) for path in self.all_overrides) or 'mobile' not in self.available:
-            return None
-        limits = self.mobile.limits
-        if limits is None:
-            return None
-        data = yaml.safe_load(source.read_text())
-        data['/**']['ros__parameters']['gait'].update(drift.gait_limits(limits))
-        out = Path(tempfile.gettempdir()) / f"champ_gait_{socket.gethostname()}_{re.sub(r'[^A-Za-z0-9_.-]', '_', label)}.yaml"
-        out.write_text(yaml.safe_dump(data, sort_keys=False))
-        return str(out)
-
     def _overlay_file(self, cap: str, data: dict[str, typing.Any], path: Path) -> dict[str, typing.Any]:
         rel = self._cap_overrides(cap)
         if cap == 'mobile':
@@ -1262,12 +1272,12 @@ class RobotCaps:
         every = grouped.pop(WILDCARD, {})
         for instance, entry in data.items():
             if every and isinstance(entry, dict):
-                out[instance] = overlay(_with_joints(entry) if cap == 'arm' else entry, every, label=f'{path} {instance}', known=typed_fields(instance_cls))
+                out[instance] = overlay(self._with_joints(entry, str(instance)) if cap == 'arm' else entry, every, label=f'{path} {instance}', known=typed_fields(instance_cls))
         for instance, instance_rel in grouped.items():
             entry = out.get(instance)
             if not isinstance(entry, dict):
                 raise ValueError(f"{path}: cap override targets unknown {cap} instance {instance!r}, instances: {sorted(data)}")
-            out[instance] = overlay(_with_joints(entry) if cap == 'arm' else entry, instance_rel, label=f'{path} {instance}', known=typed_fields(instance_cls))
+            out[instance] = overlay(self._with_joints(entry, str(instance)) if cap == 'arm' else entry, instance_rel, label=f'{path} {instance}', known=typed_fields(instance_cls))
         return out
 
     def _fact_file(self, block: str) -> Path:
@@ -1355,7 +1365,7 @@ class RobotCaps:
                 return 'derived'
             if key not in authored and key in self._derived_mobile():
                 return _DERIVED_MOBILE[key]
-        if head in ('lift', 'gripper'):
+        if head in ('arm', 'lift', 'gripper'):
             getattr(self, head)
             if path in self._urdf_leaves:
                 return 'urdf'
@@ -1446,7 +1456,7 @@ class RobotCaps:
             if not self.joints_overridden(name):
                 continue
             limits = urdf_facts.joint_limits(self.rendered_urdf()) if limits is None else limits
-            base = moveit_joint_limits(arm.raw)
+            base = moveit_joint_limits(arm.raw, self._urdf_joint_limits)
             for joint, entry in arm.joint_limits.items():
                 bounds = limits.get(joint)
                 if bounds is None:
@@ -1501,7 +1511,7 @@ class RobotCaps:
                 if not isinstance(rendered, dict):
                     raise ValueError(f"{placement.type} component {placement.variant!r}: 'caps' must render to a mapping; got {type(rendered).__name__}")
                 if cap == 'arm':
-                    rendered = _with_joints(rendered)
+                    rendered = self._with_joints(rendered, placement.mount.name)
                 rendered = self._with_urdf_defaults(cap, placement.mount.name, rendered)
                 for instance_rel in (rel.get(WILDCARD), rel.get(placement.mount.name)):
                     if instance_rel:
@@ -1520,7 +1530,7 @@ class RobotCaps:
         for name, entry in data.items():
             if not isinstance(entry, dict):
                 raise ValueError(f"{path}: '{name}' must be a mapping (dict-keyed instance); got {type(entry).__name__}. See robots/README.md on the uniform dict-keyed shape for multi-instance caps.")
-            out[str(name)] = cls(path=path, raw=_with_joints(entry) if cap == 'arm' else entry, name=str(name))
+            out[str(name)] = cls(path=path, raw=self._with_joints(entry, str(name)) if cap == 'arm' else entry, name=str(name))
         return out
 
 

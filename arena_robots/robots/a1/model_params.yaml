@@ -6,27 +6,22 @@ sensors:
   - name: camera_face_image
     type: image
     topic: ${namespace}/camera_face/image
-    frame: camera_face
     sensor: camera_face
   - name: camera_face_info
     type: camera_info
     topic: ${namespace}/camera_face/camera_info
-    frame: camera_face
     sensor: camera_face
   - name: camera_face_points
     type: pointcloud
     topic: ${namespace}/camera_face/points
-    frame: camera_face
     sensor: camera_face
   - name: lidar
     type: laserscan
     topic: ${namespace}/lidar
-    frame: lidar
     sensor: gpu_lidar
   - name: lidar_points
     type: pointcloud
     topic: ${namespace}/lidar/points
-    frame: lidar
     sensor: gpu_lidar
 control:
   mode: ros2_control

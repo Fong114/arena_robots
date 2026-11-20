@@ -17,7 +17,7 @@ import arena_robots.Robot
 from arena_robots.assembly import apply_frame_overrides
 from arena_robots.caps import ArmSpec, _substitute_keys
 from arena_robots.request import InstanceRequest
-from arena_robots.served_urdf import render_xacro_file
+from arena_robots.served_urdf import content_addressed, render_xacro_file
 
 if TYPE_CHECKING:
     from arena_robots.assembly import ResolvedAssembly
@@ -108,7 +108,7 @@ def _compose_srdf(
     (prefix/mount/parent), then merge it with the chassis's residual SRDF fragment
     (``RobotView.srdf_source``, if declared) and any ``extras``
     (per-placement ``(fragment, context)`` pairs, e.g. a gripper chained onto the arm)
-    under one ``<robot>`` element. Returns the path to a temp file holding the
+    under one ``<robot>`` element. Returns the content-addressed file holding the
     composed document."""
     fragment_xml = render_xacro_file(fragment_path, context)
     merged = ET.Element("robot", {"name": robot.name})
@@ -122,9 +122,7 @@ def _compose_srdf(
     if base_srdf is not None:
         merged.extend(list(ET.fromstring(render_xacro_file(base_srdf, {}))))
 
-    with NamedTemporaryFile(mode="w", suffix=".srdf", delete=False) as f:
-        f.write(ET.tostring(merged, encoding="unicode"))
-        return Path(f.name)
+    return content_addressed(ET.tostring(merged, encoding="utf-8"), ".srdf")
 
 
 def _gripper_srdf_extras(resolved: ResolvedAssembly, arm_mount: str, prefix: str) -> list[tuple[Path, dict[str, str]]]:
@@ -212,14 +210,14 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", request: InstanceR
     arm controller mapping) for ``robot_name`` if it advertises ``arm`` with a
     ``caps.moveit`` block carrying a ``package`` or an ``srdf``; ``None`` otherwise.
 
-    When ``tf_prefix`` is non-empty (e.g. ``"env_0/ridgeback_plus/"``) every
+    When ``tf_prefix`` is non-empty (e.g. ``"env_0/rbvogui/"``) every
     link reference in the URDF/SRDF gets the prefix prepended, so MoveIt's
     planning-scene monitor looks up the same frame ids that
     robot_state_publisher publishes.
 
     ``request`` is the instance's morphology parts, frame overrides and cap
-    overrides; ``None`` resolves defaults only. An override of the arm's
-    ``joint_limits`` writes its effective MoveIt joint limits in place of the component's file.
+    overrides; ``None`` resolves defaults only. The arm's effective ``joint_limits``
+    (the component's file, the URDF ``<limit>`` of each joint it lists, and overrides) are the MoveIt joint limits.
 
     ``instance`` selects which arm cap instance to build for (dict key from
     ``RobotCaps.arm``). ``None`` selects the sole instance when there is
@@ -230,8 +228,8 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", request: InstanceR
     rendered with the arm's ``caps.moveit.args``. For allocation-derived robots (an
     ``assembly.yaml`` resolves ``parts``) ``robot_description_semantic``/joint_limits are
     composed/re-keyed per placement (mount/prefix/parent, from the placement's rendered
-    ``caps.moveit.args``). Robots with no ``assembly.yaml`` (e.g. rbvogui_plus) take the
-    static SRDF/joint_limits paths.
+    ``caps.moveit.args``). Robots with no ``assembly.yaml`` take the static SRDF/joint_limits
+    paths.
     """
     robot = arena_robots.Robot.RobotIdentifier(robot_name).resolve_sync()
     request = request if request is not None else InstanceRequest()
@@ -277,7 +275,7 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", request: InstanceR
         extras = _gripper_srdf_extras(resolved, arm_key, placement_context.get("prefix", ""))
         srdf_abs = _compose_srdf(robot, srdf_abs, placement_context, extras)
         jl_abs = _render_joint_limits(jl_abs, placement_context)
-    if caps.joints_overridden(arm_key):
+    if arm.joint_limits:
         jl_abs = _write_yaml({"joint_limits": arm.joint_limits})
 
     group = arm.planning_group or arm.name

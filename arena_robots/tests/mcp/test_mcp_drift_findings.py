@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import shutil
 from collections.abc import Callable
-from pathlib import Path
 
 import pytest
 
 pytest.importorskip("arena_mcp")
 
 from arena_robots import mcp
-
-_XACRO = shutil.which("xacro")
-_UR_MACRO = Path(__file__).resolve().parents[3] / "deps" / "ur_description" / "urdf" / "ur_macro.xacro"
 
 
 def _checks(model: str, parts: dict | None = None) -> dict[str, list[str]]:
@@ -54,10 +49,3 @@ def test_rbvogui_swerve_geometry_comes_from_the_urdf(require_installed: Callable
 def test_jackal_raises_no_drift_finding(require_installed: Callable[[str], None]):
     require_installed("jackal")
     assert _checks("jackal") == {}
-
-
-@pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH, run under the Arena container")
-@pytest.mark.skipif(not _UR_MACRO.is_file(), reason="deps/ur_description not initialized, run `arena feature robots add arm/ur`")
-def test_ur5e_joint_limits_stay_within_the_urdf(require_installed: Callable[[str], None]):
-    require_installed("arm/ur")
-    assert "joint_limits" not in _checks("jackal", {"top": "arm/ur5e"})

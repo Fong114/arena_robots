@@ -8,7 +8,6 @@ from collections.abc import Iterable, Iterator, Mapping
 
 import attrs
 
-from arena_robots import assembly as assembly_mod
 from arena_robots.caps import FACT_BLOCKS, BodySpec, CapConfig, MobileSpec, RobotCaps, adapter_blocks, simulator_names, simulators_honoring, typed_fields
 from arena_robots.inline import split_top_level
 from arena_robots.Robot import RobotIdentifier, RobotView
@@ -163,24 +162,16 @@ def _view(model: str) -> RobotView:
 
 
 def _effective_caps(view: RobotView, config: Config) -> RobotCaps:
-    spec = view.assembly
-    if spec is None:
-        if config.parts or config.frames:
-            raise ValueError(f"morphology and frames need an assembly.yaml, and {view.name!r} has none")
-        return view.effective_caps({}, caps=dict(config.caps))
-    request, cleared_sockets, cleared_types = assembly_mod.build_request(spec, config.parts)
-    resolved = assembly_mod.resolve(spec, request, cleared_sockets=cleared_sockets, cleared_types=cleared_types)
-    unknown_frames = set(config.frames) - set(spec.mounts)
-    if unknown_frames:
-        raise ValueError(f"frames override targets unknown mount(s) {sorted(unknown_frames)}, declared mounts: {sorted(spec.mounts)}")
-    resolved = assembly_mod.apply_frame_overrides(resolved, config.frames)
-    return view.effective_caps(assembly_mod.placed_request(resolved), frames=config.frames, caps=dict(config.caps))
+    from arena_robots.request import InstanceRequest
+
+    return InstanceRequest.of(view, config).caps_of(view)
 
 
 def entry_paths(entry: str) -> list[OverridePath]:
     """The override paths of one complete `robot:=` entry, with its own overrides applied."""
     model, tokens = _entry_tokens(entry)
-    caps = _effective_caps(_view(model), Config.parse(_entry_dict(model, tokens))[0])
+    config = Config.parse(_entry_dict(model, tokens))[0]
+    caps = _effective_caps(_view(config.robot), config)
     caps.validate_overrides()
     return override_paths(caps)
 
@@ -188,7 +179,7 @@ def entry_paths(entry: str) -> list[OverridePath]:
 @functools.lru_cache(maxsize=256)
 def _instance(model: str, directives: tuple[tuple[str, str], ...]) -> tuple[tuple[OverridePath, ...], frozenset[tuple[str, str, str]]]:
     config = Config.parse(_entry_dict(model, [f'{key}={value}' for key, value in directives]))[0]
-    caps = _effective_caps(_view(model), config)
+    caps = _effective_caps(_view(config.robot), config)
     placements = frozenset((p.type, p.variant, p.mount.name) for p in caps.resolved.placements) if caps.resolved is not None else frozenset()
     return tuple(override_paths(caps)), placements
 
@@ -241,7 +232,7 @@ def _complete(entry: str, model: str, done: list[str], current: str, depth: int)
         return []
     value = value.strip()
     paths, placements = _instance(model, (*directives, (lhs, value)))
-    spec = _view(model).assembly
+    spec = _view(Config.parse(model)[0].robot).assembly
     if spec is None:
         return []
     variant = value.rpartition('/')[2]

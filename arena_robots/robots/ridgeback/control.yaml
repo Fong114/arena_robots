@@ -33,14 +33,6 @@ ridgeback_velocity_controller:
 
     linear.x.has_velocity_limits: true
     linear.x.has_acceleration_limits: true
-    linear.x.max_velocity: 1.1
-    linear.x.min_velocity: -1.1
-    linear.x.max_acceleration: 2.0
-    linear.x.min_acceleration: -2.0
 
     angular.z.has_velocity_limits: true
     angular.z.has_acceleration_limits: true
-    angular.z.max_velocity: 1.0
-    angular.z.min_velocity: -1.0
-    angular.z.max_acceleration: 2.0
-    angular.z.min_acceleration: -2.0

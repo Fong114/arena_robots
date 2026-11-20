@@ -86,6 +86,23 @@ def joint_limits(urdf: str) -> dict[str, JointLimit]:
     return out
 
 
+def sensor_frames(urdf: str) -> dict[str, str]:
+    """TF frame of every Gazebo sensor by sensor name, its `gz_frame_id` when set, else its `<gazebo reference>` link."""
+    out: dict[str, str] = {}
+    for gazebo in ET.fromstring(urdf).iter("gazebo"):
+        for sensor in gazebo.findall("sensor"):
+            name = sensor.get("name")
+            frame = (sensor.findtext("gz_frame_id") or "").strip().lstrip("/") or gazebo.get("reference")
+            if name is not None and frame:
+                out[name] = frame
+    return out
+
+
+def model_plugins(urdf: str, *filenames: str) -> list[ET.Element]:
+    """Plugins of the `<gazebo>` blocks without a reference (the model's own) whose filename is one of `filenames`."""
+    return [plugin for gazebo in ET.fromstring(urdf).iter("gazebo") if gazebo.get("reference") is None for plugin in gazebo.findall("plugin") if plugin.get("filename") in filenames]
+
+
 def _text_float(element: ET.Element, path: str) -> float | None:
     found = element.find(path)
     if found is None or found.text is None or not found.text.strip():

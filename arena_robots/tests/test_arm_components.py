@@ -165,26 +165,42 @@ class TestJointLimits:
         assert self._limits("ur5")["${prefix}${mount}_wrist_1_joint"]["max_velocity"] == pytest.approx(math.pi)
 
 
-class TestEffectiveCapsRbvoguiPlusMatchesStatic:
-    """`RobotCaps` rendering the ur5e variant at mount='arm' must reproduce the static
-    robots/rbvogui_plus/caps/arm.yaml for every field `effective_caps` owns.
-    `moveit.srdf`/`moveit.joint_limits`/`planning_group` are excluded: those correctly
-    point at the component's own files/group naming."""
+POSES = {
+    "stow": [0.0, -1.57, 1.57, -1.57, -1.57, 0.0],
+    "ready": [0.0, -1.0, 1.0, -1.5, -1.57, 0.0],
+    "wave_up": [0.0, -0.5, 1.2, -2.3, -1.57, 0.0],
+    "wave_l": [0.0, -0.5, 1.2, -2.3, -1.57, -0.6],
+    "wave_r": [0.0, -0.5, 1.2, -2.3, -1.57, 0.6],
+}
 
-    def test_matches_static_caps_for_owned_fields(self) -> None:
-        from arena_robots.assembly import Mount, Placement, ResolvedAssembly
-        from arena_robots.caps import RobotCaps
 
-        static = yaml.safe_load((COMPONENTS_ROOT.parent / "robots" / "rbvogui_plus" / "caps" / "arm.yaml").read_text())["arm"]
+class TestPresetArmCaps:
+    """The ur5e `arm` caps of each `*_plus` preset keep the joint names, controller, base link and named poses of the robots they replaced."""
 
-        mount = Mount(name="arm", parent="chassis_link", xyz=(0.0, 0.0, 0.235), accepts=frozenset({"arm"}))
-        resolved = ResolvedAssembly(placements=[Placement(type="arm", variant="ur5e", mount=mount)])
-        catalog = Catalog(root=COMPONENTS_ROOT)
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=catalog)
-        rendered = rc.arm["arm"].raw
+    @pytest.mark.parametrize(
+        ("preset", "mount", "prefix", "base_link"),
+        [
+            ("rbvogui_plus", "arm0", "robot_", "robot_chassis_link"),
+            ("rbkairos_plus", "arm_mount", "robot_", "robot_top_cover"),
+            ("ridgeback_plus", "arm_mount", "", "chassis_link"),
+        ],
+    )
+    def test_the_expanded_instance_carries_the_replaced_robots_arm_facts(self, preset: str, mount: str, prefix: str, base_link: str) -> None:
+        from arena_robots.request import InstanceRequest
+        from arena_robots.Robot import RobotIdentifier
+        from arena_robots.SetupFile import Config
 
-        owned = {"base_link", "tip_link", "chain", "controller", "workspace", "named_poses"}
-        assert {k: rendered[k] for k in owned} == {k: static[k] for k in owned}
+        config = Config.parse(preset)[0]
+        view = RobotIdentifier(config.robot).resolve_sync()
+        arm = InstanceRequest.of(view, config).caps_of(view).arm[mount].raw
+
+        joints = [f"{prefix}arm_{joint}" for joint in ARM_JOINTS]
+        assert arm["base_link"] == base_link
+        assert arm["tip_link"] == f"{prefix}arm_tool0"
+        assert arm["chain"] == joints
+        assert arm["controller"] == "arm_controller"
+        assert arm["workspace"] == {"type": "box", "frame": base_link, "min": [0.2, -0.5, 0.2], "max": [0.7, 0.5, 1.0]}
+        assert {name: [pose["joints"][joint] for joint in joints] for name, pose in arm["named_poses"].items()} == POSES
 
 
 class TestEffectiveCapsHonorsMountFrame:

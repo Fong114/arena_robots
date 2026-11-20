@@ -1,6 +1,6 @@
 """Default-morphology snapshot tests: each robot's default assembly must render exactly
 the golden URDF (links, joints, gz sensors), and its effective sensors must match
-model_params.yaml, which robots_manager reads at runtime."""
+model_params.yaml (frames aside, which the URDF gives), which robots_manager reads at runtime."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import attrs
 import pytest
 from arena_robots.assembly import RequestPart, resolve
 from arena_robots.catalog import render_wrapper_xacro
@@ -21,13 +22,13 @@ ROBOT_NAMES = sorted(p.name.removesuffix("_default.urdf") for p in GOLDEN_DIR.gl
 class TestEffectiveSensorsMatchModelParams:
     """The env node's robots_manager reads ``model_params.sensors`` at runtime, so a
     robot's default-request sensor resolution must reproduce it field-for-field,
-    order-sensitive."""
+    order-sensitive, the frame excepted."""
 
     @pytest.mark.parametrize("robot_name", ROBOT_NAMES)
     def test_effective_sensors_matches_model_params(self, robot_name: str) -> None:
         view = RobotIdentifier(robot_name).resolve_sync()
         assert view.assembly is not None, f"{robot_name} has no assembly.yaml"
-        assert view.effective_sensors({}) == view.model_params.sensors
+        assert [attrs.evolve(s, frame="") for s in view.effective_sensors({})] == view.model_params.sensors
 
     @pytest.mark.parametrize("robot_name", ROBOT_NAMES)
     def test_pinned_default_request_keeps_sensor_names_and_topics(self, robot_name: str) -> None:

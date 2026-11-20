@@ -48,10 +48,13 @@ _DRIVES: dict[str, str] = {}
 
 
 def _view(model: str) -> RobotView:
+    """The definition of ``model``, the base robot's for a preset."""
     from arena_robots.Robot import RobotIdentifier
 
     try:
         view = RobotIdentifier(model).resolve_sync()
+        if view.preset is not None:
+            view = RobotIdentifier(view.preset.robot).resolve_sync()
     except FileNotFoundError as exc:
         raise ToolError(f"no robot model {model!r}", hint=f"models: {', '.join(_models())}") from exc
     if not view.is_definition:
@@ -62,7 +65,12 @@ def _view(model: str) -> RobotView:
 def _models() -> list[str]:
     from arena_robots.Robot import RobotIdentifier
 
-    return sorted(identifier.name for identifier in RobotIdentifier.listall() if identifier.resolve_sync().is_definition)
+    models = []
+    for identifier in RobotIdentifier.listall():
+        view = identifier.resolve_sync()
+        if view.is_definition or view.preset is not None:
+            models.append(identifier.name)
+    return sorted(models)
 
 
 def _error(exc: Exception) -> str:
@@ -102,38 +110,34 @@ CapsArg = Annotated[
 ]
 
 
-def _request(view: RobotView, parts: dict[str, str | list[str]] | None, frames: dict[str, str] | None, caps: dict[str, Any] | None) -> InstanceRequest:
-    """The instance request built from setup-file entry fields the way the runtime parses a robot."""
-    from arena_robots import assembly
+def _request(view: RobotView, parts: dict[str, str | list[str]] | None, frames: dict[str, str] | None, caps: dict[str, Any] | None, model: str | None = None) -> InstanceRequest:
+    """The instance request built from setup-file entry fields the way the runtime parses a robot, ``model`` naming a preset of ``view``."""
     from arena_robots.request import InstanceRequest
     from arena_robots.SetupFile import Config
 
-    if not (parts or frames or caps):
-        return InstanceRequest()
-    config = Config.parse({"robot": view.name, **(parts or {}), "frames": dict(frames or {}), **(caps or {})})[0]
+    config = Config.parse({"robot": model or view.name, **(parts or {}), "frames": dict(frames or {}), **(caps or {})})[0]
     unknown = sorted(set(caps or {}) - set(config.caps))
     if unknown:
         raise ValueError(f"cap overrides must be '<cap>.<path>' and not '<cap>.adapter', got {unknown}")
-    spec = view.assembly
-    if spec is None:
-        if config.parts or config.frames:
-            raise ValueError(f"morphology and frames need an assembly.yaml, and {view.name!r} has none")
-        return InstanceRequest(caps=dict(config.caps))
-    request, cleared_sockets, cleared_types = assembly.build_request(spec, config.parts)
-    resolved = assembly.resolve(spec, request, cleared_sockets=cleared_sockets, cleared_types=cleared_types)
-    unknown_frames = set(config.frames) - set(spec.mounts)
-    if unknown_frames:
-        raise ValueError(f"frames override targets unknown mount(s) {sorted(unknown_frames)}, declared mounts: {sorted(spec.mounts)}")
-    resolved = assembly.apply_frame_overrides(resolved, config.frames)
-    return InstanceRequest(parts=assembly.placed_request(resolved), frames=dict(config.frames), caps=dict(config.caps))
+    if not (config.parts or config.frames or config.caps):
+        return InstanceRequest()
+    return InstanceRequest.of(view, config)
 
 
-def _summary(view: RobotView) -> dict[str, Any]:
-    entry: dict[str, Any] = {"model": view.name}
+def _preset(model: str) -> dict[str, Any] | None:
+    from arena_robots import preset
+
+    found = preset.lookup(model)
+    return None if found is None else {"robot": found.robot, "parts": found.parts, "caps": msgs.jsonable(found.caps)}
+
+
+def _summary(view: RobotView, model: str | None = None) -> dict[str, Any]:
+    entry: dict[str, Any] = {"model": model or view.name}
     try:
-        caps = view.effective_caps({})
+        request = _request(view, None, None, None, model=model)
+        caps = request.caps_of(view)
         available = sorted(caps.available)
-        sensors = view.effective_sensors({})
+        sensors = view.effective_sensors(request.parts, frames=request.frames)
         mobile = caps.mobile if "mobile" in available else None
         arms = caps.arm or {}
     except Exception as exc:
@@ -142,6 +146,8 @@ def _summary(view: RobotView) -> dict[str, Any]:
     entry["caps"] = available
     entry["sensor_types"] = sorted({str(spec.type) for spec in sensors})
     entry["assembly"] = view.assembly is not None
+    if model is not None and (preset := _preset(model)) is not None:
+        entry["preset"] = preset
     entry["priority"] = msgs.jsonable(view.model_params.priority)
     parts = []
     if mobile is not None:
@@ -260,13 +266,14 @@ def _assembly(view: RobotView) -> dict[str, Any] | None:
     return out
 
 
-def _definition(view: RobotView, request: InstanceRequest) -> dict[str, Any]:
+def _definition(view: RobotView, request: InstanceRequest, model: str | None = None) -> dict[str, Any]:
     params = view.model_params
     caps = request.caps_of(view)
     snapshot = caps.snapshot()
     body = caps.body
     out: dict[str, Any] = {
-        "model": view.name,
+        "model": model or view.name,
+        "preset": _preset(model) if model else None,
         "path": str(view.path),
         "base_frame": body.base_frame,
         "odom_frame": params.odom_frame,
@@ -290,7 +297,7 @@ def _definition(view: RobotView, request: InstanceRequest) -> dict[str, Any]:
 
 @domain.tool(read_only=True)
 def robots_catalog() -> list[dict[str, Any]]:
-    """Every robot model the robot resolver finds, with its caps, sensor types and a one-line summary."""
+    """Every robot model the robot resolver finds, with its caps, sensor types and a one-line summary, a preset listed as a robot with the base robot and parts it stands for."""
     from arena_robots.Robot import RobotIdentifier
 
     out = []
@@ -298,6 +305,8 @@ def robots_catalog() -> list[dict[str, Any]]:
         view = identifier.resolve_sync()
         if view.is_definition:
             out.append(_summary(view))
+        elif view.preset is not None:
+            out.append(_summary(_view(identifier.name), identifier.name))
     return sorted(out, key=lambda entry: entry["model"])
 
 
@@ -306,11 +315,11 @@ def robots_definition(model: str, parts: PartsArg = None, frames: FramesArg = No
     """One robot model resolved offline: frames, control, caps (mobile limits, footprint, arm instances with poses and gestures), sensors, task actions, assembly, power profile, the body and acoustics facts, the source of every leaf (`provenance`: override, component, derived or file) and the caps `warnings`. With parts, frames or caps the definition is that of the instance with those morphology directives, frame overrides and cap overrides applied, as the runtime resolves it."""
     view = _view(model)
     try:
-        request = _request(view, parts, frames, caps)
+        request = _request(view, parts, frames, caps, model=model)
         request.caps_of(view).validate_overrides()
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
         raise ToolError(f"instance request of {model!r} is invalid: {_error(exc)}", hint="robots_definition without parts, frames and caps lists the model's defaults, caps paths are the fields of caps/<cap>.yaml") from exc
-    return _definition(view, request)
+    return _definition(view, request, model)
 
 
 @domain.tool(read_only=True)
@@ -320,7 +329,7 @@ def robots_overrides(model: str, parts: PartsArg = None, frames: FramesArg = Non
 
     view = _view(model)
     try:
-        effective = _request(view, parts, frames, caps).caps_of(view)
+        effective = _request(view, parts, frames, caps, model=model).caps_of(view)
         effective.validate_overrides()
         paths = override_paths(effective)
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
@@ -342,27 +351,17 @@ def _finding(robot: str, check: str, message: str, severity: str = "error", **ex
     return {"robot": robot, "check": check, "severity": severity, "message": message, **extra}
 
 
-def _drift_findings(name: str, check: str, call: Callable[[], list[str]]) -> list[dict[str, Any]]:
-    try:
-        return [_finding(name, check, message, "warning") for message in call()]
-    except Exception as exc:
-        return [_finding(name, check, _error(exc), "warning")]
-
-
-def _file_drift_findings(view: RobotView, caps: RobotCaps) -> list[dict[str, Any]]:
-    from arena_robots import drift, urdf_lint
+def _urdf_findings(view: RobotView, caps: RobotCaps) -> list[dict[str, Any]]:
+    from arena_robots import urdf_lint
 
     name = view.name
-    limits = view.caps.mobile.limits if "mobile" in view.caps.available else None
-    findings = _drift_findings(name, "control.limits", lambda: drift.limit_drift(view, limits)) + _drift_findings(name, "gait", lambda: drift.gait_drift(view, limits))
+    findings: list[dict[str, Any]] = []
     try:
         view.effective_caps({}).rendered_urdf()
     except ImportError:
         return findings
     except Exception as exc:
         return [*findings, _finding(name, "urdf", f"the default URDF does not render, the URDF checks are skipped: {_error(exc)}", "warning")]
-    for instance, arm in (caps.arm or {}).items():
-        findings += _drift_findings(name, "joint_limits", lambda instance=instance, arm=arm: drift.joint_drift(instance, arm, caps.rendered_urdf()))
     try:
         findings += [_finding(name, f"urdf.{finding.check}", finding.message, finding.severity) for finding in urdf_lint.lint(view, caps.parts, caps.frames or None)]
     except Exception as exc:
@@ -370,19 +369,19 @@ def _file_drift_findings(view: RobotView, caps: RobotCaps) -> list[dict[str, Any
     return findings
 
 
-def _definition_findings(view: RobotView, request: InstanceRequest | None = None) -> list[dict[str, Any]]:
+def _definition_findings(view: RobotView, request: InstanceRequest | None = None, label: str | None = None) -> list[dict[str, Any]]:
     from arena_robots.request import InstanceRequest
     from arena_robots.sensors import SENSOR_TYPES
 
     request = request or InstanceRequest()
 
-    name = view.name
+    name = label or view.name
     try:
         params = view.model_params
     except Exception as exc:
         return [_finding(name, "model_params", _error(exc))]
     findings: list[dict[str, Any]] = []
-    if params.get("robot_model") != name:
+    if params.get("robot_model") != view.name:
         findings.append(_finding(name, "model_params", f"robot_model is {params.get('robot_model')!r}, not the directory name", "warning"))
     try:
         caps = request.caps_of(view)
@@ -399,7 +398,7 @@ def _definition_findings(view: RobotView, request: InstanceRequest | None = None
             findings.append(_finding(name, "caps.overrides", _error(exc)))
     try:
         findings += [_finding(name, "caps.warnings", warning, "warning") for warning in caps.warnings()]
-        findings += _file_drift_findings(view, caps)
+        findings += _urdf_findings(view, caps)
     except (ValueError, FileNotFoundError) as exc:
         findings.append(_finding(name, "caps.warnings", _error(exc)))
     if "mobile" not in available:
@@ -504,15 +503,16 @@ def robots_check(
     """Validate robot definitions (params, caps, sensors, control, arms) and run `arena feature robots check` for mesh URIs, as structured findings. With parts, frames or caps (they need model) the definition checks run on that instance, an invalid morphology, frame or cap override is a finding."""
     if (parts or frames or caps) and not model:
         raise ToolError("parts, frames and caps describe one instance, pass model", hint="robots_catalog names the models")
-    views = [_view(model)] if model else [_view(name) for name in _models()]
+    names = [model] if model else _models()
+    views = [_view(name) for name in names]
     findings: list[dict[str, Any]] = []
-    for view in views:
+    for name, view in zip(names, views, strict=True):
         try:
-            request = _request(view, parts, frames, caps)
+            request = _request(view, parts, frames, caps, model=name)
         except (ValueError, RuntimeError) as exc:
-            findings.append(_finding(view.name, "request", _error(exc)))
+            findings.append(_finding(name, "request", _error(exc)))
             continue
-        findings.extend(_definition_findings(view, request))
+        findings.extend(_definition_findings(view, request, name))
     uri = _uri_check(include_uninitialized)
     owners = ({views[0].name} | _component_owners(views[0])) if model else None
     for miss in uri["missing"]:
@@ -520,7 +520,7 @@ def robots_check(
             findings.append(_finding(miss["owner"], "mesh_uri", f"package://arena_robots/{miss['uri']} does not resolve", uri=miss["uri"], sources=miss["sources"]))
     return {
         "ok": not any(finding["severity"] == "error" for finding in findings),
-        "models": [view.name for view in views],
+        "models": names,
         "findings": findings,
         "skipped_uninitialized": uri["skipped_uninitialized"],
         "dynamic_refs": uri["dynamic_refs"],

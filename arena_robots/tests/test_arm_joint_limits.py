@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 from arena_robots.assembly import RequestPart
-from arena_robots.caps import ArmSpec, RobotCaps
+from arena_robots import urdf_facts
+from arena_robots.caps import ArmSpec, RobotCaps, moveit_joint_limits
 from arena_robots.override_paths import override_paths
 from arena_robots.Robot import RobotIdentifier
 
@@ -108,3 +109,38 @@ class TestJointLimitsAgainstTheUrdf:
     def test_a_file_value_above_the_urdf_is_not_an_override_error(self):
         caps = _jackal_ur5e(**{"joint_limits.top_shoulder_pan_joint.max_acceleration": 5.0})
         caps.validate_overrides()
+
+
+@pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH, run under the Arena container")
+class TestTiagoJointLimitsFromTheUrdf:
+    @pytest.fixture(autouse=True)
+    def _rendering(self, require_installed: Callable[[str], None]) -> None:
+        pytest.importorskip("xacro", reason="xacro is not importable, run under the Arena container")
+        require_installed("tiago")
+
+    def test_the_file_authors_acceleration_only(self):
+        authored = moveit_joint_limits(RobotIdentifier("tiago").resolve_sync().effective_caps({}).arm["arm"].raw)
+        assert authored
+        assert all(set(entry) == {"has_acceleration_limits", "max_acceleration"} for entry in authored.values())
+
+    def test_velocity_position_and_effort_are_the_urdf_limits(self):
+        caps = RobotIdentifier("tiago").resolve_sync().effective_caps({})
+        urdf = urdf_facts.joint_limits(caps.rendered_urdf())
+        joints = caps.arm["arm"].joint_limits
+        assert sorted(joints) == sorted(caps.arm["arm"].chain)
+        for joint, entry in joints.items():
+            assert entry["max_velocity"] == urdf[joint].velocity
+            assert entry["min_position"] == urdf[joint].lower
+            assert entry["max_position"] == urdf[joint].upper
+            assert entry["max_effort"] == urdf[joint].effort
+            assert entry["max_acceleration"] == 2.0
+
+    def test_an_override_scales_the_urdf_velocity(self):
+        base = RobotIdentifier("tiago").resolve_sync().effective_caps({}).arm["arm"].joint_limits
+        halved = RobotIdentifier("tiago").resolve_sync().effective_caps({}, caps={"arm.arm.joint_limits.*.max_velocity": {"scale": 0.5}}).arm["arm"].joint_limits
+        assert halved["arm_1_joint"]["max_velocity"] == pytest.approx(base["arm_1_joint"]["max_velocity"] / 2)
+
+    def test_an_override_above_the_urdf_velocity_raises(self):
+        caps = RobotIdentifier("tiago").resolve_sync().effective_caps({}, caps={"arm.arm.joint_limits.arm_1_joint.max_velocity": 10.0})
+        with pytest.raises(ValueError, match=r"arm_1_joint.*above the URDF limit"):
+            caps.validate_overrides()

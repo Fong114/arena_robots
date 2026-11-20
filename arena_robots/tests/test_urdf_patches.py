@@ -176,10 +176,10 @@ def test_turtlebot_weighs_its_vendor_mass_with_lidar_and_camera(require_installe
     assert caps.body.mass == pytest.approx(3.945)
 
 
-def test_ridgeback_plus_chassis_mass_follows_the_patch(require_installed) -> None:
+def test_ridgeback_chassis_mass_is_the_vendor_mass(require_installed) -> None:
     pytest.importorskip("xacro")
-    require_installed("ridgeback_plus")
-    view = RobotIdentifier("ridgeback_plus").resolve_sync()
+    require_installed("ridgeback")
+    view = RobotIdentifier("ridgeback").resolve_sync()
     assert _mass(_links(view)["chassis_link"]) == pytest.approx(105.304)
 
 

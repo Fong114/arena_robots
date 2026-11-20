@@ -86,14 +86,6 @@ rbkairos:
   num_beams: 541
   range: 30.0
   update_rate: 25
-rbkairos_plus:
-  angle:
-    increment: 0.00872665
-    max: 2.3561945
-    min: -2.3561945
-  num_beams: 541
-  range: 30.0
-  update_rate: 25
 rbrobout:
   angle:
     increment: 0.00174532925
@@ -126,23 +118,7 @@ rbvogui:
   num_beams: 541
   range: 30.0
   update_rate: 25
-rbvogui_plus:
-  angle:
-    increment: 0.00872665
-    max: 2.3561945
-    min: -2.3561945
-  num_beams: 541
-  range: 30.0
-  update_rate: 25
 ridgeback:
-  angle:
-    increment: 0.00872664626
-    max: 3.14159
-    min: -3.14159
-  num_beams: 720
-  range: 30.0
-  update_rate: 10
-ridgeback_plus:
   angle:
     increment: 0.00872664626
     max: 3.14159

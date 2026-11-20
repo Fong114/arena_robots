@@ -41,8 +41,6 @@ ros2_control:
       command_interfaces: [position]
       state_interfaces: [position, velocity]
 
-# control params must stay in sync with robots/rbvogui_plus/control.yaml's arm_controller
-# section (maintained there, not derived from this component).
 control:
   controller: "${mount}_controller"
   type: joint_trajectory_controller/JointTrajectoryController
@@ -59,8 +57,6 @@ control:
     state_publish_rate: 50.0
     action_monitor_rate: 20.0
 
-# workspace/named_poses must stay in sync with robots/rbvogui_plus/caps/arm.yaml
-# (maintained there, not derived from this component).
 caps:
   base_link: "${prefix}${parent}"
   tip_link: "${prefix}${mount}_tool0"

@@ -20,7 +20,7 @@ ROBOTS_DIR = Path(__file__).resolve().parents[2] / "robots"
 
 def test_catalog_lists_every_robot_directory_with_its_caps():
     catalog = mcp.robots_catalog()
-    assert [entry["model"] for entry in catalog] == sorted(path.parent.name for path in ROBOTS_DIR.glob("*/model_params.yaml"))
+    assert [entry["model"] for entry in catalog] == sorted(path.parent.name for path in [*ROBOTS_DIR.glob("*/model_params.yaml"), *ROBOTS_DIR.glob("*/preset.yaml")])
     jackal = next(entry for entry in catalog if entry["model"] == "jackal")
     assert "error" not in jackal
     assert jackal["caps"] == ["mobile"]
@@ -28,6 +28,8 @@ def test_catalog_lists_every_robot_directory_with_its_caps():
     assert jackal["summary"].startswith("mobile (non-holonomic, radius 0.3338")
     kairos = next(entry for entry in catalog if entry["model"] == "rbkairos_plus")
     assert "arm x1" in kairos["summary"]
+    assert kairos["preset"] == {"robot": "rbkairos", "parts": {"arm": ["ur5e"]}, "caps": {}}
+    assert "preset" not in jackal
 
 
 def test_jackal_definition_carries_limits_sensors_and_only_the_goto_endpoint():
@@ -53,17 +55,18 @@ def test_jackal_definition_carries_limits_sensors_and_only_the_goto_endpoint():
 
 def test_arm_robot_definition_lists_named_poses_gestures_and_arm_endpoints():
     definition = mcp.robots_definition("rbkairos_plus")
-    authored = yaml.safe_load((ROBOTS_DIR / "rbkairos_plus" / "caps" / "arm.yaml").read_text())
-    arm = definition["arm"]["arm"]
-    assert arm["named_poses"] == sorted(authored["arm"]["named_poses"])
-    assert arm["raw"]["controller"] == authored["arm"]["controller"]
+    assert definition["model"] == "rbkairos_plus"
+    assert definition["preset"]["robot"] == "rbkairos"
+    arm = definition["arm"]["arm_mount"]
+    assert arm["named_poses"] == ["ready", "stow", "wave_l", "wave_r", "wave_up"]
+    assert arm["raw"]["controller"] == "arm_controller"
     assert arm["gestures"], "the shared gesture library is empty"
     assert all(gesture["playable"] == (not gesture["missing_poses"]) for gesture in arm["gestures"].values() if "error" not in gesture)
     assert set(definition["actions"]["endpoints"]) == {"goto_pose", "reach_pose", "play_gesture"}
     assert any(sensor["type"] == "image" for sensor in definition["sensors"])
 
 
-@pytest.mark.parametrize("model", sorted(path.parent.name for path in ROBOTS_DIR.glob("*/model_params.yaml")))
+@pytest.mark.parametrize("model", sorted(path.parent.name for path in [*ROBOTS_DIR.glob("*/model_params.yaml"), *ROBOTS_DIR.glob("*/preset.yaml")]))
 def test_every_model_resolves_to_a_json_definition(model):
     definition = mcp.robots_definition(model)
     assert definition["model"] == model and "mobile" in definition["caps"]

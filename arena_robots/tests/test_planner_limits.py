@@ -9,8 +9,8 @@ from arena_robots.caps import RobotCaps, simulator_names, simulators_honoring
 from arena_robots.Robot import RobotIdentifier
 
 ROBOTS_DIR = Path(ARENA_ROBOTS_DIR) / "robots"
-MODELS = sorted(p.parent.parent.name for p in ROBOTS_DIR.glob("*/caps/mobile.yaml"))
-FIXED = ("ridgeback", "ridgeback_plus", "dingo", "rbsummit", "rbtheron")
+MODELS = sorted(p.parent.name for p in ROBOTS_DIR.glob("*/caps.yaml"))
+FIXED = ("ridgeback", "dingo", "rbsummit", "rbtheron")
 MOBILE = {
     "radius": 0.3,
     "velocity_limits": {"linear": [-1.0, 1.0], "angular": [-2.0, 2.0]},
@@ -20,33 +20,24 @@ MOBILE = {
 
 
 def _caps(tmp_path: Path, overrides: dict[str, object] | None = None, **mobile: object) -> RobotCaps:
-    caps_dir = tmp_path / "robot" / "caps"
-    caps_dir.mkdir(parents=True)
-    (caps_dir / "mobile.yaml").write_text(yaml.safe_dump({**MOBILE, **mobile}))
-    return RobotCaps(caps_dir, overrides=overrides or {})
-
-
-def _controller_limits(model: str) -> dict[str, float]:
-    control = yaml.safe_load((ROBOTS_DIR / model / "control.yaml").read_text())
-    for name, block in control.items():
-        params = (block or {}).get("ros__parameters", {}) if name != "controller_manager" else {}
-        if "linear.x.max_velocity" in params:
-            return {"linear": float(params["linear.x.max_velocity"]), "angular": float(params["angular.z.max_velocity"])}
-    raise AssertionError(f"{model}: no drive controller limits in control.yaml")
+    robot_dir = tmp_path / "robot"
+    robot_dir.mkdir(parents=True)
+    (robot_dir / "caps.yaml").write_text(yaml.safe_dump({"mobile": {**MOBILE, **mobile}}))
+    return RobotCaps(robot_dir, overrides=overrides or {})
 
 
 @pytest.mark.parametrize("model", FIXED)
-def test_fixed_robots_plan_within_their_drive_controller(model: str):
-    limits = RobotIdentifier(model).resolve_sync().caps.mobile.velocity_limits
+def test_fixed_robots_plan_within_the_drive_limits_their_controllers_receive(model: str):
+    mobile = RobotIdentifier(model).resolve_sync().caps.mobile
+    limits, drive = mobile.velocity_limits, mobile.limits
     assert limits is not None
-    controller = _controller_limits(model)
-    assert limits.linear.max <= controller["linear"] + 1e-9
-    assert limits.angular.max <= controller["angular"] + 1e-9
+    assert drive is not None
+    assert limits.linear.max <= drive.velocity["linear"].max + 1e-9
+    assert limits.angular.max <= drive.velocity["angular"].max + 1e-9
 
 
-@pytest.mark.parametrize("model", ("ridgeback", "ridgeback_plus"))
-def test_diff_drive_ridgebacks_plan_no_lateral_motion(model: str):
-    limits = RobotIdentifier(model).resolve_sync().caps.mobile.velocity_limits
+def test_diff_drive_ridgeback_plans_no_lateral_motion():
+    limits = RobotIdentifier("ridgeback").resolve_sync().caps.mobile.velocity_limits
     assert limits is not None
     assert limits.lateral is None
 

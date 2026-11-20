@@ -14,10 +14,11 @@ from arena_simulation_setup.utils.models import ModelWrapper
 from arena_simulation_setup.utils.models.model_loader import ModelProvider_USD
 
 from arena_robots import assembly as assembly_mod
+from arena_robots import preset as preset_mod
 from arena_robots import urdf_facts
 from arena_robots.caps import MobileSpec, RobotCaps
 from arena_robots.catalog import Catalog, render_effective_sensors
-from arena_robots.Sensor import SensorSpec
+from arena_robots.Sensor import SensorSpec, fill_frames
 
 _CATALOG = Catalog()
 
@@ -141,7 +142,7 @@ class ModelParams(dict[str, typing.Any]):
         for i, entry in enumerate(raw):
             if not isinstance(entry, dict):
                 raise ValueError(f"model_params 'sensors[{i}]' must be a mapping; got {type(entry).__name__}")
-            missing = {'name', 'type', 'topic', 'frame'} - set(entry)
+            missing = {'name', 'type', 'topic'} - set(entry)
             if missing:
                 raise ValueError(f"model_params 'sensors[{i}]' missing required keys: {sorted(missing)}")
             out.append(
@@ -149,7 +150,7 @@ class ModelParams(dict[str, typing.Any]):
                     name=str(entry['name']),
                     type=str(entry['type']),
                     topic=str(entry['topic']),
-                    frame=str(entry['frame']),
+                    frame=str(entry.get('frame', '')),
                     sensor=str(entry['sensor']) if 'sensor' in entry else None,
                 )
             )
@@ -201,6 +202,12 @@ class RobotView(PathView):
         return (self.path / 'model_params.yaml').is_file()
 
     @property
+    def preset(self) -> preset_mod.Preset | None:
+        """The directory's ``preset.yaml``, ``None`` for a robot that is no preset."""
+        path = self.path / preset_mod.FILE_NAME
+        return preset_mod.Preset.read(path) if path.is_file() else None
+
+    @property
     def caps(self) -> RobotCaps:
         """Lazy view over robots/<name>/caps/, equivalent to
         ``self.model_params.caps``, exposed directly on ``RobotView`` for
@@ -227,10 +234,6 @@ class RobotView(PathView):
             self._cached_params = ModelParams.from_yaml(path)
             self._cached_params.caps.view = self
         return self._cached_params
-
-    @property
-    def mappings(self) -> str:
-        return str(self.path / 'mappings.yaml')
 
     @property
     def control(self) -> dict:
@@ -281,14 +284,6 @@ class RobotView(PathView):
         controller = self.drive_controller(sim)
         return {} if controller is None else urdf_facts.drive_geometry(urdf, controller[1], controller[2])
 
-    def bridge_mappings(self) -> list[dict[str, typing.Any]]:
-        """The rows of ``mappings.yaml``."""
-        with open(self.path / 'mappings.yaml') as f:
-            rows = yaml.safe_load(f)
-        if not isinstance(rows, list):
-            raise ValueError(f"{self.path / 'mappings.yaml'} must contain a list at the top level.")
-        return rows
-
     @property
     def bringup_launch(self) -> Path | None:
         """``launch/bringup.launch.py`` of the robot directory, ``None`` without one."""
@@ -327,7 +322,7 @@ class RobotView(PathView):
     def effective_sensors(self, parts: dict[str, list[assembly_mod.RequestPart]], *, frames: dict[str, str] | None = None) -> list[SensorSpec]:
         """The robot's full effective ``SensorSpec`` list for a parts request (``{}``
         for pure defaults). Robots with no assembly.yaml (``assembly`` is ``None``)
-        return ``model_params.sensors`` unchanged. Robots with an assembly.yaml
+        return ``model_params.sensors`` with frames they omit read from the canonical URDF. Robots with an assembly.yaml
         resolve ``parts`` against the declared assembly and render it through the
         shared component catalog. No per-request caching: ``RobotView`` is a
         per-model singleton, but resolution is per-request.
@@ -337,7 +332,9 @@ class RobotView(PathView):
         assembly's defaults must render every sensor model_params.yaml declares."""
         resolved = self._resolved(parts)
         if resolved is None:
-            return self.model_params.sensors
+            from arena_robots import served_urdf
+
+            return fill_frames(self.model_params.sensors, lambda: served_urdf.canonical(self, parts, frames))
         assert self.assembly is not None
         resolved = assembly_mod.apply_frame_overrides(resolved, frames or {})
         prefix = self.assembly.prefix

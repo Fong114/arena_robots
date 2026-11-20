@@ -10,7 +10,6 @@ files, and the `arena feature robots` CLI all look robots up by this name.
 <robot>/
 ├── model_params.yaml    # robot-wide identity (robot_model, base_frame, z_offset, sensors)
 ├── control.yaml         # ros2_control configuration
-├── mappings.yaml        # sim ⇄ ROS2 topic bridge
 └── caps/
     └── mobile.yaml      # required: every robot has a mobile base
 ```
@@ -27,7 +26,7 @@ robot_model: my_robot       # required; matches the directory name
 base_frame: base_link       # required; TF frame of the robot's base link
 z_offset: 0.0635            # optional; metres from the ground to the model root with the robot at rest, spawn and teleport place it there
 sensors:                    # optional; declared sensors parsed into SensorSpec entries
-  - {name: lidar, type: laserscan, topic: ${namespace}/scan, frame: base_scan}
+  - {name: lidar, type: laserscan, topic: ${namespace}/scan, sensor: gpu_lidar}
 lights:                     # optional; Light entries anchored on a frame of the robot
   - {name: headlight, fixture: spot, frame: base_link, offset: {x: 0.2, y: 0.0, z: 0.3, pitch: -1.42}, lumens: 1500}
 ```
@@ -50,8 +49,10 @@ of the canonical URDF (`RobotCaps.rendered_urdf()`) that the entry's `sensor:` k
 an element counts as planar when it only declares a `laserscan`. Otherwise it marks without
 clearing and its obstacles expire after the layer's `voxel_decay`.
 
-Every gz `<sensor>` sits on its `<gazebo reference>` link with an identity `<pose>`, and the
-`frame` of each `sensors:` entry names that link. A camera's reference link also needs a REP-103
+Every gz `<sensor>` sits on its `<gazebo reference>` link with an identity `<pose>`. A `sensors:`
+entry carries no `frame`: `effective_sensors` reads it from the canonical URDF, the `gz_frame_id`
+of the gz `<sensor>` the entry's `sensor:` names, else that sensor's `<gazebo reference>` link
+([`urdf_facts.sensor_frames`](../arena_robots/urdf_facts.py)). A camera's reference link also needs a REP-103
 optical child link at zero offset, named `<reference>_optical_frame` with a trailing `_frame` of
 the reference dropped. Isaac stamps image,
 depth and point cloud messages in the optical frame, Gazebo and MuJoCo in the reference link,
@@ -224,7 +225,7 @@ holds the effective caps with every leaf's source and a hash. `body.outline` (th
 convex ground outline of the base's collision geometry) and `body.mass` are read
 lazily from the canonical URDF and are not overridable.
 
-`RobotCaps.rendered_urdf()` is the canonical URDF of an instance ([`arena_robots.served_urdf`](../arena_robots/served_urdf.py)): the xacro of the robot or its assembly wrapper with frame overrides and default arguments, passive joints locked, assembly control joints injected and effort state interfaces ensured, mesh URIs untouched. `RobotCaps.served_urdf(...)` runs the same pipeline with the simulator's xacro arguments, sensors stripped per `optim`, unregistered `ros2_control` hardware stripped and sensor topics patched, and writes it with absolute `file://` mesh URIs to `<tempdir>/arena_robots/<sha256>.urdf`. Every simulator, MoveIt and the CHAMP bringup load that file. `RobotView.control_config(sim)`, `bridge_mappings()`, `bringup_launch` and `srdf_source` are the other file accessors, and no module outside the arena_robots API reads robot files (`tests/test_robot_files_seam.py`).
+`RobotCaps.rendered_urdf()` is the canonical URDF of an instance ([`arena_robots.served_urdf`](../arena_robots/served_urdf.py)): the xacro of the robot or its assembly wrapper with frame overrides and default arguments, passive joints locked, assembly control joints injected and effort state interfaces ensured, mesh URIs untouched. `RobotCaps.served_urdf(...)` runs the same pipeline with the simulator's xacro arguments, sensors stripped per `optim`, unregistered `ros2_control` hardware stripped and sensor topics patched, and writes it with absolute `file://` mesh URIs to `<tempdir>/arena_robots/<sha256>.urdf`. Every simulator, MoveIt and the CHAMP bringup load that file. `RobotView.control_config(sim)`, `bringup_launch` and `srdf_source` are the other file accessors, and no module outside the arena_robots API reads robot files (`tests/test_robot_files_seam.py`).
 
 `urdf_patches.yaml` in a robot directory or a component directory ([`arena_robots.urdf_patches`](../arena_robots/urdf_patches.py)) corrects the URDF of an instance right after the render, so `canonical()`, `serve()` and every fact derived from them see it. Each entry carries a `reason` and a `source` (where the corrected value comes from) and is one of:
 
@@ -254,16 +255,17 @@ from the effective caps, or `robots_check` warns where it differs.
 
 | Value | Author it in | Read by |
 | --- | --- | --- |
-| Base velocity and acceleration the body can do (`mobile.limits`) | `caps/mobile.yaml` (`limits`, or `planar`) | flatsim drive, the drive controller keys `control*.yaml` declares (DiffDrive, Mecanum), the CHAMP gait of `a1` and `go1`, the planner limits as their bound |
-| Controller limit literals | `control*.yaml`, only to declare which keys exist | the controller, overlaid from `mobile.limits` on an override, `robots_check` warns on a different literal |
+| Base velocity and acceleration the body can do (`mobile.limits`) | `caps/mobile.yaml` (`limits`, or `planar`) | flatsim drive, the drive controller keys of every axis `control*.yaml` flags (DiffDrive, Mecanum, swerve, omni), the CHAMP gait of `a1` and `go1`, the planner limits as their bound |
+| Drive controller limit keys (`<axis>.min_velocity`, `max_velocity`, `min_acceleration`, `max_acceleration`) | `mobile.limits`, `control*.yaml` authors only the `has_velocity_limits` and `has_acceleration_limits` flags | written by `overlay_planar_limits` for every flagged axis in Gazebo, MuJoCo and Isaac, an infinite limit leaves the key unset |
 | Wheel radius, track width, mecanum center projection, swerve and omni wheel positions, omni wheel angles | the URDF wheel joints and their round collision geometry, measured in the controller's `base_frame_id` | written over the drive controller's parameters by `effective_control_yaml` in every simulator, `RobotView.drive_geometry` and `urdf_facts.drive_geometry`, `control.yaml` keeps the joint names, multipliers and tuning |
 | Power model wheels (`wheel_radius_m`, `num_wheels`) | the drive geometry and the drive controller's wheel joint count | `RobotView.power_profile`, `telemetry/power.yaml` keeps the electrical and loss terms |
-| CHAMP gait speeds | `champ/gait.yaml` | the CHAMP bringup, rendered per instance from `mobile.limits` on an override |
+| CHAMP gait speeds | `mobile.limits` velocity bounds, the rest of the gait in `champ/gait.yaml` | the CHAMP bringup's `gait_config`, written per instance by `champ.served_champ_files` |
+| CHAMP joint and link maps | the URDF: the four leg chains below the base frame, classified by their hip joint origins | the CHAMP bringup's `joints_map` and `links_map`, written per instance by `champ.served_champ_files` |
 | Footprint and radius (`mobile.footprint`, `mobile.radius`) | the URDF collision geometry | the convex ground outline of the base (`body.outline`) and the circumradius of the effective footprint, provenance `urdf`, overridable per instance, `footprint_padding` stays authored |
 | Holonomy (`mobile.is_holonomic`) | the drive controller of `control.yaml` and `champ/gait.yaml` | true for a mecanum, swerve or omni drive controller or a CHAMP gait, false for diff drive, provenance `derived`, overridable per instance |
 | Lift range (`lift.<name>.limits`), gripper effort (`gripper.<name>.max_effort`) | the lift or gripper joint's URDF `<limit>` | the direct adapters, authored only where a deliberate value differs from the URDF |
 | Lidar geometry (`mobile.laser`) | the lidar component's xacro arguments (a bracket on the part) or the URDF | read from the scan sensor of the rendered URDF on the primary lidar (the first `laserscan` sensor), never authored in `caps/mobile.yaml` |
-| MoveIt joint limits (`arm.<mount>.joint_limits`) | the component's `joint_limits/` file | `moveit_factory`, overridable per instance, tightened-only against the URDF `<limit>` |
+| MoveIt joint limits (`arm.<mount>.joint_limits`) | the URDF `<limit>` for `max_velocity`, `min_position`, `max_position` and `max_effort`, the component's `joint_limits/` file for `max_acceleration`, the scaling factors and any value it authors | `moveit_factory`, overridable per instance, tightened-only against the URDF `<limit>` |
 | Joint position, velocity and effort limits | the URDF | the simulators, the bound of the MoveIt limits |
 | Body mass | the URDF inertials, each component's in its xacro, corrected to the vendor's figure by `urdf_patches.yaml` (robot directory or component directory) | `body.mass`, the power model, the evaluation metrics through the caps snapshot |
 | Collision geometry | the URDF | `body.outline` |
@@ -361,7 +363,7 @@ ROS 2 `controller_manager` configuration. Define `joint_state_broadcaster`
 plus whichever controller drives the robot (e.g.
 `diff_drive_controller/DiffDriveController` for wheeled, `JointTrajectoryController`
 for an arm). See [`husky/control.yaml`](husky/control.yaml) for a diff-drive
-example and [`rbkairos_plus/control.yaml`](rbkairos_plus/control.yaml) for an
+example and [`tiago/control.yaml`](tiago/control.yaml) for an
 arm-extended example.
 
 An optional sibling `control.<sim>.yaml` (`sim` a `SimSimulator` value such as
@@ -370,7 +372,7 @@ simulator only, for a value the simulator's physics needs and the real robot
 does not. [`jackal/control.gazebo.yaml`](jackal/control.gazebo.yaml) sets the
 `wheel_separation_multiplier` Gazebo's skid steer turns at.
 
-The drive controller's geometry is not written in `control.yaml`: `wheel_radius`,
+The drive controller's limit values are not written in `control.yaml` either, only its `has_velocity_limits` and `has_acceleration_limits` flags per axis, the keys come from `mobile.limits` at spawn. The drive controller's geometry is not written in `control.yaml`: `wheel_radius`,
 `wheel_separation` (diff drive), `kinematics.wheels_radius` and
 `kinematics.sum_of_robot_center_projection_on_X_Y_axis` (mecanum),
 `wheel_positions_x`, `wheel_positions_y` (swerve at the steering joints, omni at
@@ -381,28 +383,15 @@ Every simulator spawns a joint at the `initial_value` of its ros2_control
 position state interface, so a legged robot's `urdf/base_hw/<name>.ros2_control.urdf`
 carries its standing pose there (see [`go1`](go1/urdf/base_hw/go1.ros2_control.urdf)).
 
-### `mappings.yaml`
+### Gazebo bridge rows
 
-Simulator ⇄ ROS2 topic bridge declarations, as a JSON array. Each entry:
-
-```yaml
-{
-  "gz_topic":  "/model/{robot_name}/cmd_vel",    # simulator-side topic
-  "ros_topic": "cmd_vel",                         # ROS2-side topic
-  "gz_type":   "gz.msgs.Twist",
-  "ros_type":  "geometry_msgs/msg/Twist",
-  "direction": "]",                               # "[" sim→ros, "]" ros→sim
-}
-```
-
-`{robot_name}` and `{world}` are substituted at runtime. See
-[`husky/mappings.yaml`](husky/mappings.yaml).
-
-Hand-authored rows carry only what the catalog cannot derive: `pose`, ros2_control
-plumbing (`odometry`/`cmd_vel`/`joint_states`), and `contact` sensors. Bridge rows for
-catalog-derivable sensor types (laserscan, pointcloud, imu, image, depth, camera_info)
-are generated at runtime from `effective_sensors` and deduped against this file, so
-never duplicate them here.
+A robot has no bridge file. Gazebo's per-robot `parameter_bridge` takes its rows from the
+canonical URDF: `Sensor.plugin_bridge_rows` maps the model's `gz-sim-pose-publisher-system`
+plugin (`publish_model_pose` true) to `/model/<name>/pose` as `pose`, and its
+`gz-sim-odometry-publisher-system` and `gz-sim-diff-drive-system` plugins without an
+`<odom_topic>` to `/model/<name>/odometry` as `odom`. `Sensor.bridge_rows` maps every sensor
+output that `effective_sensors` declares, so the `sensors:` entries and the URDF are the only
+sources.
 
 ### `assembly.yaml`: component-catalog robots only
 
@@ -454,10 +443,22 @@ mast) stays inline in the robot's own xacro; it gets no mount or component entry
    `gazebo_ignition`) with defaults preserving the chassis's existing values.
 5. `tests/test_default_morphology.py` parametrizes over every `tests/golden/*_default.urdf`
    automatically, so the robot is now covered: effective-sensors consistency
-   (`effective_sensors({}) == model_params.sensors`) and canonicalized URDF
+   (`effective_sensors({})` equals `model_params.sensors` in name, type, topic and sensor) and canonicalized URDF
    structural comparison against the golden from step 1.
 6. The golden reproduces known drift byte-identically; this move is not a bug-fix
    opportunity. Dead (env-gated Gazebo-Classic) blocks stay untouched.
+
+### `preset.yaml`: a robot that is a base robot with parts
+
+A directory holding only `preset.yaml` is a preset, a robot name that stands for another robot with fixed parts and cap overrides:
+
+```yaml
+robot: rbvogui
+parts: {arm: ur5e}
+caps: {}
+```
+
+`robot:=rbvogui_plus`, `rbvogui_plus[...]`, setup file and fleet entries and scenario `robots:` entries expand in `SetupFile.Config.parse` to the base robot with the preset's `parts` (the directives of `assembly.yaml` requests) and `caps` (`<cap>.<path>` overrides) merged under the entry's own brackets, which win wherever both touch the same socket, type or cap path. The base robot and every part must exist and place, or loading the preset raises. `robots_catalog`, `RobotIdentifier.listall` and `arena robot` list a preset as a robot with its base and parts, and its submodules are those of the base and of the components its parts place.
 
 ## Optional files
 
@@ -466,7 +467,7 @@ mast) stays inline in the robot's own xacro; it gets no mount or component entry
 | `urdf/<name>.urdf.xacro` | robot description; mesh refs use `package://arena_robots/robots/<name>/meshes/…` or a fixed upstream package (`package://jackal_description/…`) |
 | `meshes/` | STL/DAE/OBJ files, normally a git submodule under `github.com/arena-robots/<name>` (opt-in via `arena feature robots add <name>`) |
 | `launch/` | robot-specific launch files (e.g. nav2 overrides) |
-| `launch/bringup.launch.py` | per-robot sidecar (a legged robot's gait controller, `cmd_vel` to joint trajectories), included by `RobotManager` once per spawn inside the robot namespace in every simulator, gated only on the file existing, with launch arguments `base_frame`, `use_sim_time` and the required `urdf_path`, the served URDF of the instance (the CHAMP bringups of `a1` and `go1` read their robot description from it) |
+| `launch/bringup.launch.py` | per-robot sidecar (a legged robot's gait controller, `cmd_vel` to joint trajectories), included by `RobotManager` once per spawn inside the robot namespace in every simulator, gated only on the file existing, with launch arguments `base_frame`, `use_sim_time` and the required `urdf_path`, the served URDF of the instance (the CHAMP bringups of `a1` and `go1` read their robot description from it and also require `joints_map`, `links_map` and `gait_config`) |
 | `README.md` | free-form robot docs (upstream references, env vars, etc.) |
 
 ## Meshes
@@ -485,7 +486,7 @@ their URDFs reference `package://jackal_description/…` etc., supplied by
 ## Checklist
 
 1. `mkdir -p arena_robots/arena_robots/robots/<name>/caps`
-2. Write `model_params.yaml` (minimal identity), `control.yaml`, `mappings.yaml`.
+2. Write `model_params.yaml` (minimal identity), `control.yaml`.
 3. Write `caps/mobile.yaml` (every robot has a mobile base). Add `caps/arm.yaml`
    and/or `caps/lift.yaml` if the robot has those subsystems.
 4. (Optional) add `urdf/<name>.urdf.xacro` and/or a `meshes/` submodule.

@@ -10,7 +10,7 @@ import attrs
 import yaml
 from arena_simulation_setup.tree import Identifier, ResolverBase
 
-from arena_robots import ARENA_ROBOTS_DIR
+from arena_robots import ARENA_ROBOTS_DIR, preset
 from arena_robots.inline import parse_inline_override
 
 # Config fields a morphology directive must not shadow.
@@ -31,6 +31,11 @@ class Config:
     caps: dict[str, typing.Any] = attrs.field(factory=dict)  # '<cap>.<path>' -> value or operation
     extra: dict[str, typing.Any] = attrs.field(factory=dict)  # extra arbitrary data
 
+    def expanded(self) -> Config:
+        """This configuration with its robot's preset applied, the base robot's name and the preset's parts and caps under its own."""
+        robot, parts, caps = preset.expand(self.robot, self.parts, self.caps)
+        return attrs.evolve(self, robot=robot, parts=parts, caps=caps)
+
     @classmethod
     def parse(cls, data: str | dict[str, typing.Any]) -> Sequence[Config]:
         """Parse a configuration from the given data.
@@ -43,10 +48,12 @@ class Config:
         directives (``mount=type/variant``, ``mount=variant``, ``type=variant``,
         ``lhs=none``). Directives are grammar-collected here as raw strings only;
         mount-vs-type disambiguation and realization happen later, per-robot, at
-        ``Robot.parse``/``assembly.build_request`` resolution time.
+        ``Robot.parse``/``assembly.build_request`` resolution time. A robot that is a
+        preset (``robots/<name>/preset.yaml``) expands here to its base robot with the
+        preset's parts and cap overrides under the entry's own.
         """
         if isinstance(data, str):
-            return (cls(robot=data, name=data),)
+            return (cls(robot=data, name=data).expanded(),)
 
         count = data.get('count', 1)
         fields: dict[str, typing.Any] = {}
@@ -106,7 +113,7 @@ class Config:
         fields['caps'] = caps
         if extra:
             fields['extra'] = extra
-        return tuple(cls(**copy.deepcopy(fields)) for _ in range(count))
+        return tuple(cls(**copy.deepcopy(fields)).expanded() for _ in range(count))
 
 
 class RobotSetupResolver(ResolverBase):

@@ -1,5 +1,0 @@
-patches:
-  - link: chassis_link
-    mass: 105.304
-    reason: the upstream Clearpath R100 chassis is 60 kg above the Ridgeback user manual
-    source: https://docs.clearpathrobotics.com/docs_robots/indoor_robots/ridgeback/user_manual_ridgeback/

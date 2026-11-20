@@ -5,42 +5,34 @@ sensors:
   - name: lidar
     type: laserscan
     topic: ${namespace}/lidar
-    frame: lidar
     sensor: gpu_lidar
   - name: lidar_points
     type: pointcloud
     topic: ${namespace}/lidar/points
-    frame: lidar
     sensor: gpu_lidar
   - name: head_camera_imu
     type: imu
     topic: ${namespace}/head_camera/imu/data
-    frame: head_camera_imu_frame
     sensor: head_camera_imu
   - name: head_camera_info
     type: camera_info
     topic: ${namespace}/head_camera/camera_info
-    frame: head_camera_rgb_camera_frame
     sensor: head_camera
   - name: head_camera_depth
     type: depth
     topic: ${namespace}/head_camera/depth_image
-    frame: head_camera_rgb_camera_frame
     sensor: head_camera
   - name: head_camera_image
     type: image
     topic: ${namespace}/head_camera/image
-    frame: head_camera_rgb_camera_frame
     sensor: head_camera
   - name: head_camera_points
     type: pointcloud
     topic: ${namespace}/head_camera/points
-    frame: head_camera_rgb_camera_frame
     sensor: head_camera
   - name: imu
     type: imu
     topic: ${namespace}/imu/data
-    frame: imu_link
     sensor: imu_sensor
 control:
   mode: ros2_control

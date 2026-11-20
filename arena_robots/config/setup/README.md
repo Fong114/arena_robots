@@ -27,7 +27,7 @@ Parsed by [`Config.parse`](../../arena_robots/SetupFile.py). Keys route by
 grammar, not a fixed field list:
 
 ```yaml
-- robot: jackal            # required: directory name under robots/<robot>/
+- robot: jackal            # required: directory name under robots/<robot>/, a preset (robots/<robot>/preset.yaml) expands to its base robot with its parts and caps under this entry's own
   name: jackal_lead        # optional: instance name / namespace prefix (default: unset, see below)
   count: 3                 # optional: expand into N independent Configs (default: 1)
   pos: [1.0, 2.0, 0.0]     # optional: initial pose [x, y, yaw], consumed by Robot.parse (default: (0, 0, 0))
@@ -55,7 +55,7 @@ instead of using `count`.
 `name` omitted (dict form) leaves the instance anonymous: robots_manager
 groups anonymous instances by robot model and assigns `<robot>` or, when more
 than one anonymous instance of the same robot exists, `<robot>_0`,
-`<robot>_1`, etc. The shorthand string form (`- jackal`) always sets an
+`<robot>_1`, etc. (`<robot>` is the base robot of a preset). The shorthand string form (`- jackal`) always sets an
 explicit `name` equal to the robot name, so it is never anonymous.
 
 `robot`, `name`, `count`, `parts`, `frames`, `adapters`, `caps`, `extra` are reserved
@@ -119,7 +119,9 @@ bracket form of the lidar part.
 
 `arm.<mount>.joint_limits.<joint>.<key>` are the arm's MoveIt joint limits (`max_velocity`,
 `max_acceleration`, `max_effort`, `min_position`, `max_position` and their `has_*`
-flags), keyed by rendered joint name from the component's `joint_limits/` file, in
+flags), keyed by rendered joint name from the component's `joint_limits/` file, with
+the URDF `<limit>` of each listed joint (`max_velocity`, `min_position`, `max_position`,
+`max_effort`) filling what the file does not author, in
 brackets for a placed part: `top=arm/ur5e[joint_limits.*.max_velocity=*0.5]`. An override
 that sets a `max_velocity` or `max_effort` above the URDF `<limit>` of that joint
 raises, and an instance that overrides `joint_limits` gets its MoveIt joint-limit file
@@ -151,12 +153,12 @@ launch` completes them.
 takes it from `planar.velocity` and `planar.acceleration`, and the effective cap
 carries it in their place: flatsim drives by it, and an instance that overrides
 `limits` or `planar` gets the base controller's velocity and acceleration limits
-in `control.yaml` replaced from it in Gazebo, MuJoCo and Isaac, on the keys the
-controller declares (DiffDrive, Mecanum and the swerve and omni controllers do,
-the swerve and omni robots declare them unbounded as `.nan`). `a1` and `go1` take
-the CHAMP gait speeds from it the same way: an override of `mobile.limits` renders
-`gait.yaml` per instance (`RobotCaps.champ_gait_file`, symmetric `max(|min|, |max|)`
-per axis) and passes it to the CHAMP bringup as `gait_config`.
+in `control.yaml` written from it in Gazebo, MuJoCo and Isaac, for every axis whose
+`has_velocity_limits` or `has_acceleration_limits` flag the controller sets (DiffDrive,
+Mecanum and the swerve and omni controllers do, an infinite limit leaves its keys unset,
+which the controllers read as unbounded). `a1` and `go1` take
+the CHAMP gait speeds from it (symmetric `max(|min|, |max|)` per axis) in the gait file
+served to the CHAMP bringup as `gait_config`.
 `velocity_limits` and `acceleration_limits` are what planners, the DRL clamp and
 the training action space use, clamped to `limits` on every axis.
 `mobile.limits.velocity.linear=[-0.5,0.5]` or `mobile.limits=*0.5` slows the
@@ -165,17 +167,14 @@ planner limit above `limits` that no `limits` override caused (in the file, or
 from a `velocity_limits` override) is clamped and warns.
 
 Not every override changes every simulator. `mobile.limits` reaches flatsim and
-the drive controllers of Gazebo, MuJoCo and Isaac that declare limit keys, while the
+the drive controllers of Gazebo, MuJoCo and Isaac that set a limit flag, while the
 `mobile.planar` dynamics (`gain`, `lag`, `traction`, `pivot`, `timeout`) reach
 flatsim only, everything else is planner- or adapter-facing and reaches every
 simulator. An override the env's simulator does not honor logs a warning when the
 robot spawns, and `arena robot paths` marks such paths `only in <sims>`.
 `robots_check` reports range sanity (a min above its max, a non-positive radius or
 acceleration) and clamped planner limits as warnings. It also warns where a value
-written in two places differs from its owner: a `control*.yaml` limit literal from
-`mobile.limits`, `champ/gait.yaml` from
-`mobile.limits`, a
-`joint_limits/` file value above the URDF `<limit>`, and the masses of
+written in two places differs from its owner: the masses of
 `model_params.yaml` (base plus parts), the URDF and `telemetry/power.yaml`.
 
 Changing an instance's overrides respawns and relaunches it. The env-wide

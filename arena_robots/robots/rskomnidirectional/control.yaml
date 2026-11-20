@@ -24,23 +24,11 @@ rskomni_velocity_controller:
 
     linear.x.has_velocity_limits: true
     linear.x.has_acceleration_limits: true
-    linear.x.min_velocity: .nan
-    linear.x.max_velocity: .nan
-    linear.x.min_acceleration: .nan
-    linear.x.max_acceleration: .nan
 
     linear.y.has_velocity_limits: true
     linear.y.has_acceleration_limits: true
-    linear.y.min_velocity: .nan
-    linear.y.max_velocity: .nan
-    linear.y.min_acceleration: .nan
-    linear.y.max_acceleration: .nan
 
     angular.z.has_velocity_limits: true
     angular.z.has_acceleration_limits: true
-    angular.z.min_velocity: .nan
-    angular.z.max_velocity: .nan
-    angular.z.min_acceleration: .nan
-    angular.z.max_acceleration: .nan
     pose_covariance_diagonal:  [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
     twist_covariance_diagonal: [0.001, 0.001, 0.001,     1000000.0, 1000000.0, 0.03]

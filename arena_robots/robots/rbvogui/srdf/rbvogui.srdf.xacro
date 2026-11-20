@@ -1,9 +1,8 @@
 <?xml version="1.0"?>
-<!-- rbvogui chassis-residual SRDF fragment:
-     the chassis-stack + 4WIS swerve-corner disable_collisions extracted verbatim from
-     robots/rbvogui_plus/srdf/rbvogui_plus.srdf.xacro lines 37-52. Plain robot element:
-     no arm/mount templating needed, so no xacro:arg surface. Composed alongside the
-     placed arm component's SRDF fragment by moveit_factory.py's allocation-derived path. -->
+<!-- rbvogui chassis-residual SRDF fragment: the chassis-stack and 4WIS swerve-corner
+     disable_collisions. Plain robot element: no arm/mount templating needed, so no
+     xacro:arg surface. Composed alongside the placed arm component's SRDF fragment by
+     moveit_factory.py's allocation-derived path. -->
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rbvogui">
 
   <!-- chassis stack (all fixed-jointed off chassis_link) -->

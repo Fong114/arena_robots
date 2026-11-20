@@ -340,11 +340,16 @@ def serve(
     _patch_sensor_topics(root, sensor_topic_patches)
 
     data = ET.tostring(root, encoding="utf-8", method="xml", xml_declaration=True)
+    return ServedURDF(description=data.decode("utf-8"), path=content_addressed(data, ".urdf"))
+
+
+def content_addressed(data: bytes, suffix: str, stem: str = "") -> Path:
+    """The file ``<tempdir>/arena_robots/<stem><sha256 of data><suffix>`` holding ``data``, written once."""
     directory = Path(tempfile.gettempdir()) / "arena_robots"
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{hashlib.sha256(data).hexdigest()}.urdf"
+    path = directory / f"{stem}{hashlib.sha256(data).hexdigest()}{suffix}"
     if not path.is_file():
         staging = path.with_suffix(f".{os.getpid()}.tmp")
         staging.write_bytes(data)
         staging.replace(path)
-    return ServedURDF(description=data.decode("utf-8"), path=path)
+    return path

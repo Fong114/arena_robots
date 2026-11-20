@@ -126,14 +126,6 @@ def test_golden_sensors_sit_on_their_stamped_frames(robot):
     assert _frame_violations((GOLDEN_DIR / f"{robot}_default.urdf").read_text()) == []
 
 
-@pytest.mark.parametrize("robot", GOLDEN_ROBOTS)
-def test_every_sensor_frame_is_its_gz_reference(robot):
-    root = ET.fromstring((GOLDEN_DIR / f"{robot}_default.urdf").read_text())
-    references = {sensor.get("name"): gazebo.get("reference") for gazebo in root.iter("gazebo") for sensor in gazebo.iter("sensor")}
-    view = RobotIdentifier(robot).resolve_sync()
-    assert {s.name: s.frame for s in view.effective_sensors({})} == {s.name: references[s.sensor] for s in view.effective_sensors({})}
-
-
 @pytest.mark.parametrize("robot", ALL_ROBOTS)
 def test_rendered_sensors_sit_on_their_stamped_frames(robot, require_installed):
     pytest.importorskip("xacro")

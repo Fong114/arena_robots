@@ -256,13 +256,6 @@ class TestRobotView:
         with pytest.raises(ValueError, match="must contain a dictionary"):
             _ = view.control
 
-    def test_mappings_path(self, temp_robot_dir):
-        from arena_robots.Robot import RobotView
-
-        rd = temp_robot_dir(model_params={}, control={})
-        view = RobotView(rd)
-        assert view.mappings == str(rd / "mappings.yaml")
-
     def test_caps_delegates_to_model_params(self, temp_robot_dir):
         from arena_robots.Robot import RobotView
 

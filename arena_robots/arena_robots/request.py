@@ -7,11 +7,13 @@ import typing
 
 import attrs
 
+from arena_robots import assembly
 from arena_robots.assembly import RequestPart
 
 if typing.TYPE_CHECKING:
     from arena_robots.caps import RobotCaps
     from arena_robots.Robot import RobotView
+    from arena_robots.SetupFile import Config
 
 
 @attrs.define(frozen=True)
@@ -25,6 +27,22 @@ class InstanceRequest:
     def caps_of(self, view: RobotView) -> RobotCaps:
         """The instance's effective caps on ``view``."""
         return view.effective_caps(self.parts, frames=self.frames, caps=self.caps)
+
+    @classmethod
+    def of(cls, view: RobotView, config: Config) -> InstanceRequest:
+        """The instance of ``config`` on ``view``, its parts resolved against the view's assembly."""
+        spec = view.assembly
+        if spec is None:
+            if config.parts or config.frames:
+                raise ValueError(f"morphology and frames need an assembly.yaml, and {view.name!r} has none")
+            return cls(caps=dict(config.caps))
+        request, cleared_sockets, cleared_types = assembly.build_request(spec, config.parts)
+        resolved = assembly.resolve(spec, request, cleared_sockets=cleared_sockets, cleared_types=cleared_types)
+        unknown_frames = set(config.frames) - set(spec.mounts)
+        if unknown_frames:
+            raise ValueError(f"frames override targets unknown mount(s) {sorted(unknown_frames)}, declared mounts: {sorted(spec.mounts)}")
+        resolved = assembly.apply_frame_overrides(resolved, config.frames)
+        return cls(parts=assembly.placed_request(resolved), frames=dict(config.frames), caps=dict(config.caps))
 
     def dumps(self) -> str:
         return json.dumps(

@@ -5,7 +5,7 @@
        through the assembly-catalog wrapper contract (catalog.render_wrapper_xacro always
        appends an <origin> child to every placement). Body copied verbatim from
        arena_default_lidar; config/urdf/sensors/default.xacro stays untouched since
-       husky/dingo/WLP311D/WLP311E/ridgeback_plus/boxer still call it directly. -->
+       husky/dingo/WLP311D/WLP311E/boxer still call it directly. -->
   <xacro:arg name="sim_path" default=""/>
 
   <xacro:macro name="arena_default_lidar_mount" params="parent_link *origin frame:=lidar

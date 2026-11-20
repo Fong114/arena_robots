@@ -11,7 +11,7 @@ from arena_robots.Robot import RobotIdentifier
 
 ROBOTS_DIR = Path(ARENA_ROBOTS_DIR) / "robots"
 DERIVED_KEYS = ("footprint", "radius", "is_holonomic", "sensor_frame")
-HOLONOMIC = {"a1", "go1", "mpo700", "rbkairos", "rbkairos_plus", "rbrobout", "rbvogui", "rbvogui_plus", "rskomnidirectional"}
+HOLONOMIC = {"a1", "go1", "mpo700", "rbkairos", "rbrobout", "rbvogui", "rskomnidirectional"}
 EXTENT_TOLERANCE = 5e-3
 
 OUTLINES = [

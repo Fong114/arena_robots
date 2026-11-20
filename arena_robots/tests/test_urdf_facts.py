@@ -96,14 +96,19 @@ def test_tiago_wheel_joint_declares_velocity() -> None:
     assert joint_limits(_golden("tiago"))["wheel_left_joint"].velocity == pytest.approx(100.0)
 
 
-def test_tiago_arm_joint_limits_equal_moveit_limits() -> None:
-    moveit = yaml.safe_load((ROBOTS_DIR / "tiago" / "srdf" / "joint_limits.yaml").read_text())["joint_limits"]
+def test_tiago_moveit_joint_limits_take_the_urdf_limits_and_keep_the_authored_acceleration() -> None:
+    from arena_robots.caps import moveit_joint_limits
+    from arena_robots.Robot import RobotIdentifier
+
     limits = joint_limits(_golden("tiago"))
+    arm = RobotIdentifier("tiago").resolve_sync().caps.arm["arm"]
+    moveit = moveit_joint_limits(arm.raw, lambda: limits)
     for name in ("arm_1_joint",):
-        assert limits[name].velocity == pytest.approx(moveit[name]["max_velocity"])
-        assert limits[name].effort == pytest.approx(moveit[name]["max_effort"])
-        assert limits[name].lower == pytest.approx(moveit[name]["min_position"])
-        assert limits[name].upper == pytest.approx(moveit[name]["max_position"])
+        assert moveit[name]["max_velocity"] == pytest.approx(limits[name].velocity)
+        assert moveit[name]["max_effort"] == pytest.approx(limits[name].effort)
+        assert moveit[name]["min_position"] == pytest.approx(limits[name].lower)
+        assert moveit[name]["max_position"] == pytest.approx(limits[name].upper)
+        assert moveit[name]["max_acceleration"] == pytest.approx(2.0)
 
 
 def test_jackal_laser_block_equals_the_formerly_authored_block() -> None:
