@@ -54,7 +54,7 @@ def _view(model: str) -> RobotView:
         view = RobotIdentifier(model).resolve_sync()
     except FileNotFoundError as exc:
         raise ToolError(f"no robot model {model!r}", hint=f"models: {', '.join(_models())}") from exc
-    if not (view.path / "model_params.yaml").is_file():
+    if not view.is_definition:
         raise ToolError(f"{model!r} is not a robot definition (no model_params.yaml)", hint=f"models: {', '.join(_models())}")
     return view
 
@@ -62,7 +62,7 @@ def _view(model: str) -> RobotView:
 def _models() -> list[str]:
     from arena_robots.Robot import RobotIdentifier
 
-    return sorted(identifier.name for identifier in RobotIdentifier.listall() if (identifier.resolve_sync().path / "model_params.yaml").is_file())
+    return sorted(identifier.name for identifier in RobotIdentifier.listall() if identifier.resolve_sync().is_definition)
 
 
 def _error(exc: Exception) -> str:
@@ -248,28 +248,15 @@ def _actions(available: frozenset[str]) -> dict[str, Any]:
     return {"endpoints": endpoints, "bringups": bringups}
 
 
-def _component_variants(type_: str) -> list[str]:
-    from ament_index_python.packages import get_package_share_path
-
-    from arena_robots.catalog import ComponentSpec
-
-    root = get_package_share_path("arena_robots") / "components" / type_
-    if not root.is_dir():
-        return []
-    variants: list[str] = []
-    for directory in sorted(root.iterdir()):
-        manifest = directory / "component.yaml"
-        if manifest.is_file():
-            variants.extend(ComponentSpec.from_yaml(manifest).variants or [directory.name])
-    return sorted(variants)
-
-
 def _assembly(view: RobotView) -> dict[str, Any] | None:
     spec = view.assembly
     if spec is None:
         return None
     out = cast("dict[str, Any]", _attrs(spec))
-    out["variants"] = {type_: _component_variants(type_) for type_ in sorted({type_ for mount in spec.mounts.values() for type_ in mount.accepts})}
+    from arena_robots.catalog import Catalog
+
+    catalog = Catalog()
+    out["variants"] = {type_: catalog.variants(type_) for type_ in sorted({type_ for mount in spec.mounts.values() for type_ in mount.accepts})}
     return out
 
 
@@ -309,7 +296,7 @@ def robots_catalog() -> list[dict[str, Any]]:
     out = []
     for identifier in RobotIdentifier.listall():
         view = identifier.resolve_sync()
-        if (view.path / "model_params.yaml").is_file():
+        if view.is_definition:
             out.append(_summary(view))
     return sorted(out, key=lambda entry: entry["model"])
 
@@ -369,9 +356,7 @@ def _file_drift_findings(view: RobotView, caps: RobotCaps) -> list[dict[str, Any
     limits = view.caps.mobile.limits if "mobile" in view.caps.available else None
     findings = _drift_findings(name, "control.limits", lambda: drift.limit_drift(view, limits)) + _drift_findings(name, "gait", lambda: drift.gait_drift(view, limits))
     try:
-        from arena_robots import urdf_facts
-
-        urdf = urdf_facts.rendered_urdf(view, {}, None)
+        urdf = view.effective_caps({}).rendered_urdf()
     except ImportError:
         return findings
     except Exception as exc:
@@ -490,23 +475,18 @@ def _uri_check(include_uninitialized: bool) -> dict[str, Any]:
 
 
 def _component_owners(view: RobotView) -> set[str]:
-    from ament_index_python.packages import get_package_share_path
-
-    from arena_robots.catalog import ComponentSpec
+    from arena_robots.catalog import Catalog
 
     spec = view.assembly
     if spec is None:
         return set()
-    root = get_package_share_path("arena_robots") / "components"
+    catalog = Catalog()
     owners: set[str] = set()
     for type_, parts in spec.defaults.items():
         for part in parts:
-            if (root / type_ / part.variant / "component.yaml").is_file():
-                owners.add(f"{type_}/{part.variant}")
-                continue
-            for manifest in sorted((root / type_).glob("*/component.yaml")):
-                if part.variant in ComponentSpec.from_yaml(manifest).variants:
-                    owners.add(f"{type_}/{manifest.parent.name}")
+            owner = catalog.owner(type_, part.variant)
+            if owner is not None:
+                owners.add(f"{type_}/{owner}")
     return owners
 
 

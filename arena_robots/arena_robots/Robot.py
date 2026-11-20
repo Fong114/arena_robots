@@ -1,19 +1,17 @@
 import functools
+import os
 import sys
 import typing
 from pathlib import Path
 
 import attrs
 import yaml
-from ament_index_python.packages import get_package_share_path
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory, get_package_share_path
 from arena_simulation_setup.shared import Light
 from arena_simulation_setup.tree import Identifier, PathView, SimplePathResolver
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.models import ModelWrapper
-from arena_simulation_setup.utils.models.model_loader import (
-    ModelProvider_URDF,
-    ModelProvider_USD,
-)
+from arena_simulation_setup.utils.models.model_loader import ModelProvider_USD
 
 from arena_robots import assembly as assembly_mod
 from arena_robots.caps import MobileSpec, RobotCaps
@@ -59,6 +57,18 @@ class ControlSpec:
     @property
     def is_ros2_control(self) -> bool:
         return self.mode == "ros2_control"
+
+
+def _read_mapping(path: str) -> dict[str, typing.Any]:
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"control config at {path} must be a mapping; got {type(data).__name__}")
+    return data
+
+
+def _overlay(base: dict, top: dict) -> dict:
+    return {**base, **{k: _overlay(base[k], v) if isinstance(v, dict) and isinstance(base.get(k), dict) else v for k, v in top.items()}}
 
 
 class ModelParams(dict[str, typing.Any]):
@@ -185,6 +195,11 @@ class RobotView(PathView):
         self._assembly_loaded: bool = False
 
     @property
+    def is_definition(self) -> bool:
+        """Whether the directory holds a robot definition, a ``model_params.yaml``."""
+        return (self.path / 'model_params.yaml').is_file()
+
+    @property
     def caps(self) -> RobotCaps:
         """Lazy view over robots/<name>/caps/, equivalent to
         ``self.model_params.caps``, exposed directly on ``RobotView`` for
@@ -228,6 +243,50 @@ class RobotView(PathView):
                     raise ValueError(f"Control file {control_path} must contain a dictionary at the top level.")
                 self._cached_control = mapping
         return self._cached_control
+
+    def control_config(self, sim: str | None = None) -> dict[str, typing.Any]:
+        """The ``control.config`` file as a mapping, overlaid key by key with its ``<name>.<sim>.yaml`` sibling when ``sim`` is given and that file exists."""
+        control = self.model_params.control
+        if control is None or control.config is None:
+            raise FileNotFoundError(f"robot '{self.name}' declares no control.config")
+        uri = control.config
+        if uri.startswith("package://"):
+            pkg, _, sub = uri[len("package://") :].partition('/')
+            try:
+                src_path = os.path.join(get_package_share_directory(pkg), sub)
+            except PackageNotFoundError as e:
+                raise FileNotFoundError(f"control.config package '{pkg}' not found") from e
+        else:
+            src_path = uri
+
+        data = _read_mapping(src_path)
+        if sim is None:
+            return data
+        root, ext = os.path.splitext(src_path)
+        overlay_path = f"{root}.{sim}{ext}"
+        if not os.path.isfile(overlay_path):
+            return data
+        return _overlay(data, _read_mapping(overlay_path))
+
+    def bridge_mappings(self) -> list[dict[str, typing.Any]]:
+        """The rows of ``mappings.yaml``."""
+        with open(self.path / 'mappings.yaml') as f:
+            rows = yaml.safe_load(f)
+        if not isinstance(rows, list):
+            raise ValueError(f"{self.path / 'mappings.yaml'} must contain a list at the top level.")
+        return rows
+
+    @property
+    def bringup_launch(self) -> Path | None:
+        """``launch/bringup.launch.py`` of the robot directory, ``None`` without one."""
+        path = self.path / 'launch' / 'bringup.launch.py'
+        return path if path.is_file() else None
+
+    @property
+    def srdf_source(self) -> Path | None:
+        """The robot's own residual SRDF xacro fragment, ``None`` without one."""
+        path = self.path / 'srdf' / f'{self.name}.srdf.xacro'
+        return path if path.is_file() else None
 
     @property
     def assembly(self) -> assembly_mod.AssemblySpec | None:
@@ -288,12 +347,12 @@ class RobotView(PathView):
     ) -> RobotCaps:
         """The robot's effective :class:`RobotCaps` for a parts request (``{}`` for
         pure defaults), mirroring :meth:`effective_sensors`, with the instance's cap
-        overrides ``caps`` applied. Robots with no assembly.yaml and no overrides return
-        ``self.caps`` unchanged; robots with an assembly.yaml get a ``RobotCaps`` with
-        ``resolved``/``catalog`` set so `.available`/instances see placement-derived caps."""
+        overrides ``caps`` applied, backed by this view so URDF-derived facts resolve. Robots
+        with an assembly.yaml get ``resolved``/``catalog`` set so `.available`/instances see
+        placement-derived caps."""
         resolved = self._resolved(parts)
         if resolved is None:
-            return RobotCaps(self.caps.caps_dir, overrides=dict(caps), view=self, parts=parts) if caps else self.caps
+            return RobotCaps(self.caps.caps_dir, overrides=dict(caps or {}), view=self, parts=parts)
         assert self.assembly is not None
         resolved = assembly_mod.apply_frame_overrides(resolved, frames or {})
         return RobotCaps(self.caps.caps_dir, resolved=resolved, catalog=_CATALOG, prefix=self.assembly.prefix, overrides=dict(caps or {}), view=self, parts=parts, frames=dict(frames or {}))
@@ -365,10 +424,7 @@ class RobotView(PathView):
     def model(self) -> ModelWrapper:
         return ModelWrapper(
             self.name,
-            {
-                **ModelProvider_URDF.asdict(self.path, self.name),
-                **ModelProvider_USD.asdict(self.path, self.name),
-            },
+            ModelProvider_USD.asdict(self.path, self.name),
         )
 
 

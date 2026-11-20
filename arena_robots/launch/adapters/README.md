@@ -41,13 +41,12 @@ manager brings `slam_toolbox` up before the costmaps, and its absolute `/map` an
 
 `base_frame` is the robot's effective `body.base_frame`, passed by `Nav2Bringup` and `DrlBringup`.
 
-`mobile_caps` is the mobile cap file the derived nav2 parameters read (default
-the model's `robots/<robot>/caps/mobile.yaml`). `Nav2Bringup` and `DrlBringup`
-pass it only for an instance whose request overrides `mobile.` keys: the
-effective `mobile` cap is written to a per-instance temp YAML named
-`mobile_caps_<host>_<namespace>.yaml` in the temp dir and its path is the argument. Without such an
-override the model file is used. [`global_planner/nav2.launch.py`](../global_planner/nav2.launch.py)
-forwards the argument to this file.
+`mobile_caps` and `sensors_json` are required. `mobile_caps` is the effective `mobile` cap of the
+instance, written by `Nav2Bringup` and `DrlBringup` (`Bringup.planner_launch_arguments`) to a per-instance
+temp YAML named `mobile_caps_<host>_<namespace>.yaml` in the temp dir, with the laser block of the
+rendered URDF. `sensors_json` is the instance's effective sensors with their URDF geometry, the only
+source of the costmap observation sources. [`global_planner/nav2.launch.py`](../global_planner/nav2.launch.py)
+forwards both arguments to this file.
 
 ### `arm/moveit.launch.py`
 

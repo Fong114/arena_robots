@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+import json
 import os
 import socket
 import tempfile
@@ -21,6 +22,8 @@ from arena_rclpy_mixins.shared import Namespace
 from launch import Action
 
 from arena_robots.request import InstanceRequest
+from arena_robots.Sensor import SensorType
+from arena_robots.sensor_geometry import parse_sensor_geometry
 from arena_robots.task_kinds import TaskKind
 
 
@@ -79,12 +82,27 @@ class Bringup(ABC):
             yaml.safe_dump(data, f)
         return path
 
-    def mobile_caps_launch_arguments(self) -> dict[str, str]:
-        """`mobile_caps` pointing at the per-host, per-namespace temp file of the effective mobile cap with the laser block of the rendered URDF, else empty when the robot has no lidar and the request does not override the cap."""
+    def planner_launch_arguments(self) -> dict[str, str]:
+        """`mobile_caps` (per-host, per-namespace temp file of the effective mobile cap with the laser block of the rendered URDF) and `sensors_json` (effective sensors with their geometry) for the nav2 launch files."""
         laser = self.caps.laser_block()
-        if laser is None and not any(key.startswith("mobile.") for key in self.request.caps):
-            return {}
-        return {"mobile_caps": self._temp_yaml("mobile_caps", {**self.caps.mobile.raw, **({} if laser is None else {"laser": laser})})}
+        geometry = parse_sensor_geometry(self.caps.rendered_urdf())
+        sensors = self.robot.effective_sensors(self.parts, frames=self.caps.frames or None)
+        return {
+            "mobile_caps": self._temp_yaml("mobile_caps", {**self.caps.mobile.raw, **({} if laser is None else {"laser": laser})}),
+            "sensors_json": json.dumps(
+                [
+                    {
+                        "name": s.name,
+                        "type": s.type.value if isinstance(s.type, SensorType) else str(s.type),
+                        "topic": s.topic,
+                        "frame": s.frame,
+                        "sensor": s.sensor,
+                        "geometry": attrs.asdict(geometry[s.sensor]) if s.sensor in geometry else None,
+                    }
+                    for s in sensors
+                ]
+            ),
+        }
 
     @property
     def cap(self) -> str:

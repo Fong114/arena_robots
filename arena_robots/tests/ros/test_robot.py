@@ -253,14 +253,14 @@ class TestRobotView:
         view = RobotView(rd)
         assert "mobile" in view.caps.available
 
-    def test_power_profile_with_assembly_and_telemetry_fallbacks(self, temp_robot_dir):
+    def test_power_profile_with_assembly_and_telemetry_fallbacks(self, temp_robot_dir, write_urdf):
         from arena_robots.Robot import RobotView
 
         rd = temp_robot_dir(
             model_params={},
             control={},
         )
-        _write_urdf(rd, 17.0)
+        write_urdf(rd, 17.0)
         (rd / "assembly.yaml").write_text(
             yaml.dump(
                 {
@@ -307,14 +307,14 @@ class TestRobotView:
         assert profile["wheel_radius_m"] == 0.098
         assert profile["num_wheels"] == 4
 
-    def test_power_profile_from_standalone_telemetry_yaml(self, temp_robot_dir):
+    def test_power_profile_from_standalone_telemetry_yaml(self, temp_robot_dir, write_urdf):
         from arena_robots.Robot import RobotView
 
         rd = temp_robot_dir(
             model_params={},
             control={},
         )
-        _write_urdf(rd, 17.0)
+        write_urdf(rd, 17.0)
         telem_dir = rd / "telemetry"
         telem_dir.mkdir()
         (telem_dir / "power.yaml").write_text(
@@ -352,12 +352,6 @@ class TestRobotView:
         assert profile["robot_mass_kg"] == 17.0
         assert profile["wheel_radius_m"] == 0.098
         assert profile["num_wheels"] == 4
-
-
-def _write_urdf(robot_dir: Path, kg: float) -> None:
-    pytest.importorskip("xacro", reason="xacro is not importable, run under the Arena container")
-    (robot_dir / "urdf").mkdir()
-    (robot_dir / "urdf" / f"{robot_dir.name}.urdf.xacro").write_text(f'<?xml version="1.0"?>\n<robot name="{robot_dir.name}" xmlns:xacro="http://www.ros.org/wiki/xacro">\n  <link name="base_link"><inertial><mass value="{kg}"/><inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/></inertial></link>\n</robot>\n')
 
 
 def _write(tmp_path: Path, data: dict) -> Path:

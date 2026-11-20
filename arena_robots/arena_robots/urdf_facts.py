@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import functools
-import json
 import logging
 import math
 import struct
@@ -17,7 +15,6 @@ import numpy as np
 from ament_index_python.packages import PackageNotFoundError, get_package_share_path
 
 if typing.TYPE_CHECKING:
-    from arena_robots.assembly import RequestPart
     from arena_robots.Robot import RobotView
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,49 +31,9 @@ class JointLimit:
     effort: float | None
 
 
-@attrs.frozen
-class _RenderRequest:
-    key: str
-    view: RobotView = attrs.field(eq=False)
-    parts: dict[str, list[RequestPart]] = attrs.field(eq=False)
-    frames: dict[str, str] | None = attrs.field(eq=False)
-
-
-def _request_key(view: RobotView, parts: dict[str, list[RequestPart]], frames: dict[str, str] | None) -> str:
-    canonical = {part_type: sorted(json.dumps([part.variant, part.mount, part.params, part.overrides], sort_keys=True, default=str) for part in items) for part_type, items in parts.items()}
-    return json.dumps([str(view.path), canonical, sorted((frames or {}).items())], sort_keys=True, default=str)
-
-
 def source(view: RobotView) -> Path:
     """The robot's own top-level URDF xacro."""
     return view.path / "urdf" / f"{view.name}.urdf.xacro"
-
-
-@functools.lru_cache(maxsize=256)
-def _render(request: _RenderRequest) -> str:
-    import tempfile
-
-    import xacro
-
-    from arena_robots.assembly import apply_frame_overrides
-    from arena_robots.catalog import render_wrapper_xacro
-
-    view = request.view
-    resolved = view._resolved(request.parts)
-    if resolved is None:
-        return xacro.process_file(str(source(view))).toxml()  # pyright: ignore[reportAttributeAccessIssue]
-    resolved = apply_frame_overrides(resolved, request.frames or {})
-    with tempfile.NamedTemporaryFile("w", suffix=".urdf.xacro", delete=False) as wrapper:
-        wrapper.write(render_wrapper_xacro(view, resolved))
-    try:
-        return xacro.process_file(wrapper.name).toxml()  # pyright: ignore[reportAttributeAccessIssue]
-    finally:
-        Path(wrapper.name).unlink()
-
-
-def rendered_urdf(view: RobotView, parts: dict[str, list[RequestPart]], frames: dict[str, str] | None = None) -> str:
-    """The instance's URDF as the simulators render it, memoized per view, parts and frames."""
-    return _render(_RenderRequest(_request_key(view, parts, frames), view, parts, frames))
 
 
 def _floats(text: str | None, count: int, default: float = 0.0) -> list[float]:

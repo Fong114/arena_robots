@@ -12,9 +12,8 @@ import yaml
 from arena_bringup.substitutions import YAMLFileSubstitution
 
 from arena_robots.caps import MobileSpec, stringify_float_matrix
-from arena_robots.Robot import ModelParams, RobotIdentifier
 from arena_robots.Sensor import SensorSpec, SensorType
-from arena_robots.sensor_geometry import SensorGeometry, sensor_geometry
+from arena_robots.sensor_geometry import SensorGeometry
 
 _TYPE_TO_NAV2: dict[str, str] = {
     SensorType.LASERSCAN.value: "LaserScan",
@@ -237,13 +236,11 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
 
     def __init__(
         self,
-        model_params_path: launch.SomeSubstitutionsType,
         mobile_path: launch.SomeSubstitutionsType,
-        sensors_json: launch.SomeSubstitutionsType = '',
+        sensors_json: launch.SomeSubstitutionsType,
         frame_prefix: launch.SomeSubstitutionsType = '',
     ):
         super().__init__(path=[], default={}, substitute=False)
-        self._path = launch.utilities.normalize_to_list_of_substitutions(model_params_path)
         self._mobile_path = launch.utilities.normalize_to_list_of_substitutions(mobile_path)
         self._sensors_json = launch.utilities.normalize_to_list_of_substitutions(sensors_json)
         self._frame_prefix = launch.utilities.normalize_to_list_of_substitutions(frame_prefix)
@@ -253,15 +250,9 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
         mobile = _load_mobile(mobile_str)
         max_range = mobile.laser.range if mobile.laser is not None else _DEFAULT_LIDAR_RANGE
 
-        sensors_json_str = launch.utilities.perform_substitutions(context, self._sensors_json)
-        if sensors_json_str:
-            entries = json.loads(sensors_json_str)
-            sensors = [SensorSpec(name=d['name'], type=d['type'], topic=d['topic'], frame=d.get('frame', ''), sensor=d.get('sensor')) for d in entries]
-            geometry = {d['sensor']: SensorGeometry(**d['geometry']) for d in entries if d.get('geometry')}
-        else:
-            path_str = launch.utilities.perform_substitutions(context, self._path)
-            sensors = ModelParams.from_yaml(path_str).sensors
-            geometry = sensor_geometry(RobotIdentifier(Path(path_str).parent.name).resolve_sync(), {})
+        entries = json.loads(launch.utilities.perform_substitutions(context, self._sensors_json))
+        sensors = [SensorSpec(name=d['name'], type=d['type'], topic=d['topic'], frame=d.get('frame', ''), sensor=d.get('sensor')) for d in entries]
+        geometry = {d['sensor']: SensorGeometry(**d['geometry']) for d in entries if d.get('geometry')}
 
         planar, volumetric = split_planar_sensors(sensors, geometry)
         planar_sources = compile_sensors_to_nav2(planar, max_range=max_range)

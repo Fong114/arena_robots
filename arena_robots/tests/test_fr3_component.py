@@ -12,7 +12,7 @@ from arena_robots.assembly import build_request, resolve
 from arena_robots.caps import RobotCaps
 from arena_robots.catalog import Catalog, render_control_joints, render_wrapper_xacro
 from arena_robots.Robot import RobotIdentifier
-from arena_simulation_setup.utils.models.urdf import _inject_ros2_control_joints
+from arena_robots.served_urdf import _inject_ros2_control_joints
 
 COMPONENTS_ROOT = Path(__file__).resolve().parent.parent / "components"
 _XACRO = shutil.which("xacro")

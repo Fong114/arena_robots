@@ -9,7 +9,8 @@ import yaml
 from arena_robots.assembly import AssemblySpec, RequestPart
 from arena_robots.catalog import ComponentSpec
 from arena_robots.Robot import RobotIdentifier
-from arena_robots.sensor_geometry import parse_sensor_geometry, render_urdf, sensor_geometry
+from arena_robots.sensor_geometry import parse_sensor_geometry, sensor_geometry
+from arena_robots.served_urdf import canonical
 
 PKG = Path(__file__).resolve().parents[2] / "arena_robots"
 ROBOTS_DIR = PKG / "robots"
@@ -137,7 +138,7 @@ def test_every_sensor_frame_is_its_gz_reference(robot):
 def test_rendered_sensors_sit_on_their_stamped_frames(robot, require_installed):
     pytest.importorskip("xacro")
     require_installed(robot)
-    assert _frame_violations(render_urdf(RobotIdentifier(robot).resolve_sync(), {})) == []
+    assert _frame_violations(canonical(RobotIdentifier(robot).resolve_sync(), {})) == []
 
 
 @pytest.mark.parametrize("component", [c for c in COMPONENTS if c.startswith("camera/")])
@@ -151,7 +152,7 @@ def test_camera_components_sit_on_their_stamped_frames(component, require_instal
         pytest.skip(f"no robot mounts {component}")
     robot, mount = host
     require_installed(robot)
-    assert _frame_violations(render_urdf(RobotIdentifier(robot).resolve_sync(), {part: [RequestPart(variant=variant, mount=mount)]})) == []
+    assert _frame_violations(canonical(RobotIdentifier(robot).resolve_sync(), {part: [RequestPart(variant=variant, mount=mount)]})) == []
 
 
 @pytest.mark.parametrize("robot", ALL_ROBOTS)
@@ -209,4 +210,4 @@ def test_component_on_a_prefixed_chassis_hangs_off_its_prefixed_parent(component
     robot, mount = host
     require_installed(robot)
     require_installed(component)
-    assert _dangling_parents(render_urdf(RobotIdentifier(robot).resolve_sync(), {part: [RequestPart(variant=variant, mount=mount)]})) == []
+    assert _dangling_parents(canonical(RobotIdentifier(robot).resolve_sync(), {part: [RequestPart(variant=variant, mount=mount)]})) == []

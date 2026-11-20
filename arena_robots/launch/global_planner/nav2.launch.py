@@ -22,7 +22,8 @@ def generate_launch_description() -> LaunchDescription:
     frame = LaunchArgument('frame', description='Frame prefix of the robot.')
     base_frame = LaunchArgument('base_frame', description='Base link frame of the robot.')
     use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
-    mobile_caps = LaunchArgument('mobile_caps', default_value=PathJoinSubstitution([FindPackageShare('arena_robots'), 'robots', robot.substitution, 'caps', 'mobile.yaml']), description='Path of the mobile cap file the nav2 parameters derive from, default the robot model caps/mobile.yaml.')
+    mobile_caps = LaunchArgument('mobile_caps', description='Path of the effective mobile cap file the nav2 parameters derive from.')
+    sensors_json = LaunchArgument('sensors_json', description='JSON list of the robot sensor specs used to derive the costmap observation sources.')
     kind = LaunchArgument('kind', description='Nav2 global planner kind.')
 
     nav2_launch = PathJoinSubstitution(
@@ -50,6 +51,7 @@ def generate_launch_description() -> LaunchDescription:
             'planner_only': 'true',
             'arena_env_node': arena_env_node.substitution,
             'mobile_caps': mobile_caps.substitution,
+            'sensors_json': sensors_json.substitution,
         }.items(),
     )
 

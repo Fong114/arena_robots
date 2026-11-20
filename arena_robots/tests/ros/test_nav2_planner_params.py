@@ -39,7 +39,7 @@ def _planner_params(robot: str, global_planner: str) -> dict:
             "train_mode": "true",
             "arena_env_node": "",
             "env_namespace": "",
-            "sensors_json": "",
+            "sensors_json": "[]",
             "params_overlay": "",
             "agent": "",
             "mapping": "static",

@@ -127,8 +127,6 @@ until its goal is cancelled.
 
 ## Real-robot caveat
 
-`state_publisher.launch.py` (included by `bringup.launch.py`) hardcodes
-`use_sim_time=true` internally. For real-robot deployments, launch your own
-`robot_state_publisher` with `use_sim_time:=false` before (or instead of)
-invoking `bringup.launch.py`, or provide a compatible wrapper that does not
-set `use_sim_time`.
+`bringup.launch.py` starts no `robot_state_publisher`, the simulators launch
+it. For real-robot deployments, launch your own `robot_state_publisher` with
+`use_sim_time:=false` alongside `bringup.launch.py`.

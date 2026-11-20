@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 import os
 from typing import ClassVar
 
-import attrs
 from ament_index_python.packages import get_package_share_directory
 from launch import Action
 from launch.actions import IncludeLaunchDescription
@@ -15,7 +13,6 @@ from launch_ros.substitutions import FindPackageShare
 from arena_robots.bringup import Bringup, BringupMeta
 from arena_robots.bringup.mobile.rosnav_rl import agent_range_actions
 from arena_robots.Sensor import SensorSpec, SensorType
-from arena_robots.sensor_geometry import sensor_geometry
 from arena_robots.task_kinds import TaskKind
 
 DEFAULT_INTER_PLANNER = "default"
@@ -100,23 +97,8 @@ class Nav2Bringup(Bringup):
             "agent": agent_name,
             "mapping": mapping,
             "scan_topic": scan_topic(sensors or [], str(self.namespace)),
-            **self.mobile_caps_launch_arguments(),
+            **self.planner_launch_arguments(),
         }
-        if sensors is not None:
-            geometry = sensor_geometry(self.robot, self.parts)
-            launch_arguments["sensors_json"] = json.dumps(
-                [
-                    {
-                        "name": s.name,
-                        "type": s.type.value if isinstance(s.type, SensorType) else str(s.type),
-                        "topic": s.topic,
-                        "frame": s.frame,
-                        "sensor": s.sensor,
-                        "geometry": attrs.asdict(geometry[s.sensor]) if s.sensor in geometry else None,
-                    }
-                    for s in sensors
-                ]
-            )
         actions: list[Action] = [
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(launch_file),

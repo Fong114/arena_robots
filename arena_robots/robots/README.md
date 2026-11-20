@@ -45,7 +45,7 @@ through unchanged; nothing in-tree consumes them.
 The local costmap raytraces planar lidars in a 2D obstacle layer and runs multi-ring lidars
 and depth cameras through a spatio-temporal voxel layer, which clears inside a frustum fitted
 to the sensor's field of view. Field of view and range are read from the gz `<sensor>` element
-of the rendered URDF that the entry's `sensor:` key names, or its `name` when the key is absent
+of the canonical URDF (`RobotCaps.rendered_urdf()`) that the entry's `sensor:` key names, or its `name` when the key is absent
 ([`arena_robots.sensor_geometry`](../arena_robots/sensor_geometry.py)). A sensor without such
 an element counts as planar when it only declares a `laserscan`. Otherwise it marks without
 clearing and its obstacles expire after the layer's `voxel_decay`.
@@ -226,7 +226,9 @@ stays in the files, every consumer reads the block:
 comes from (`override`, `component`, `derived`, `urdf` or `file`) and `RobotCaps.snapshot()`
 holds the effective caps with every leaf's source and a hash. `body.outline` (the
 convex ground outline of the base's collision geometry) and `body.mass` are read
-lazily from the rendered URDF and are not overridable.
+lazily from the canonical URDF and are not overridable.
+
+`RobotCaps.rendered_urdf()` is the canonical URDF of an instance ([`arena_robots.served_urdf`](../arena_robots/served_urdf.py)): the xacro of the robot or its assembly wrapper with frame overrides and default arguments, passive joints locked, assembly control joints injected and effort state interfaces ensured, mesh URIs untouched. `RobotCaps.served_urdf(...)` runs the same pipeline with the simulator's xacro arguments, sensors stripped per `optim`, unregistered `ros2_control` hardware stripped and sensor topics patched, and writes it with absolute `file://` mesh URIs to `<tempdir>/arena_robots/<sha256>.urdf`. Every simulator, MoveIt and the CHAMP bringup load that file. `RobotView.control_config(sim)`, `bridge_mappings()`, `bringup_launch` and `srdf_source` are the other file accessors, and no module outside the arena_robots API reads robot files (`tests/test_robot_files_seam.py`).
 
 #### Where each value is authored
 
@@ -266,7 +268,7 @@ arm:
 
 The `moveit:` block declares what `moveit_factory.build_moveit_params` needs and assumes no
 vendor. `planning_group` names the group the task handlers plan for; `srdf` and `joint_limits`
-(each `{package, path}`) default into `package`; `args` are the xacro mappings of URDF and SRDF
+(each `{package, path}`) default into `package`; `args` are the xacro mappings of the served URDF and SRDF
 (`prefix`/`mount`/`parent` also render the arm component's SRDF and joint limits per
 placement); `robot_name` is the builder name (default: `package` minus `_moveit_config`, else the
 robot). `package` is optional: a block with `srdf` and no `package` takes Arena-owned defaults
@@ -436,7 +438,7 @@ mast) stays inline in the robot's own xacro; it gets no mount or component entry
 | `urdf/<name>.urdf.xacro` | robot description; mesh refs use `package://arena_robots/robots/<name>/meshes/…` or a fixed upstream package (`package://jackal_description/…`) |
 | `meshes/` | STL/DAE/OBJ files, normally a git submodule under `github.com/arena-robots/<name>` (opt-in via `arena feature robots add <name>`) |
 | `launch/` | robot-specific launch files (e.g. nav2 overrides) |
-| `launch/bringup.launch.py` | per-robot sidecar (a legged robot's gait controller, `cmd_vel` to joint trajectories), included by `RobotManager` once per spawn inside the robot namespace in every simulator, gated only on the file existing, with launch arguments `base_frame` and `use_sim_time` |
+| `launch/bringup.launch.py` | per-robot sidecar (a legged robot's gait controller, `cmd_vel` to joint trajectories), included by `RobotManager` once per spawn inside the robot namespace in every simulator, gated only on the file existing, with launch arguments `base_frame`, `use_sim_time` and the required `urdf_path`, the served URDF of the instance (the CHAMP bringups of `a1` and `go1` read their robot description from it) |
 | `README.md` | free-form robot docs (upstream references, env vars, etc.) |
 
 ## Meshes

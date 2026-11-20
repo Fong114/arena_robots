@@ -23,19 +23,19 @@ def generate_launch_description():
     robot_share = get_package_share_directory('arena_robots')
     go1_dir = os.path.join(robot_share, 'robots', 'go1')
 
-    description_path = os.path.join(go1_dir, 'urdf', 'go1.urdf.xacro')
     joints_map = os.path.join(go1_dir, 'champ', 'joints.yaml')
     links_map = os.path.join(go1_dir, 'champ', 'links.yaml')
     default_gait_config = os.path.join(go1_dir, 'champ', 'gait.yaml')
 
     use_sim_time = LaunchConfiguration('use_sim_time')
 
+    declare_urdf_path = LaunchArgument('urdf_path', description='Served URDF file of the robot instance.')
     declare_namespace = LaunchArgument('namespace', default_value='', description='Robot namespace.')
     declare_base_frame = LaunchArgument('base_frame', default_value='base', description='Base link frame.')
     declare_use_sim_time = LaunchArgument('use_sim_time', default_value='true', description='Use the sim clock.')
     declare_gait_config = LaunchArgument('gait_config', default_value=default_gait_config, description='CHAMP gait parameter file.')
 
-    urdf = {'urdf': Command(['xacro ', description_path])}
+    urdf = {'urdf': Command(['cat ', LaunchConfiguration('urdf_path')])}
 
     # The gait engine: cmd_vel -> foot trajectories -> joint angles. arena owns
     # joint_states (joint_state_broadcaster) and odom TF (pose_to_tf from the sim
@@ -79,6 +79,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
+            declare_urdf_path,
             declare_namespace,
             declare_base_frame,
             declare_use_sim_time,

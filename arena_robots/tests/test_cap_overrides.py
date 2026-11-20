@@ -204,9 +204,13 @@ class TestValidate:
 
 
 class TestEffectiveCaps:
-    def test_no_overrides_keeps_the_shared_view(self, tmp_path: Path):
+    def test_no_overrides_reads_the_model_caps_through_the_view(self, tmp_path: Path):
         view = _view(tmp_path, mobile=MOBILE)
-        assert view.effective_caps({}) is view.caps
+        caps = view.effective_caps({})
+        assert caps.view is view
+        assert caps.caps_dir == view.caps.caps_dir
+        assert caps.overrides == {}
+        assert caps.mobile.raw == view.caps.mobile.raw
 
     def test_overrides_on_robot_without_assembly_get_a_fresh_view(self, tmp_path: Path):
         view = _view(tmp_path, mobile=MOBILE)

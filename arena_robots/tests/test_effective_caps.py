@@ -29,13 +29,17 @@ def _write_robot(
 
 
 class TestEffectiveCapsNoAssembly:
-    def test_identity_when_no_assembly(self, tmp_path: Path):
+    def test_no_assembly_reads_the_model_caps_through_the_view(self, tmp_path: Path):
         from arena_robots.Robot import RobotView
 
         rd = _write_robot(tmp_path, model_params={}, mobile_cap={"odom_frame": "odom"})
         view = RobotView(rd)
         assert view.assembly is None
-        assert view.effective_caps({}) is view.caps
+        caps = view.effective_caps({})
+        assert caps.view is view
+        assert caps.caps_dir == view.caps.caps_dir
+        assert caps.overrides == {}
+        assert caps.mobile.raw == view.caps.mobile.raw == {"odom_frame": "odom"}
 
 
 class TestEffectiveCapsRbtheron:

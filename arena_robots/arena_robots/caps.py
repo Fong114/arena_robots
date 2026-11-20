@@ -43,6 +43,7 @@ from arena_robots.inline import APPEND_KEY, OFFSET_KEY, SCALE_KEY, WILDCARD, is_
 
 if typing.TYPE_CHECKING:
     from arena_robots.Robot import RobotView
+    from arena_robots.served_urdf import ServedURDF
 
 _CAPS_PREFIX = 'robot_'
 """Frame-templating prefix for placement-rendered caps; matches
@@ -1095,11 +1096,18 @@ class RobotCaps:
         return {path.removeprefix(prefix): value for path, value in self.all_overrides.items() if path.startswith(prefix)}
 
     def rendered_urdf(self) -> str:
-        """The instance's URDF as the simulators render it."""
-        from arena_robots import urdf_facts
+        """The instance's canonical URDF."""
+        from arena_robots import served_urdf
 
         assert self.view is not None
-        return urdf_facts.rendered_urdf(self.view, self.parts, self.frames or None)
+        return served_urdf.canonical(self.view, self.parts, self.frames or None)
+
+    def served_urdf(self, **kwargs: typing.Any) -> ServedURDF:
+        """The URDF file a simulator loads for this instance."""
+        from arena_robots import served_urdf
+
+        assert self.view is not None
+        return served_urdf.serve(self.view, self.parts, self.frames or None, **kwargs)
 
     def _lidar_form(self) -> str:
         if self.resolved is None or self.catalog is None:

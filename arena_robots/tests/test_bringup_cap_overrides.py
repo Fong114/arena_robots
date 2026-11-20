@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import importlib.util
+import json
 import socket
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 
 import launch
@@ -29,6 +32,7 @@ MOBILE = {
 }
 ARM = {"arm": {"controller": "arm_controller", "stall_time": 1.0, "moveit": {"package": "ur_moveit_config"}}}
 NAMESPACE = "/env_0/robot"
+GLOBAL_PLANNER_LAUNCH = Path(__file__).resolve().parents[2] / "arena_robots" / "launch" / "global_planner" / "nav2.launch.py"
 
 
 def _view(tmp_path: Path, **caps: dict) -> RobotView:
@@ -49,7 +53,7 @@ def _launch_args(bringup: Nav2Bringup) -> dict[str, str]:
 
 
 def _mobile_file(bringup: Nav2Bringup) -> Path:
-    return Path(bringup.mobile_caps_launch_arguments()["mobile_caps"])
+    return Path(bringup.planner_launch_arguments()["mobile_caps"])
 
 
 def test_bringup_caps_carry_the_request_overrides(tmp_path: Path) -> None:
@@ -61,7 +65,11 @@ def test_bringup_caps_carry_the_request_overrides(tmp_path: Path) -> None:
 
 def test_bringup_without_overrides_reads_the_model_caps(tmp_path: Path) -> None:
     view = _view(tmp_path, mobile=MOBILE)
-    assert Nav2Bringup(view, NAMESPACE).caps is view.caps
+    caps = Nav2Bringup(view, NAMESPACE).caps
+    assert caps.view is view
+    assert caps.caps_dir == view.caps.caps_dir
+    assert caps.overrides == {}
+    assert caps.mobile.raw == view.caps.mobile.raw
 
 
 def test_two_bringups_of_one_model_hold_independent_caps(tmp_path: Path) -> None:
@@ -72,8 +80,10 @@ def test_two_bringups_of_one_model_hold_independent_caps(tmp_path: Path) -> None
     assert fast.caps.mobile.velocity_limits.linear.max == 2.0
 
 
-def test_nav2_kinematics_follow_the_overridden_mobile_file(tmp_path: Path) -> None:
-    bringup = Nav2Bringup(_view(tmp_path, mobile=MOBILE), NAMESPACE, request=InstanceRequest(caps={"mobile.velocity_limits.linear": [-0.5, 1.0], "mobile.acceleration_limits": {"scale": 0.5}}))
+def test_nav2_kinematics_follow_the_overridden_mobile_file(tmp_path: Path, write_urdf: Callable[..., None]) -> None:
+    view = _view(tmp_path, mobile=MOBILE)
+    write_urdf(view.path)
+    bringup = Nav2Bringup(view, NAMESPACE, request=InstanceRequest(caps={"mobile.velocity_limits.linear": [-0.5, 1.0], "mobile.acceleration_limits": {"scale": 0.5}}))
     mobile_file = _mobile_file(bringup)
     try:
         derived = _derived(Nav2KinematicsDerivedYAML, mobile_file)
@@ -84,8 +94,9 @@ def test_nav2_kinematics_follow_the_overridden_mobile_file(tmp_path: Path) -> No
     assert (derived["linear_acc"], derived["angular_acc"]) == (1.25, 1.6)
 
 
-def test_nav2_collision_follows_the_overridden_mobile_file(tmp_path: Path) -> None:
+def test_nav2_collision_follows_the_overridden_mobile_file(tmp_path: Path, write_urdf: Callable[..., None]) -> None:
     view = _view(tmp_path, mobile=MOBILE)
+    write_urdf(view.path)
     plain = _derived(Nav2CollisionDerivedYAML, view.path / "caps" / "mobile.yaml")
     bringup = Nav2Bringup(view, NAMESPACE, request=InstanceRequest(caps={"mobile.footprint_padding": 0.3}))
     mobile_file = _mobile_file(bringup)
@@ -97,8 +108,10 @@ def test_nav2_collision_follows_the_overridden_mobile_file(tmp_path: Path) -> No
     assert derived["inflation_radius"] == pytest.approx(plain["inflation_radius"] + 0.2)
 
 
-def test_nav2_launch_passes_the_effective_mobile_file_when_mobile_is_overridden(tmp_path: Path) -> None:
-    bringup = Nav2Bringup(_view(tmp_path, mobile=MOBILE), NAMESPACE, request=InstanceRequest(caps={"mobile.velocity_limits.linear": [-0.5, 1.0]}))
+def test_nav2_launch_passes_the_effective_mobile_file_when_mobile_is_overridden(tmp_path: Path, write_urdf: Callable[..., None]) -> None:
+    view = _view(tmp_path, mobile=MOBILE)
+    write_urdf(view.path)
+    bringup = Nav2Bringup(view, NAMESPACE, request=InstanceRequest(caps={"mobile.velocity_limits.linear": [-0.5, 1.0]}))
     mobile_file = Path(_launch_args(bringup)["mobile_caps"])
     try:
         assert yaml.safe_load(mobile_file.read_text()) == bringup.caps.mobile.raw
@@ -108,10 +121,41 @@ def test_nav2_launch_passes_the_effective_mobile_file_when_mobile_is_overridden(
         mobile_file.unlink()
 
 
-def test_nav2_launch_passes_no_mobile_file_without_mobile_overrides(tmp_path: Path) -> None:
-    bringup = Nav2Bringup(_view(tmp_path, mobile=MOBILE), NAMESPACE)
-    assert "mobile_caps" not in _launch_args(bringup)
-    assert bringup.mobile_caps_launch_arguments() == {}
+def test_nav2_launch_always_passes_the_effective_mobile_file_and_sensors(tmp_path: Path, write_urdf: Callable[..., None]) -> None:
+    view = _view(tmp_path, mobile=MOBILE)
+    write_urdf(view.path)
+    bringup = Nav2Bringup(view, NAMESPACE)
+    arguments = _launch_args(bringup)
+    mobile_file = Path(arguments["mobile_caps"])
+    try:
+        assert yaml.safe_load(mobile_file.read_text()) == bringup.caps.mobile.raw
+        assert json.loads(arguments["sensors_json"]) == []
+    finally:
+        mobile_file.unlink()
+
+
+def test_global_planner_include_receives_the_instance_sensors_and_caps_file(tmp_path: Path) -> None:
+    spec = importlib.util.spec_from_file_location("global_planner_nav2_launch", GLOBAL_PLANNER_LAUNCH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    context = launch.LaunchContext()
+    context.launch_configurations.update(
+        {
+            "robot": "robot",
+            "namespace": NAMESPACE,
+            "frame": "env_0/robot/",
+            "base_frame": "base_link",
+            "use_sim_time": "true",
+            "kind": "navfn",
+            "arena_env_node": "",
+            "mobile_caps": "/tmp/instance_mobile.yaml",
+            "sensors_json": '[{"name": "lidar"}]',
+        }
+    )
+    (include,) = [entity for entity in module.generate_launch_description().entities if isinstance(entity, launch.actions.IncludeLaunchDescription)]
+    passed = {key: launch.utilities.perform_substitutions(context, value) for key, value in ((k, launch.utilities.normalize_to_list_of_substitutions(v)) for k, v in include.launch_arguments)}
+    assert passed["mobile_caps"] == "/tmp/instance_mobile.yaml"
+    assert passed["sensors_json"] == '[{"name": "lidar"}]'
 
 
 def test_moveit_arms_carry_the_instance_overrides(tmp_path: Path) -> None:

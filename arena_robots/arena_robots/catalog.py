@@ -199,6 +199,31 @@ class Catalog:
                 self._cache[key] = self._resolve_family(type_, variant)
         return self._cache[key]
 
+    def variants(self, kind: str) -> list[str]:
+        """Every variant of a component kind: dedicated directories and family ``variants:``."""
+        kind_dir = self._root / kind
+        if not kind_dir.is_dir():
+            return []
+        variants: list[str] = []
+        for directory in sorted(kind_dir.iterdir()):
+            manifest = directory / 'component.yaml'
+            if manifest.is_file():
+                variants.extend(ComponentSpec.from_yaml(manifest).variants or [directory.name])
+        return sorted(variants)
+
+    def owner(self, kind: str, variant: str) -> str | None:
+        """The component directory that serves ``variant``: its own directory or the family listing it."""
+        kind_dir = self._root / kind
+        if (kind_dir / variant / 'component.yaml').is_file():
+            return variant
+        if not kind_dir.is_dir():
+            return None
+        for directory in sorted(kind_dir.iterdir()):
+            manifest = directory / 'component.yaml'
+            if manifest.is_file() and variant in ComponentSpec.from_yaml(manifest).variants:
+                return directory.name
+        return None
+
     def _resolve_family(self, type_: str, variant: str) -> ComponentSpec:
         """Resolve a variant with no dedicated ``<variant>/`` dir against a family
         component (a sibling whose ``variants:`` list names it, e.g. one ``arm/ur``

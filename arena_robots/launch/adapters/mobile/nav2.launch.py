@@ -30,7 +30,7 @@ def generate_launch_description():
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
-    robot = LaunchArgument('robot', description='Robot model name.')
+    LaunchArgument('robot', description='Robot model name.')
     arena_env_node = LaunchArgument('arena_env_node', default_value='', description='Name of the env node whose map and services the robot uses.')
     env_namespace = LaunchArgument('env_namespace', default_value='', description='ROS namespace of the env the robot belongs to.')
     namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
@@ -42,18 +42,17 @@ def generate_launch_description():
     inter_planner = LaunchArgument('inter_planner', description='Nav2 inter planner kind.')
     train_mode = LaunchArgument('train_mode', default_value='false', description='Whether the robot is driven by a DRL agent in training (true or false).')
     planner_only = LaunchArgument('planner_only', default_value='false', description='Run only the global planner.')
-    sensors_json = LaunchArgument('sensors_json', default_value='', description='JSON list of the robot sensor specs used to derive the costmap observation sources.')
+    sensors_json = LaunchArgument('sensors_json', description='JSON list of the robot sensor specs used to derive the costmap observation sources.')
     params_overlay = LaunchArgument('params_overlay', default_value='', description='Nav2 params overlay, a path or an overlay name (empty = none).')
     agent = LaunchArgument('agent', default_value='', description='Name of the DRL agent directory the controller loads weights from.')
     mapping = LaunchArgument('mapping', default_value='static', description='Map source: static = the env map server, slam = built from the lidar while driving.')
-    mobile_caps = LaunchArgument('mobile_caps', default_value=PathJoinSubstitution([robots_root, 'robots', robot.substitution, 'caps', 'mobile.yaml']), description='Path of the mobile cap file the nav2 parameters derive from, default the robot model caps/mobile.yaml.')
+    mobile_caps = LaunchArgument('mobile_caps', description='Path of the effective mobile cap file the nav2 parameters derive from.')
     scan_topic = LaunchArgument('scan_topic', default_value='', description='Laserscan topic of the SLAM mapper (empty = none).')
 
     def nav2_cfg(*parts):
         return PathJoinSubstitution([robots_root, 'config', 'nav2', *parts])
 
     mobile_path = mobile_caps.substitution
-    model_params_path = PathJoinSubstitution([robots_root, 'robots', robot.substitution, 'model_params.yaml'])
     interplanner_cfg = nav2_cfg('interplanners', inter_planner.substitution, 'interplanner_config.yaml')
     interplanner_yaml = YAMLFileSubstitution(interplanner_cfg)
     overlay = YAMLFileSubstitution(params_overlay.substitution, default={})
@@ -67,7 +66,7 @@ def generate_launch_description():
         Nav2SubBlockYAML(mobile_path),
         Nav2CollisionDerivedYAML(mobile_path),
         Nav2KinematicsDerivedYAML(mobile_path),
-        SensorsDerivedYAML(model_params_path, mobile_path, sensors_json.substitution, frame.substitution),
+        SensorsDerivedYAML(mobile_path, sensors_json.substitution, frame.substitution),
         YAMLFileSubstitution(nav2_cfg('defaults', 'controller_config.yaml')),
         YAMLFileSubstitution(nav2_cfg('controllers', local_planner.substitution, 'controller_config.yaml')),
         YAMLFileSubstitution(nav2_cfg('defaults', 'planner_config.yaml')),

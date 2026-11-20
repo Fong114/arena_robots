@@ -8,6 +8,7 @@ import pytest
 import yaml
 from arena_bringup.substitutions import YAMLMergeSubstitution
 from arena_rclpy_mixins.yaml_replace import YAMLReplacer
+from arena_robots.bringup.mobile.nav2 import Nav2Bringup
 from arena_robots.nav2 import (
     SensorsDerivedYAML,
     compile_sensors_to_collision_monitor,
@@ -15,6 +16,7 @@ from arena_robots.nav2 import (
     compile_sensors_to_stvl,
     split_planar_sensors,
 )
+from arena_robots.Robot import RobotIdentifier
 from arena_robots.Sensor import SensorSpec, SensorType
 from arena_robots.sensor_geometry import SensorGeometry
 
@@ -23,6 +25,11 @@ ROBOTS_DIR = PKG / "robots"
 NAV2_YAML = PKG / "config" / "nav2" / "nav2.yaml"
 SOCIAL_OVERLAY = PKG / "config" / "nav2" / "overlays" / "social_cost_layer.yaml"
 DWB_CONTROLLER = PKG / "config" / "nav2" / "controllers" / "dwb" / "controller_config.yaml"
+
+
+def _derived_file(robot: str) -> str:
+    arguments = Nav2Bringup(RobotIdentifier(robot).resolve_sync(), f"/env_0/{robot}").planner_launch_arguments()
+    return SensorsDerivedYAML(arguments["mobile_caps"], arguments["sensors_json"]).perform(launch.LaunchContext())
 
 
 def _spec(name: str, type_: SensorType, topic: str) -> SensorSpec:
@@ -143,8 +150,7 @@ def test_obstacle_layer_cloud_source_marks_and_clears():
 @pytest.mark.parametrize(("robot", "height"), [("a1", 0.2), ("go1", 0.2), ("jackal", 0.1)])
 def test_voxel_layer_takes_its_min_obstacle_height_from_local_observation(robot, height):
     pytest.importorskip("xacro")
-    robot_dir = ROBOTS_DIR / robot
-    derived = yaml.safe_load(Path(SensorsDerivedYAML(str(robot_dir / "model_params.yaml"), str(robot_dir / "caps" / "mobile.yaml")).perform(launch.LaunchContext())).read_text())
+    derived = yaml.safe_load(Path(_derived_file(robot)).read_text())
     marking = {name: source for name, source in derived["observation_sources_dict"].items() if source["marking"]}
     assert marking
     assert {source["min_obstacle_height"] for source in marking.values()} == {height}
@@ -159,8 +165,7 @@ def test_cloud_sources_stay_below_a_two_meter_ceiling_while_scans_keep_their_rea
 @pytest.mark.parametrize("robot", ["turtlebot", "boxer", "go1"])
 def test_global_cloud_sources_take_the_voxel_layer_ceiling(robot):
     pytest.importorskip("xacro")
-    robot_dir = ROBOTS_DIR / robot
-    derived = yaml.safe_load(Path(SensorsDerivedYAML(str(robot_dir / "model_params.yaml"), str(robot_dir / "caps" / "mobile.yaml")).perform(launch.LaunchContext())).read_text())
+    derived = yaml.safe_load(Path(_derived_file(robot)).read_text())
     clouds = [source for source in derived["observation_sources_dict_global"].values() if source["data_type"] == "PointCloud2"]
     assert clouds
     assert {source["max_obstacle_height"] for source in clouds} == {source["max_obstacle_height"] for source in derived["observation_sources_dict"].values() if source["marking"]} == {0.8}
@@ -168,8 +173,7 @@ def test_global_cloud_sources_take_the_voxel_layer_ceiling(robot):
 
 def _costmap_layers(robot: str) -> tuple[dict, dict, dict]:
     pytest.importorskip("xacro")
-    robot_dir = ROBOTS_DIR / robot
-    derived = SensorsDerivedYAML(str(robot_dir / "model_params.yaml"), str(robot_dir / "caps" / "mobile.yaml")).perform(launch.LaunchContext())
+    derived = _derived_file(robot)
     variables = {"namespace": "ns", **yaml.safe_load(Path(derived).read_text())}
     nav2 = yaml.safe_load(NAV2_YAML.read_text())
     local = nav2["local_costmap"]["local_costmap"]["ros__parameters"]

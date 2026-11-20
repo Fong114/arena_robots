@@ -118,7 +118,7 @@ class DrlBringup(Bringup):
                     "base_frame": self.caps.body.base_frame,
                     "kind": kind,
                     "arena_env_node": arena_env_node,
-                    **self.mobile_caps_launch_arguments(),
+                    **self.planner_launch_arguments(),
                 }.items(),
             )
         ]

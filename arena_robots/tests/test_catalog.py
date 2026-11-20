@@ -351,7 +351,7 @@ class TestRenderWrapperXacroNoControlSynthesis:
     """render_wrapper_xacro synthesizes no ``ros2_control`` tag of its own (regardless of
     whether a placement declares joints): the chassis and every placement's component each
     render their own xacro exactly as written, no gating required. Post-render merging is
-    arena_simulation_setup.utils.models.urdf._inject_ros2_control_joints's job, fed by
+    arena_robots.served_urdf._inject_ros2_control_joints's job, fed by
     :func:`render_control_joints` (tested below)."""
 
     def test_no_joints_no_ros2_control_tag(self, tmp_path: Path):

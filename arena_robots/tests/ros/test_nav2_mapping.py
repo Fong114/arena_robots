@@ -38,7 +38,7 @@ def _entities(mapping: str, scan_topic: str = f"{NAMESPACE}/lidar") -> tuple[lis
             "train_mode": "true",
             "arena_env_node": ENV_NODE,
             "env_namespace": "",
-            "sensors_json": "",
+            "sensors_json": "[]",
             "params_overlay": "",
             "agent": "",
             "mapping": mapping,

@@ -16,7 +16,7 @@ import pytest
 from arena_robots.assembly import RequestPart, resolve
 from arena_robots.catalog import Catalog, render_control_joints, render_wrapper_xacro
 from arena_robots.Robot import RobotIdentifier
-from arena_simulation_setup.utils.models.urdf import _inject_ros2_control_joints
+from arena_robots.served_urdf import _inject_ros2_control_joints
 
 COMPONENTS_ROOT = Path(__file__).resolve().parent.parent / "components"
 
@@ -67,7 +67,7 @@ class TestRbvoguiArmCollapseMatchesPlus:
         wrapper_path.write_text(render_wrapper_xacro(view, resolved, catalog=catalog))
         mine = _render(wrapper_path)
         # reproduce the loader's post-render ros2_control merge
-        # (arena_simulation_setup.utils.models.urdf._inject_ros2_control_joints) over the
+        # (arena_robots.served_urdf._inject_ros2_control_joints) over the
         # separately-rendered chassis and arm tags.
         _inject_ros2_control_joints(mine, render_control_joints(resolved, catalog, prefix=view.assembly.prefix))
         plus_view = RobotIdentifier("rbvogui_plus").resolve_sync()
