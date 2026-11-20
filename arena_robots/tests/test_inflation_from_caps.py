@@ -25,15 +25,17 @@ def _inflation(robot: str, tmp_path: Path) -> tuple[float, float]:
 
 
 @pytest.mark.parametrize(
-    ("robot", "circumradius", "padding"),
+    ("robot", "circumradius", "padding", "meshes"),
     [
-        ("jackal", 0.3338, 0.0),
-        ("ridgeback", 0.505, 0.1),
-        ("rbsummit", 0.465, 0.0),
-        ("husky", 0.57, 0.0),
+        ("jackal", 0.3338, 0.0, False),
+        ("ridgeback", 0.5519, 0.1, True),
+        ("rbsummit", 0.465, 0.0, False),
+        ("husky", 0.57, 0.0, False),
     ],
 )
-def test_both_costmaps_inflate_the_urdf_outline_circumradius_plus_the_margin(robot, circumradius, padding, tmp_path):
+def test_both_costmaps_inflate_the_footprint_circumradius_plus_the_margin(robot, circumradius, padding, meshes, tmp_path, require_installed):
+    if meshes:
+        require_installed(robot)
     inflation = circumradius + padding + 0.4
     assert _inflation(robot, tmp_path) == pytest.approx((inflation, inflation), abs=5e-3)
 

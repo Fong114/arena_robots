@@ -350,7 +350,7 @@ def _drift_findings(name: str, check: str, call: Callable[[], list[str]]) -> lis
 
 
 def _file_drift_findings(view: RobotView, caps: RobotCaps) -> list[dict[str, Any]]:
-    from arena_robots import drift
+    from arena_robots import drift, urdf_lint
 
     name = view.name
     limits = view.caps.mobile.limits if "mobile" in view.caps.available else None
@@ -363,6 +363,10 @@ def _file_drift_findings(view: RobotView, caps: RobotCaps) -> list[dict[str, Any
         return [*findings, _finding(name, "urdf", f"the default URDF does not render, the URDF checks are skipped: {_error(exc)}", "warning")]
     for instance, arm in (caps.arm or {}).items():
         findings += _drift_findings(name, "joint_limits", lambda instance=instance, arm=arm: drift.joint_drift(instance, arm, caps.rendered_urdf()))
+    try:
+        findings += [_finding(name, f"urdf.{finding.check}", finding.message, finding.severity) for finding in urdf_lint.lint(view, caps.parts, caps.frames or None)]
+    except Exception as exc:
+        findings.append(_finding(name, "urdf.lint", _error(exc), "warning"))
     return findings
 
 

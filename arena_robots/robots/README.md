@@ -237,6 +237,16 @@ lazily from the canonical URDF and are not overridable.
 
 A family component (`arm/ur`) keys its entries under `variants:`, any other file lists them under `patches:`. Link and joint names are written as in the owner's own xacro, component names without the placement stem, and a name the render lacks raises.
 
+`lint(view, parts, frames)` ([`arena_robots.urdf_lint`](../arena_robots/urdf_lint.py)) returns `Finding(check, severity, message)` rows on `served_urdf.canonical(...)`:
+
+- `structure`: one root link, joint parents and children are links, the base frame is a link.
+- `inertia`: mass above 0 on every link that moves, positive definite tensor, triangle inequality, trace within a factor 5 of a single primitive collision shape.
+- `wheels`: every drive controller wheel joint is continuous with a cylinder or sphere collision.
+- `joints`: revolute and prismatic joints carry a limit with effort above 0 and velocity above 0.
+- `sensors`: every effective sensor frame is a link.
+
+A finding is an error, a URDF fault is fixed in the URDF or by a patch. `tests/test_urdf_lint.py` lints every installed robot and fails on any error.
+
 #### Where each value is authored
 
 A value is written once, by its owner. Every other file that carries it is rendered

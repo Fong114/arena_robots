@@ -6,7 +6,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 API = "arena_robots/arena_robots/arena_robots"
-API_MODULES = frozenset(f"{API}/{name}.py" for name in ("Robot", "caps", "urdf_facts", "served_urdf", "urdf_patches", "catalog", "drift", "assembly"))
+API_MODULES = frozenset(f"{API}/{name}.py" for name in ("Robot", "caps", "urdf_facts", "served_urdf", "urdf_patches", "urdf_lint", "catalog", "drift", "assembly"))
 ALLOWLIST = {"_meta/arena_cli/features/robots.py": "runs on the host without ROS, where arena_robots cannot be imported"}
 SKIPPED_DIRS = frozenset({".git", "build", "install", "log", "node_modules", "__pycache__", "tests", "deps", ".venv", ".uv-workspace", "repos"})
 ROBOT_FILES = frozenset({"model_params.yaml", "control.yaml", "mappings.yaml", "assembly.yaml", "component.yaml"})
