@@ -25,7 +25,7 @@ def test_catalog_lists_every_robot_directory_with_its_caps():
     assert "error" not in jackal
     assert jackal["caps"] == ["mobile"]
     assert "laserscan" in jackal["sensor_types"]
-    assert jackal["summary"].startswith("mobile (non-holonomic, radius 0.309")
+    assert jackal["summary"].startswith("mobile (non-holonomic, radius 0.3338")
     kairos = next(entry for entry in catalog if entry["model"] == "rbkairos_plus")
     assert "arm x1" in kairos["summary"]
 
@@ -33,8 +33,8 @@ def test_catalog_lists_every_robot_directory_with_its_caps():
 def test_jackal_definition_carries_limits_sensors_and_only_the_goto_endpoint():
     definition = mcp.robots_definition("jackal")
     authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())
-    assert definition["mobile"]["radius"] == pytest.approx(0.3092, abs=2e-3)
-    assert max(abs(x) for x, _ in definition["mobile"]["footprint"]) == pytest.approx(0.229, abs=5e-3)
+    assert definition["mobile"]["radius"] == pytest.approx(0.3338, abs=2e-3)
+    assert max(abs(x) for x, _ in definition["mobile"]["footprint"]) == pytest.approx(0.2553, abs=5e-3)
     assert "sensor_frame" not in definition["mobile"]
     limits = definition["mobile"]["velocity_limits"]
     assert [limits["linear"]["min"], limits["linear"]["max"]] == authored["velocity_limits"]["linear"]
@@ -211,7 +211,7 @@ def test_definition_with_a_set_override_returns_the_overridden_limits_and_leaves
     limits = definition["mobile"]["velocity_limits"]
     assert [limits["linear"]["min"], limits["linear"]["max"]] == [-0.5, 1.0]
     authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())
-    assert definition["mobile"]["radius"] == pytest.approx(0.3092, abs=2e-3)
+    assert definition["mobile"]["radius"] == pytest.approx(0.3338, abs=2e-3)
     plain = mcp.robots_definition("jackal")["mobile"]["velocity_limits"]
     assert [plain["linear"]["min"], plain["linear"]["max"]] == authored["velocity_limits"]["linear"]
 

@@ -1,0 +1,57 @@
+variants:
+  ur3:
+    - total_mass: 11
+      reason: ur_description link masses sum to 10.63 kg
+      source: https://www.universal-robots.com/media/240736/ur3_en.pdf
+  ur3e:
+    - total_mass: 11.2
+      reason: ur_description link masses sum to 10.80 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR3E_techsheet_pdf_online/UR3E_techsheet_en.pdf
+  ur5:
+    - total_mass: 18.4
+      reason: ur_description link masses sum to 21.05 kg
+      source: https://www.universal-robots.com/media/50588/ur5_en.pdf
+  ur5e:
+    - total_mass: 20.7
+      reason: ur_description link masses sum to 21.70 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR5E_techsheet_pdf_online/UR5E_techsheet_en.pdf
+  ur7e:
+    - total_mass: 20.6
+      reason: ur_description link masses sum to 21.70 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR7E_techsheet_pdf_online/UR7E_techsheet_en.pdf
+  ur8long:
+    - total_mass: 44.7
+      reason: ur_description link masses sum to 43.94 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR8Long_techsheet_pdf_online/UR8Long_techsheet_en.pdf
+  ur10:
+    - total_mass: 28.9
+      reason: ur_description link masses sum to 32.44 kg
+      source: https://www.universal-robots.com/media/50895/ur10_en.pdf
+  ur10e:
+    - total_mass: 33.3
+      reason: ur_description link masses sum to 33.10 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR10E_techsheet_pdf_online/UR10E_techsheet_en.pdf
+  ur12e:
+    - total_mass: 33.5
+      reason: ur_description link masses sum to 33.10 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR12E_techsheet_pdf_online/UR12E_techsheet_en.pdf
+  ur15:
+    - total_mass: 40.7
+      reason: ur_description link masses sum to 40.26 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR15_techsheet_pdf_online/UR15_techsheet_en.pdf
+  ur16e:
+    - total_mass: 33.1
+      reason: ur_description link masses sum to 31.26 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR16E_techsheet_pdf_online/UR16E_techsheet_en.pdf
+  ur18:
+    - total_mass: 39.2
+      reason: ur_description link masses sum to 38.95 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR18_techsheet_pdf_online/UR18_techsheet_en.pdf
+  ur20:
+    - total_mass: 64
+      reason: ur_description link masses sum to 64.96 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR20_techsheet_pdf_online/UR20_techsheet_en.pdf
+  ur30:
+    - total_mass: 63.5
+      reason: ur_description link masses sum to 63.15 kg
+      source: https://www.universal-robots.com/manuals/EN/DataSheets/UR30_techsheet_pdf_online/UR30_techsheet_en.pdf

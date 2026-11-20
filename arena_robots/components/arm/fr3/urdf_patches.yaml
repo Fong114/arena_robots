@@ -1,0 +1,4 @@
+patches:
+  - total_mass: 18.3
+    reason: franka_description link masses sum to 17.89 kg
+    source: https://franka.de/hubfs/Datasheet%20Franka%20Research%203_R02212_2.6_EN_July%202026.pdf

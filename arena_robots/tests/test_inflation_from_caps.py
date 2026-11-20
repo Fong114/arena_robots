@@ -27,7 +27,7 @@ def _inflation(robot: str, tmp_path: Path) -> tuple[float, float]:
 @pytest.mark.parametrize(
     ("robot", "circumradius", "padding"),
     [
-        ("jackal", 0.309, 0.0),
+        ("jackal", 0.3338, 0.0),
         ("ridgeback", 0.505, 0.1),
         ("rbsummit", 0.465, 0.0),
         ("husky", 0.57, 0.0),

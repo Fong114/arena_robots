@@ -256,9 +256,9 @@
   </joint>
   <link name="robot_gps_mast_base_link">
     <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0 0.0"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="1.0"/>
-      <inertia ixx="0.020841666666666665" ixy="0" ixz="0" iyy="0.020841666666666665" iyz="0" izz="1.6666666666666667e-05"/>
+      <inertia ixx="0.00354166666667" ixy="0" ixz="0" iyy="0.00354166666667" iyz="0" izz="0.000416666666667"/>
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -575,8 +575,8 @@
     <inertial>
       <!-- The following are not reliable values, and should not be used for modeling -->
       <mass value="0.072"/>
-      <origin xyz="0 0 0"/>
-      <inertia ixx="0.003881243" ixy="0.0" ixz="0.0" iyy="0.000498940" iyz="0.0" izz="0.003879257"/>
+      <origin rpy="0 0 0" xyz="0 -0.0175 0"/>
+      <inertia ixx="5.235e-05" ixy="0" ixz="0" iyy="7.515015e-06" iyz="0" izz="5.2365015e-05"/>
     </inertial>
   </link>
   <!-- camera depth joints and links -->

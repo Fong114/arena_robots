@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
+from arena_robots import urdf_patches
 from arena_robots.assembly import RequestPart
 from arena_robots.catalog import render_wrapper_xacro
 from arena_robots.Robot import RobotIdentifier, RobotView
@@ -295,11 +296,13 @@ def _structural(root: ET.Element) -> ET.Element:
     [{}, {"lidar": [RequestPart(variant="rplidar", mount="top")]}],
     ids=["defaults", "placed_lidar"],
 )
-def test_canonical_is_the_plain_render_plus_the_structural_steps(parts, require_installed):
+def test_canonical_is_the_plain_render_plus_the_patches_and_the_structural_steps(parts, require_installed):
     pytest.importorskip("xacro")
     require_installed("jackal")
     view = RobotIdentifier("jackal").resolve_sync()
-    assert _same_xml(canonical(view, parts), _structural(_old_render(view, parts)))
+    plain = _old_render(view, parts)
+    urdf_patches.apply(plain, view, view._resolved(parts))
+    assert _same_xml(canonical(view, parts), _structural(plain))
 
 
 def test_canonical_places_the_requested_lidar(require_installed):

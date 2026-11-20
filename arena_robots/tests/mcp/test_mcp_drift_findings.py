@@ -35,12 +35,12 @@ def test_boxer_weighs_its_vendor_mass(require_installed: Callable[[str], None]):
     assert mcp._view("boxer").effective_caps({}).body.mass == pytest.approx(107.0)
 
 
-def test_turtlebot_power_model_takes_its_upstream_urdf_mass(require_installed: Callable[[str], None]):
+def test_turtlebot_power_model_takes_its_patched_urdf_mass(require_installed: Callable[[str], None]):
     require_installed("turtlebot")
     view = mcp._view("turtlebot")
     profile = view.power_profile(view.effective_caps({}))
     assert profile is not None
-    assert profile["robot_mass_kg"] == pytest.approx(4.454)
+    assert profile["robot_mass_kg"] == pytest.approx(3.945)
 
 
 def test_rbvogui_swerve_geometry_comes_from_the_urdf(require_installed: Callable[[str], None]):

@@ -15,7 +15,7 @@ HOLONOMIC = {"a1", "go1", "mpo700", "rbkairos", "rbkairos_plus", "rbrobout", "rb
 EXTENT_TOLERANCE = 5e-3
 
 OUTLINES = [
-    pytest.param("jackal", False, (-0.229, 0.229, -0.208, 0.208), 0.309, id="diff"),
+    pytest.param("jackal", False, (-0.2553, 0.2553, -0.215, 0.215), 0.3338, id="diff"),
     pytest.param("rbkairos", True, (-0.457, 0.457, -0.465, 0.465), 0.584, id="mecanum"),
     pytest.param("mpo700", True, (-0.476, 0.476, -0.324, 0.324), 0.523, id="swerve"),
     pytest.param("rskomnidirectional", True, (-0.095, 0.063, -0.085, 0.085), 0.097, id="omni"),

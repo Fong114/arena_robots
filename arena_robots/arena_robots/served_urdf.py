@@ -281,12 +281,15 @@ def _control_joints(view: RobotView, resolved: object) -> list[dict[str, object]
 
 
 def _document(view: RobotView, parts: dict[str, list[RequestPart]], frames: dict[str, str] | None, xacro_args: Mapping[str, object]) -> tuple[ET.Element, list[dict[str, object]]]:
+    from arena_robots import urdf_patches
     from arena_robots.assembly import apply_frame_overrides
 
     resolved = view._resolved(parts)
     if resolved is not None:
         resolved = apply_frame_overrides(resolved, frames or {})
-    return _render_xacro(view, resolved, xacro_args), _control_joints(view, resolved)
+    root = _render_xacro(view, resolved, xacro_args)
+    urdf_patches.apply(root, view, resolved)
+    return root, _control_joints(view, resolved)
 
 
 @attrs.frozen

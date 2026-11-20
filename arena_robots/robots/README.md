@@ -226,6 +226,17 @@ lazily from the canonical URDF and are not overridable.
 
 `RobotCaps.rendered_urdf()` is the canonical URDF of an instance ([`arena_robots.served_urdf`](../arena_robots/served_urdf.py)): the xacro of the robot or its assembly wrapper with frame overrides and default arguments, passive joints locked, assembly control joints injected and effort state interfaces ensured, mesh URIs untouched. `RobotCaps.served_urdf(...)` runs the same pipeline with the simulator's xacro arguments, sensors stripped per `optim`, unregistered `ros2_control` hardware stripped and sensor topics patched, and writes it with absolute `file://` mesh URIs to `<tempdir>/arena_robots/<sha256>.urdf`. Every simulator, MoveIt and the CHAMP bringup load that file. `RobotView.control_config(sim)`, `bridge_mappings()`, `bringup_launch` and `srdf_source` are the other file accessors, and no module outside the arena_robots API reads robot files (`tests/test_robot_files_seam.py`).
 
+`urdf_patches.yaml` in a robot directory or a component directory ([`arena_robots.urdf_patches`](../arena_robots/urdf_patches.py)) corrects the URDF of an instance right after the render, so `canonical()`, `serve()` and every fact derived from them see it. Each entry carries a `reason` and a `source` (where the corrected value comes from) and is one of:
+
+- `link` plus `mass`: the link mass, its inertia scaled by the same factor.
+- `total_mass`: every link the owner contributes scaled to the sum, masses and inertias. For a component these are the links its placement adds, recognized by the `<prefix><mount>_` stem, for a robot every other link.
+- `joint` plus `limit` (`lower`, `upper`, `velocity`, `effort`).
+- `link` plus `inertia_scale`.
+- `link` plus `inertia: from_collision`: the inertia tensor of the link's single box, cylinder or sphere collision at the link's mass, rotated by the collision `rpy`, about an inertial origin set to the collision origin. A link without exactly one such collision raises.
+- `link` plus `collision: {box: [x, y, z], xyz: [...], rpy: [...]}`: adds a box collision to the link (`xyz` and `rpy` default to zero), for geometry the vendor collision leaves out such as bumpers and fenders.
+
+A family component (`arm/ur`) keys its entries under `variants:`, any other file lists them under `patches:`. Link and joint names are written as in the owner's own xacro, component names without the placement stem, and a name the render lacks raises.
+
 #### Where each value is authored
 
 A value is written once, by its owner. Every other file that carries it is rendered
@@ -244,7 +255,7 @@ from the effective caps, or `robots_check` warns where it differs.
 | Lidar geometry (`mobile.laser`) | the lidar component's xacro arguments (a bracket on the part) or the URDF | read from the scan sensor of the rendered URDF on the primary lidar (the first `laserscan` sensor), never authored in `caps/mobile.yaml` |
 | MoveIt joint limits (`arm.<mount>.joint_limits`) | the component's `joint_limits/` file | `moveit_factory`, overridable per instance, tightened-only against the URDF `<limit>` |
 | Joint position, velocity and effort limits | the URDF | the simulators, the bound of the MoveIt limits |
-| Body mass | the URDF inertials, each component's in its xacro | `body.mass`, the power model, the evaluation metrics through the caps snapshot |
+| Body mass | the URDF inertials, each component's in its xacro, corrected to the vendor's figure by `urdf_patches.yaml` (robot directory or component directory) | `body.mass`, the power model, the evaluation metrics through the caps snapshot |
 | Collision geometry | the URDF | `body.outline` |
 
 #### `caps/arm.yaml`, `caps/lift.yaml`, `caps/gripper.yaml`: dict-keyed

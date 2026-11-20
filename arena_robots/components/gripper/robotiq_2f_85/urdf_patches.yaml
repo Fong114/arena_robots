@@ -1,0 +1,4 @@
+patches:
+  - total_mass: 0.9
+    reason: robotiq_description link masses sum to 0.921 kg
+    source: https://robotiq.com/hubfs/Product-sheets/Adaptive%20Grippers/Product-sheet-Adaptive-Grippers-EN.pdf
