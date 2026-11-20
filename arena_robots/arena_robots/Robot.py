@@ -75,11 +75,11 @@ def _overlay(base: dict, top: dict) -> dict:
 
 class ModelParams(dict[str, typing.Any]):
     """Robot-wide identity (from ``model_params.yaml``) with typed accessors
-    that delegate to the sibling ``caps/`` tree for mobile primitives.
+    that delegate to the sibling ``caps.yaml`` for mobile primitives.
 
     Constructed via :meth:`from_yaml` which records the file path; the
-    ``caps`` cached property resolves ``<path>.parent / 'caps'`` so every
-    ``ModelParams`` that came from disk can see its robot's cap tree without
+    ``caps`` cached property resolves ``<path>.parent`` so every
+    ``ModelParams`` that came from disk can see its robot's caps.yaml without
     external wiring."""
 
     _path: Path | None = None
@@ -97,10 +97,10 @@ class ModelParams(dict[str, typing.Any]):
 
     @functools.cached_property
     def caps(self) -> RobotCaps:
-        """Lazy view over ``<robot_dir>/caps/``. Empty if this ``ModelParams``
-        wasn't loaded from disk or the caps dir doesn't exist."""
-        caps_dir = self._path.parent / 'caps' if self._path is not None else Path('/dev/null')
-        return RobotCaps(caps_dir=caps_dir)
+        """Lazy view over ``<robot_dir>/caps.yaml``. Empty if this ``ModelParams``
+        wasn't loaded from disk or the file doesn't exist."""
+        robot_dir = self._path.parent if self._path is not None else Path('/dev/null')
+        return RobotCaps(robot_dir=robot_dir)
 
     def _mobile(self) -> MobileSpec | None:
         if 'mobile' not in self.caps.available:
@@ -209,7 +209,7 @@ class RobotView(PathView):
 
     @property
     def caps(self) -> RobotCaps:
-        """Lazy view over robots/<name>/caps/, equivalent to
+        """Lazy view over robots/<name>/caps.yaml, equivalent to
         ``self.model_params.caps``, exposed directly on ``RobotView`` for
         readability."""
         return self.model_params.caps
@@ -362,10 +362,10 @@ class RobotView(PathView):
         placement-derived caps."""
         resolved = self._resolved(parts)
         if resolved is None:
-            return RobotCaps(self.caps.caps_dir, overrides=dict(caps or {}), view=self, parts=parts)
+            return RobotCaps(self.caps.robot_dir, overrides=dict(caps or {}), view=self, parts=parts)
         assert self.assembly is not None
         resolved = assembly_mod.apply_frame_overrides(resolved, frames or {})
-        return RobotCaps(self.caps.caps_dir, resolved=resolved, catalog=_CATALOG, prefix=self.assembly.prefix, overrides=dict(caps or {}), view=self, parts=parts, frames=dict(frames or {}))
+        return RobotCaps(self.caps.robot_dir, resolved=resolved, catalog=_CATALOG, prefix=self.assembly.prefix, overrides=dict(caps or {}), view=self, parts=parts, frames=dict(frames or {}))
 
     def power_profile(self, caps: RobotCaps) -> dict[str, float | int] | None:
         """Power-publisher parameters from the instance's effective power and body facts plus the resolved component draw. ``None`` when unpowered."""

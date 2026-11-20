@@ -25,18 +25,17 @@ MOBILE = {
 ARM = {"left": {"controller": "left_controller", "stall_time": 1.0}, "right": {"controller": "right_controller", "stall_time": 1.5}}
 
 
-def _caps_dir(tmp_path: Path, **files: dict) -> Path:
-    caps_dir = tmp_path / "robot" / "caps"
-    caps_dir.mkdir(parents=True)
-    for cap, data in files.items():
-        (caps_dir / f"{cap}.yaml").write_text(yaml.safe_dump(data))
-    return caps_dir
+def _robot_dir(tmp_path: Path, **files: dict) -> Path:
+    robot_dir = tmp_path / "robot"
+    robot_dir.mkdir(parents=True)
+    (robot_dir / "caps.yaml").write_text(yaml.safe_dump(files))
+    return robot_dir
 
 
 def _view(tmp_path: Path, **files: dict) -> RobotView:
-    caps_dir = _caps_dir(tmp_path, **files)
-    (caps_dir.parent / "model_params.yaml").write_text(yaml.safe_dump({"robot_model": "robot"}))
-    return RobotView(caps_dir.parent)
+    robot_dir = _robot_dir(tmp_path, **files)
+    (robot_dir / "model_params.yaml").write_text(yaml.safe_dump({"robot_model": "robot"}))
+    return RobotView(robot_dir)
 
 
 class TestSetupGrammar:
@@ -103,72 +102,95 @@ class TestInlineValues:
 
 class TestMobileOverlay:
     def test_set_reaches_typed_accessor(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE), overrides={"mobile.velocity_limits.linear": [-0.5, 0.5]})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE), overrides={"mobile.velocity_limits.linear": [-0.5, 0.5]})
         limits = caps.mobile.velocity_limits
         assert limits is not None
         assert (limits.linear.min, limits.linear.max) == (-0.5, 0.5)
         assert (limits.angular.min, limits.angular.max) == (-3.0, 3.0)
 
     def test_scale_multiplies_every_number_below_the_path(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE), overrides={"mobile.limits.velocity": {"scale": 0.5}})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE), overrides={"mobile.limits.velocity": {"scale": 0.5}})
         planar = caps.mobile.planar
         assert planar is not None
         assert (planar.velocity["linear"].min, planar.velocity["linear"].max) == (-0.5, 1.0)
         assert (planar.velocity["angular"].min, planar.velocity["angular"].max) == (-1.5, 1.5)
 
     def test_unset_typed_field_can_be_set(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE), overrides={"mobile.acceleration_limits.linear": 1.5, "mobile.acceleration_limits.angular": 2.0})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE), overrides={"mobile.acceleration_limits.linear": 1.5, "mobile.acceleration_limits.angular": 2.0})
         limits = caps.mobile.acceleration_limits
         assert limits is not None
         assert (limits.linear, limits.angular) == (1.5, 2.0)
 
     def test_adapter_sub_block_is_overridden(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE), overrides={"mobile.nav2.controller": "mppi"})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE), overrides={"mobile.nav2.controller": "mppi"})
         assert caps.mobile.sub("nav2") == {"controller": "mppi"}
 
     def test_adapter_block_absent_from_the_file_is_created(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE), overrides={"mobile.meshnav.planner": "cvp"})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE), overrides={"mobile.meshnav.planner": "cvp"})
         assert caps.mobile.sub("meshnav") == {"planner": "cvp"}
 
     def test_unknown_field_raises(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE), overrides={"mobile.velocty_limits.linear": [0.0, 1.0]})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE), overrides={"mobile.velocty_limits.linear": [0.0, 1.0]})
         with pytest.raises(ValueError, match="unknown field"):
             caps.mobile.raw
 
+    def test_source_is_kept_out_of_the_cap_data_and_exposed_on_the_spec(self, tmp_path: Path):
+        caps = RobotCaps(_robot_dir(tmp_path, mobile={**MOBILE, "source": "https://example.test/sheet"}, arm={"source": "https://example.test/arm", **ARM}))
+        assert caps.mobile.source == "https://example.test/sheet"
+        assert "source" not in caps.mobile.raw
+        assert caps.arm["left"].source == "https://example.test/arm"
+        assert sorted(caps.arm) == ["left", "right"]
+        assert "source" not in caps.effective()["mobile"]
+
+    def test_source_does_not_change_the_caps_hash(self, tmp_path: Path):
+        plain = RobotCaps(_robot_dir(tmp_path / "plain", mobile=MOBILE))
+        cited = RobotCaps(_robot_dir(tmp_path / "cited", mobile={**MOBILE, "source": "https://example.test/sheet"}))
+        assert plain.caps_hash() == cited.caps_hash()
+
+    def test_source_must_be_a_string(self, tmp_path: Path):
+        caps = RobotCaps(_robot_dir(tmp_path, mobile={**MOBILE, "source": ["a"]}))
+        with pytest.raises(ValueError, match="'source' must be a string"):
+            caps.mobile
+
+    def test_source_cannot_be_overridden(self, tmp_path: Path):
+        caps = RobotCaps(_robot_dir(tmp_path, mobile={**MOBILE, "source": "https://example.test/sheet"}), overrides={"mobile.source": "elsewhere"})
+        with pytest.raises(ValueError, match="unknown field 'source'"):
+            caps.mobile.raw
+
     def test_scaling_unset_value_raises(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE), overrides={"mobile.footprint_padding": {"scale": 2.0}})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE), overrides={"mobile.footprint_padding": {"scale": 2.0}})
         with pytest.raises(ValueError, match="cannot scale or offset an unset value"):
             caps.mobile.raw
 
     def test_scaling_text_raises(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE), overrides={"mobile.odom_frame": {"scale": 2.0}})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE), overrides={"mobile.odom_frame": {"scale": 2.0}})
         with pytest.raises(ValueError, match="cannot scale"):
             caps.mobile.raw
 
     def test_file_on_disk_and_other_views_unchanged(self, tmp_path: Path):
-        caps_dir = _caps_dir(tmp_path, mobile=MOBILE)
-        overridden = RobotCaps(caps_dir, overrides={"mobile.radius": 0.9})
-        plain = RobotCaps(caps_dir)
+        robot_dir = _robot_dir(tmp_path, mobile=MOBILE)
+        overridden = RobotCaps(robot_dir, overrides={"mobile.radius": 0.9})
+        plain = RobotCaps(robot_dir)
         assert overridden.mobile.radius == 0.9
         assert plain.mobile.radius == 0.3
-        assert yaml.safe_load((caps_dir / "mobile.yaml").read_text()) == MOBILE
+        assert yaml.safe_load((robot_dir / "caps.yaml").read_text())["mobile"] == MOBILE
 
 
 class TestInstanceOverlay:
     def test_file_instance_overridden(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE, arm=ARM), overrides={"arm.right.stall_time": 3.0})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE, arm=ARM), overrides={"arm.right.stall_time": 3.0})
         arms = caps.arm
         assert arms is not None
         assert arms["right"].stall_time == 3.0
         assert arms["left"].stall_time == 1.0
 
     def test_unknown_file_instance_raises(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE, arm=ARM), overrides={"arm.middle.stall_time": 3.0})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE, arm=ARM), overrides={"arm.middle.stall_time": 3.0})
         with pytest.raises(ValueError, match="unknown arm instance 'middle'"):
             caps.arm
 
     def test_instance_override_needs_a_field(self, tmp_path: Path):
-        caps = RobotCaps(_caps_dir(tmp_path, mobile=MOBILE, arm=ARM), overrides={"arm.right": 3.0})
+        caps = RobotCaps(_robot_dir(tmp_path, mobile=MOBILE, arm=ARM), overrides={"arm.right": 3.0})
         with pytest.raises(ValueError, match="<instance>.<field>"):
             caps.arm
 
@@ -176,8 +198,8 @@ class TestInstanceOverlay:
         mount = Mount(name="arm", parent="chassis_link", xyz=(0.0, 0.0, 0.235), accepts=("arm",))
         resolved = ResolvedAssembly(placements=[Placement(type="arm", variant="ur5e", mount=mount)])
         catalog = Catalog(root=COMPONENTS_ROOT)
-        caps = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=catalog, overrides={"arm.arm.stall_time": 4.0})
-        plain = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=catalog)
+        caps = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=catalog, overrides={"arm.arm.stall_time": 4.0})
+        plain = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=catalog)
         assert caps.arm is not None and plain.arm is not None
         assert caps.arm["arm"].stall_time == 4.0
         assert plain.arm["arm"].stall_time != 4.0
@@ -185,22 +207,22 @@ class TestInstanceOverlay:
     def test_unknown_placement_instance_raises(self):
         mount = Mount(name="arm", parent="chassis_link", xyz=(0.0, 0.0, 0.235), accepts=("arm",))
         resolved = ResolvedAssembly(placements=[Placement(type="arm", variant="ur5e", mount=mount)])
-        caps = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), overrides={"arm.top.stall_time": 4.0})
+        caps = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), overrides={"arm.top.stall_time": 4.0})
         with pytest.raises(ValueError, match=r"unknown arm instance\(s\) \['top'\]"):
             caps.arm
 
 
 class TestValidate:
     def test_valid_overrides_pass(self, tmp_path: Path):
-        RobotCaps(_caps_dir(tmp_path, mobile=MOBILE, arm=ARM), overrides={"mobile.velocity_limits.linear": [0.0, 1.0], "arm.left.stall_time": 2.0}).validate_overrides()
+        RobotCaps(_robot_dir(tmp_path, mobile=MOBILE, arm=ARM), overrides={"mobile.velocity_limits.linear": [0.0, 1.0], "arm.left.stall_time": 2.0}).validate_overrides()
 
     def test_unadvertised_cap_raises(self, tmp_path: Path):
         with pytest.raises(ValueError, match="does not advertise"):
-            RobotCaps(_caps_dir(tmp_path, mobile=MOBILE), overrides={"lift.torso.limits": [0.0, 1.0]}).validate_overrides()
+            RobotCaps(_robot_dir(tmp_path, mobile=MOBILE), overrides={"lift.torso.limits": [0.0, 1.0]}).validate_overrides()
 
     def test_bad_typed_value_raises(self, tmp_path: Path):
         with pytest.raises(ValueError):
-            RobotCaps(_caps_dir(tmp_path, mobile=MOBILE), overrides={"mobile.velocity_limits.linear": "fast"}).validate_overrides()
+            RobotCaps(_robot_dir(tmp_path, mobile=MOBILE), overrides={"mobile.velocity_limits.linear": "fast"}).validate_overrides()
 
 
 class TestEffectiveCaps:
@@ -208,7 +230,7 @@ class TestEffectiveCaps:
         view = _view(tmp_path, mobile=MOBILE)
         caps = view.effective_caps({})
         assert caps.view is view
-        assert caps.caps_dir == view.caps.caps_dir
+        assert caps.robot_dir == view.caps.robot_dir
         assert caps.overrides == {}
         assert caps.mobile.raw == view.caps.mobile.raw
 

@@ -213,7 +213,7 @@ def _load_mobile(path_str: str) -> MobileSpec:
     with open(path_str) as f:
         data = yaml.safe_load(f) or {}
     if not isinstance(data, dict):
-        raise ValueError(f"{path_str}: mobile.yaml must be a mapping at top level")
+        raise ValueError(f"{path_str}: mobile cap file must be a mapping at top level")
     return MobileSpec(path=Path(path_str), raw=data)
 
 
@@ -224,7 +224,7 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
     Local uses the full lidar range, with planar sensors under the `_planar` keys and
     volumetric ones under the bare keys. Global uses shorter capped ranges and pulls per-source
     overrides (`raytrace_max_range`, `obstacle_max_range`, `observation_persistence`) from
-    the optional `nav2.global_observation` block in caps/mobile.yaml, which also sets the cloud
+    the optional `nav2.global_observation` block in the mobile section of caps.yaml, which also sets the cloud
     sources' `min_obstacle_height` and `max_obstacle_height`. The voxel layer takes both heights
     from the optional `nav2.local_observation` block.
     """
@@ -303,7 +303,7 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
 
 
 class Nav2SubBlockYAML(YAMLFileSubstitution):
-    """Extract the `nav2:` sub-block from caps/mobile.yaml and emit it at top level
+    """Extract the `nav2:` sub-block from the mobile section of caps.yaml and emit it at top level
     as a temp YAML file. Lets YAMLMergeSubstitution treat adapter-specific config
     (global_observation) as flat merge-time keys while they
     stay nested in the authored file."""
@@ -330,7 +330,7 @@ def motion_model(mobile: MobileSpec) -> str:
 
 class Nav2KinematicsDerivedYAML(YAMLFileSubstitution):
     """Emit controller-agnostic velocity/acceleration keys from the top-level
-    ``velocity_limits``/``acceleration_limits`` in caps/mobile.yaml, the
+    ``velocity_limits``/``acceleration_limits`` in the mobile section of caps.yaml, the
     ``motion_model`` of the base and the ``turning_radius`` of a car-like one.
 
     These are the planner envelope (what nav2 may sample), not the hardware
@@ -380,7 +380,7 @@ class Nav2KinematicsDerivedYAML(YAMLFileSubstitution):
 
 
 class Nav2CollisionDerivedYAML(YAMLFileSubstitution):
-    """Compile top-level `footprint` and `polygons_dict` from caps/mobile.yaml
+    """Compile top-level `footprint` and `polygons_dict` from the mobile section of caps.yaml
     into the stringified form nav2's collision_monitor expects, overriding any
     raw float lists emitted by the preceding YAMLFileSubstitution(mobile_path),
     and emit the costmaps' `inflation_radius`."""

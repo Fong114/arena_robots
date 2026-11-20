@@ -9,11 +9,11 @@ from arena_robots.Robot import RobotIdentifier
 
 
 def _lift(raw: dict) -> LiftSpec:
-    return LiftSpec(path=Path("caps/lift.yaml"), raw={"joint": "j", "controller": "c", **raw}, name="torso")
+    return LiftSpec(path=Path("caps.yaml"), raw={"joint": "j", "controller": "c", **raw}, name="torso")
 
 
 def _gripper(raw: dict | None = None) -> GripperSpec:
-    return GripperSpec(path=Path("caps/gripper.yaml"), raw={"joint": "j", "controller": "c", "positions": {"open": 0.044, "close": 0.0}, "max_effort": 16.0, **(raw or {})}, name="gripper")
+    return GripperSpec(path=Path("caps.yaml"), raw={"joint": "j", "controller": "c", "positions": {"open": 0.044, "close": 0.0}, "max_effort": 16.0, **(raw or {})}, name="gripper")
 
 
 class TestLift:

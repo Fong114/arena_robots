@@ -48,8 +48,8 @@ def _differences(block: dict[str, object], expected: dict[str, object]) -> list[
 
 
 def test_no_mobile_cap_file_authors_a_laser_block():
-    for path in sorted(ROBOTS_DIR.glob("*/caps/mobile.yaml")):
-        assert "laser" not in yaml.safe_load(path.read_text()), path
+    for path in sorted(ROBOTS_DIR.glob("*/caps.yaml")):
+        assert "laser" not in yaml.safe_load(path.read_text())["mobile"], path
 
 
 @pytest.mark.parametrize("robot", GOLDEN)

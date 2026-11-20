@@ -13,8 +13,10 @@ ROBOTS_DIR = PKG / "robots"
 NAV2_YAML = PKG / "config" / "nav2" / "nav2.yaml"
 
 
-def _smoother(robot: str) -> dict:
-    derived = Nav2KinematicsDerivedYAML(str(ROBOTS_DIR / robot / "caps" / "mobile.yaml")).perform(launch.LaunchContext())
+def _smoother(robot: str, tmp_path: Path) -> dict:
+    mobile = tmp_path / "mobile.yaml"
+    mobile.write_text(yaml.safe_dump(yaml.safe_load((ROBOTS_DIR / robot / "caps.yaml").read_text())["mobile"]))
+    derived = Nav2KinematicsDerivedYAML(str(mobile)).perform(launch.LaunchContext())
     variables = yaml.safe_load(Path(derived).read_text())
     block = yaml.safe_load(NAV2_YAML.read_text())["velocity_smoother"]["ros__parameters"]
     return YAMLReplacer(variables).replace(block)
@@ -35,8 +37,8 @@ def _all_floats(block: dict) -> None:
         ("rskomnidirectional", [0.5, 0.0, 1.5], [-0.5, 0.0, -1.5], [2.5, 0.0, 3.2], [-2.5, 0.0, -3.2]),
     ],
 )
-def test_velocity_smoother_follows_caps(robot, max_velocity, min_velocity, max_accel, max_decel):
-    block = _smoother(robot)
+def test_velocity_smoother_follows_caps(robot, max_velocity, min_velocity, max_accel, max_decel, tmp_path):
+    block = _smoother(robot, tmp_path)
     _all_floats(block)
     assert block["max_velocity"] == max_velocity
     assert block["min_velocity"] == min_velocity

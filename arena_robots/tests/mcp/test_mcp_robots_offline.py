@@ -34,7 +34,7 @@ def test_catalog_lists_every_robot_directory_with_its_caps():
 
 def test_jackal_definition_carries_limits_sensors_and_only_the_goto_endpoint():
     definition = mcp.robots_definition("jackal")
-    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())
+    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps.yaml").read_text())["mobile"]
     assert definition["mobile"]["radius"] == pytest.approx(0.3338, abs=2e-3)
     assert max(abs(x) for x, _ in definition["mobile"]["footprint"]) == pytest.approx(0.2553, abs=5e-3)
     assert "sensor_frame" not in definition["mobile"]
@@ -213,14 +213,14 @@ def test_definition_with_a_set_override_returns_the_overridden_limits_and_leaves
     definition = mcp.robots_definition("jackal", caps={"mobile.velocity_limits.linear": [-0.5, 1.0]})
     limits = definition["mobile"]["velocity_limits"]
     assert [limits["linear"]["min"], limits["linear"]["max"]] == [-0.5, 1.0]
-    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())
+    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps.yaml").read_text())["mobile"]
     assert definition["mobile"]["radius"] == pytest.approx(0.3338, abs=2e-3)
     plain = mcp.robots_definition("jackal")["mobile"]["velocity_limits"]
     assert [plain["linear"]["min"], plain["linear"]["max"]] == authored["velocity_limits"]["linear"]
 
 
 def test_definition_with_a_scale_override_multiplies_the_authored_limits():
-    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())["velocity_limits"]["linear"]
+    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps.yaml").read_text())["mobile"]["velocity_limits"]["linear"]
     limits = mcp.robots_definition("jackal", caps={"mobile.velocity_limits.linear": {"scale": 0.5}})["mobile"]["velocity_limits"]
     assert [limits["linear"]["min"], limits["linear"]["max"]] == [authored[0] * 0.5, authored[1] * 0.5]
 
@@ -287,7 +287,7 @@ def test_actuator_spec_honors_a_gripper_override_from_the_fleet_params():
 def test_overrides_list_the_jackal_mobile_paths_with_their_effective_values_as_json():
     paths = mcp.robots_overrides("jackal")
     json.dumps(paths, allow_nan=False)
-    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())
+    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps.yaml").read_text())["mobile"]
     by_path = {entry["path"]: entry for entry in paths}
     assert by_path["mobile.velocity_limits.linear"] == {"path": "mobile.velocity_limits.linear", "kind": "list", "value": authored["velocity_limits"]["linear"], "provenance": "file", "part": None, "relative": None, "simulators": sorted(simulator_names()), "overridable": True}
     assert any(entry["kind"] == "unset" and entry["value"] is None for entry in paths)

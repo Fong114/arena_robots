@@ -10,7 +10,7 @@ from arena_robots.caps import simulators_honoring
 from arena_robots.Robot import RobotIdentifier, RobotView
 
 ROBOTS_DIR = Path(ARENA_ROBOTS_DIR) / "robots"
-MODELS = sorted(p.parent.parent.name for p in ROBOTS_DIR.glob("*/caps/mobile.yaml"))
+MODELS = sorted(p.parent.name for p in ROBOTS_DIR.glob("*/caps.yaml"))
 HALF = {"mobile.limits": {"scale": 0.5}}
 
 

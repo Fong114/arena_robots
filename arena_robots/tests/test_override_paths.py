@@ -17,7 +17,7 @@ def _by_path(entry: str) -> dict:
 
 class TestOverridePaths:
     def test_jackal_mobile_leaf_list_and_map_carry_the_effective_values(self):
-        authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())
+        authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps.yaml").read_text())["mobile"]
         found = {item.path: item for item in override_paths(RobotIdentifier("jackal").resolve_sync().caps)}
         assert found["mobile.radius"].value == pytest.approx(0.3338, abs=2e-3) and found["mobile.radius"].kind == "value"
         assert found["mobile.radius"].provenance == "urdf" and found["mobile.footprint"].provenance == "urdf" and found["mobile.is_holonomic"].provenance == "derived"

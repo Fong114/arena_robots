@@ -21,11 +21,10 @@ ARM = {"left": {"controller": "left_controller", "stall_time": 1.0}, "right": {"
 
 
 def _caps(tmp_path: Path, overrides: dict[str, object], **files: dict) -> RobotCaps:
-    caps_dir = tmp_path / "robot" / "caps"
-    caps_dir.mkdir(parents=True)
-    for cap, data in {"mobile": MOBILE, **files}.items():
-        (caps_dir / f"{cap}.yaml").write_text(yaml.safe_dump(data))
-    return RobotCaps(caps_dir, overrides=overrides)
+    robot_dir = tmp_path / "robot"
+    robot_dir.mkdir(parents=True)
+    (robot_dir / "caps.yaml").write_text(yaml.safe_dump({"mobile": MOBILE, **files}))
+    return RobotCaps(robot_dir, overrides=overrides)
 
 
 class TestInlineOperations:

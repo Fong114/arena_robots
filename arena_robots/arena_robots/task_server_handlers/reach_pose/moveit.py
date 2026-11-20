@@ -347,7 +347,7 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         if mg_goal is None:
             goal_handle.abort()
             result.status = ReachPose.Result.STATUS_UNKNOWN_NAMED
-            result.reason = f"named pose {arena_goal.named_target!r} not in caps/arm.yaml.named_poses"
+            result.reason = f"named pose {arena_goal.named_target!r} not in caps.yaml arm named_poses"
             return result
 
         while not (native_client.server_is_ready() and self._exec_clients[mount].server_is_ready()):

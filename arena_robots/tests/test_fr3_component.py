@@ -33,7 +33,7 @@ def _placed() -> tuple[object, object]:
 class TestFr3Caps:
     def test_arm_caps_resolve_chain_tip_and_poses(self) -> None:
         _, resolved = _placed()
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
+        rc = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
         assert rc.arm is not None and set(rc.arm) == {"arm_mount"}
         arm = rc.arm["arm_mount"]
         assert arm.chain == _ARM_JOINTS
@@ -42,7 +42,7 @@ class TestFr3Caps:
 
     def test_gripper_caps_resolve_joint_and_positions(self) -> None:
         _, resolved = _placed()
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
+        rc = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
         assert rc.gripper is not None and set(rc.gripper) == {"gripper_mount"}
         gripper = rc.gripper["gripper_mount"]
         assert gripper.joint == _FINGER

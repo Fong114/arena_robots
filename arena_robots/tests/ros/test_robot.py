@@ -135,21 +135,19 @@ class TestModelParamsSensors:
 
 
 class TestModelParamsCaps:
-    def test_caps_with_mobile_yaml(self, tmp_path: Path):
+    def test_caps_with_mobile_section(self, tmp_path: Path):
         from arena_robots.Robot import ModelParams
 
         robot_dir = tmp_path / "robot"
         robot_dir.mkdir()
-        caps_dir = robot_dir / "caps"
-        caps_dir.mkdir()
-        (caps_dir / "mobile.yaml").write_text(yaml.dump({"odom_frame": "custom_odom"}))
+        (robot_dir / "caps.yaml").write_text(yaml.dump({"mobile": {"odom_frame": "custom_odom"}}))
         mp_path = robot_dir / "model_params.yaml"
         mp_path.write_text(yaml.dump({}))
         mp = ModelParams.from_yaml(mp_path)
         assert "mobile" in mp.caps.available
         assert mp.odom_frame == "custom_odom"
 
-    def test_caps_no_caps_dir(self, tmp_path: Path):
+    def test_caps_no_caps_file(self, tmp_path: Path):
         from arena_robots.Robot import ModelParams
 
         mp = ModelParams.from_yaml(_write(tmp_path, {}))
@@ -263,7 +261,7 @@ class TestRobotView:
         view = RobotView(rd)
         assert "mobile" in view.caps.available
 
-    def test_power_profile_with_assembly_and_telemetry_fallbacks(self, temp_robot_dir, tmp_path):
+    def test_power_profile_with_assembly_and_power_section_fallbacks(self, temp_robot_dir, tmp_path):
         from arena_robots.Robot import RobotView
 
         rd = temp_robot_dir(
@@ -286,16 +284,15 @@ class TestRobotView:
                 }
             )
         )
-        # Add telemetry/power.yaml with physical losses
-        telem_dir = rd / "telemetry"
-        telem_dir.mkdir()
-        (telem_dir / "power.yaml").write_text(
+        (rd / "caps.yaml").write_text(
             yaml.dump(
                 {
-                    "power_system": {
-                        "drivetrain_damping": 0.006,
-                        "drivetrain_friction": 0.050,
-                        "rolling_resistance_crr": 0.025,
+                    "power": {
+                        "power_system": {
+                            "drivetrain_damping": 0.006,
+                            "drivetrain_friction": 0.050,
+                            "rolling_resistance_crr": 0.025,
+                        }
                     }
                 }
             )
@@ -315,7 +312,7 @@ class TestRobotView:
         assert profile["wheel_radius_m"] == 0.098
         assert profile["num_wheels"] == 2
 
-    def test_power_profile_from_standalone_telemetry_yaml(self, temp_robot_dir, tmp_path):
+    def test_power_profile_from_standalone_power_section(self, temp_robot_dir, tmp_path):
         from arena_robots.Robot import RobotView
 
         rd = temp_robot_dir(
@@ -323,24 +320,24 @@ class TestRobotView:
             control=_diff_drive_control(),
         )
         _write_wheeled_urdf(rd, 17.0)
-        telem_dir = rd / "telemetry"
-        telem_dir.mkdir()
-        (telem_dir / "power.yaml").write_text(
+        (rd / "caps.yaml").write_text(
             yaml.dump(
                 {
-                    "robot_model": "test_robot",
-                    "power_system": {
-                        "global_drivetrain_efficiency": 0.85,
-                        "heating_coefficient_ch": 0.05,
-                        "battery_capacity_wh": 270.0,
-                        "drivetrain_damping": 0.15,
-                        "drivetrain_friction": 0.65,
-                        "rolling_resistance_crr": 0.035,
-                    },
-                    "static_power_w": {
-                        "compute_core": 20.0,
-                        "idle_motors": 15.0,
-                    },
+                    "power": {
+                        "robot_model": "test_robot",
+                        "power_system": {
+                            "global_drivetrain_efficiency": 0.85,
+                            "heating_coefficient_ch": 0.05,
+                            "battery_capacity_wh": 270.0,
+                            "drivetrain_damping": 0.15,
+                            "drivetrain_friction": 0.65,
+                            "rolling_resistance_crr": 0.035,
+                        },
+                        "static_power_w": {
+                            "compute_core": 20.0,
+                            "idle_motors": 15.0,
+                        },
+                    }
                 }
             )
         )

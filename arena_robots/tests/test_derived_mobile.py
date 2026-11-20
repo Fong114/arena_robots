@@ -37,12 +37,12 @@ def _view(model: str):
     return RobotIdentifier(model).resolve_sync()
 
 
-@pytest.mark.parametrize("path", sorted(ROBOTS_DIR.glob("*/caps/mobile.yaml")), ids=lambda path: path.parents[1].name)
+@pytest.mark.parametrize("path", sorted(ROBOTS_DIR.glob("*/caps.yaml")), ids=lambda path: path.parent.name)
 def test_no_mobile_cap_file_authors_a_derived_key(path):
-    assert not set(yaml.safe_load(path.read_text())) & set(DERIVED_KEYS)
+    assert not set(yaml.safe_load(path.read_text())["mobile"]) & set(DERIVED_KEYS)
 
 
-@pytest.mark.parametrize("model", sorted(path.parents[1].name for path in ROBOTS_DIR.glob("*/caps/mobile.yaml")))
+@pytest.mark.parametrize("model", sorted(path.parent.name for path in ROBOTS_DIR.glob("*/caps.yaml")))
 def test_holonomy_follows_the_drive_controller_or_the_gait(model, ament):
     assert _view(model).caps.holonomic() is (model in HOLONOMIC)
 

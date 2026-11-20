@@ -37,10 +37,9 @@ GLOBAL_PLANNER_LAUNCH = Path(__file__).resolve().parents[2] / "arena_robots" / "
 
 def _view(tmp_path: Path, **caps: dict) -> RobotView:
     robot_dir = tmp_path / "robot"
-    (robot_dir / "caps").mkdir(parents=True)
+    robot_dir.mkdir(parents=True)
     (robot_dir / "model_params.yaml").write_text(yaml.safe_dump({"robot_model": "robot"}))
-    for cap, data in caps.items():
-        (robot_dir / "caps" / f"{cap}.yaml").write_text(yaml.safe_dump(data))
+    (robot_dir / "caps.yaml").write_text(yaml.safe_dump(caps))
     return RobotView(robot_dir)
 
 
@@ -67,7 +66,7 @@ def test_bringup_without_overrides_reads_the_model_caps(tmp_path: Path) -> None:
     view = _view(tmp_path, mobile=MOBILE)
     caps = Nav2Bringup(view, NAMESPACE).caps
     assert caps.view is view
-    assert caps.caps_dir == view.caps.caps_dir
+    assert caps.robot_dir == view.caps.robot_dir
     assert caps.overrides == {}
     assert caps.mobile.raw == view.caps.mobile.raw
 
@@ -97,7 +96,9 @@ def test_nav2_kinematics_follow_the_overridden_mobile_file(tmp_path: Path, write
 def test_nav2_collision_follows_the_overridden_mobile_file(tmp_path: Path, write_urdf: Callable[..., None]) -> None:
     view = _view(tmp_path, mobile=MOBILE)
     write_urdf(view.path)
-    plain = _derived(Nav2CollisionDerivedYAML, view.path / "caps" / "mobile.yaml")
+    plain_file = tmp_path / "plain_mobile.yaml"
+    plain_file.write_text(yaml.safe_dump(MOBILE))
+    plain = _derived(Nav2CollisionDerivedYAML, plain_file)
     bringup = Nav2Bringup(view, NAMESPACE, request=InstanceRequest(caps={"mobile.footprint_padding": 0.3}))
     mobile_file = _mobile_file(bringup)
     try:
@@ -185,7 +186,7 @@ def _agent_config(agents: Path, name: str, action_space: dict) -> Path:
 
 
 def _mobile(**limits: list[float]) -> MobileSpec:
-    return MobileSpec(path=Path("/robot/caps/mobile.yaml"), raw={"velocity_limits": {"linear": [-2.0, 2.0], "angular": [-4.0, 4.0], **limits}})
+    return MobileSpec(path=Path("/robot/caps.yaml"), raw={"velocity_limits": {"linear": [-2.0, 2.0], "angular": [-4.0, 4.0], **limits}})
 
 
 DIFFERENTIAL = {"type": "differential_drive", "linear_range": [-2.0, 2.0], "angular_range": [-4.0, 4.0]}

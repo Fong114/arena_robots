@@ -29,7 +29,7 @@ decides what a placement's sensor declarations *say*, not how they get instantia
       type: <controller plugin type>
       ros__parameters: {...}   # templated verbatim
     caps:              # OPTIONAL; absent -> {}
-      ...              # full caps/arm.yaml raw shape, templated verbatim (caps.py ArmSpec)
+      ...              # full `arm:` section raw shape of caps.yaml, templated verbatim (caps.py ArmSpec)
     frames:            # OPTIONAL; absent -> {} (mount-on-part chaining)
       <name>: <template>   # e.g. {top: "${prefix}${mount}_ewellix_lift_top_link"}
     power:             # OPTIONAL; absent -> {}
@@ -106,7 +106,7 @@ class ComponentSpec:
     empty for components with no controller. Render per-placement via
     :func:`render_effective_control`."""
     caps: dict[str, object] = attrs.field(factory=dict)
-    """Un-rendered ``caps`` block, the full ``caps/arm.yaml`` raw shape; empty for
+    """Un-rendered ``caps`` block, the full ``arm:`` section raw shape of caps.yaml; empty for
     components with no caps contribution. Rendered by ``RobotCaps``/``effective_caps``
     (caps.py), not this module."""
     frames: dict[str, str] = attrs.field(factory=dict)

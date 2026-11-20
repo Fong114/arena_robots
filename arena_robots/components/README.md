@@ -22,7 +22,7 @@ sensor:
 ros2_control:             # joint-bearing parts only (arms): control-joint patch
   joints: [...]           # rendered by catalog.render_control_joints, injected post-render
 control: {...}            # controller block deep-merged into the chassis control.yaml
-caps: {...}               # full caps/<cap>.yaml shape, rendered per placement
+caps: {...}               # full shape of the <cap> section of caps.yaml, rendered per placement
 frames: {...}             # named frames this component exports (e.g. a lift's `top`),
                           # for another mount's Mount.parent to chain onto: "@<mount>:<frame>"
 variants: [...]           # family component: variant names this one dir serves, rendered

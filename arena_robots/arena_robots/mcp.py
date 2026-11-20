@@ -318,7 +318,7 @@ def robots_definition(model: str, parts: PartsArg = None, frames: FramesArg = No
         request = _request(view, parts, frames, caps, model=model)
         request.caps_of(view).validate_overrides()
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
-        raise ToolError(f"instance request of {model!r} is invalid: {_error(exc)}", hint="robots_definition without parts, frames and caps lists the model's defaults, caps paths are the fields of caps/<cap>.yaml") from exc
+        raise ToolError(f"instance request of {model!r} is invalid: {_error(exc)}", hint="robots_definition without parts, frames and caps lists the model's defaults, caps paths are the fields of the sections of caps.yaml") from exc
     return _definition(view, request, model)
 
 
@@ -333,7 +333,7 @@ def robots_overrides(model: str, parts: PartsArg = None, frames: FramesArg = Non
         effective.validate_overrides()
         paths = override_paths(effective)
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
-        raise ToolError(f"instance request of {model!r} is invalid: {_error(exc)}", hint="robots_overrides without parts, frames and caps lists the model's defaults, caps paths are the fields of caps/<cap>.yaml") from exc
+        raise ToolError(f"instance request of {model!r} is invalid: {_error(exc)}", hint="robots_overrides without parts, frames and caps lists the model's defaults, caps paths are the fields of the sections of caps.yaml") from exc
     return [{"path": entry.path, "kind": entry.kind, "value": msgs.jsonable(entry.value), "provenance": entry.provenance, "part": entry.part, "relative": entry.relative, "simulators": sorted(entry.simulators), "overridable": entry.overridable} for entry in paths]
 
 
@@ -402,7 +402,7 @@ def _definition_findings(view: RobotView, request: InstanceRequest | None = None
     except (ValueError, FileNotFoundError) as exc:
         findings.append(_finding(name, "caps.warnings", _error(exc)))
     if "mobile" not in available:
-        findings.append(_finding(name, "caps", "caps/mobile.yaml is missing, every robot needs a mobile cap"))
+        findings.append(_finding(name, "caps", "caps.yaml has no mobile section, every robot needs a mobile cap"))
     else:
         for field in ("min_turning_radius", "velocity_limits", "acceleration_limits", "actions", "planar", "laser", "footprint", "polygons_dict"):
             try:
@@ -696,7 +696,7 @@ async def robots_goto(
 async def robots_reach(
     env_id: EnvId = None,
     robot: RobotName = None,
-    named: Annotated[str | None, Field(description="named pose from caps/arm.yaml named_poses, instead of a Cartesian target")] = None,
+    named: Annotated[str | None, Field(description="named pose from the arm section of caps.yaml named_poses, instead of a Cartesian target")] = None,
     x: float | None = None,
     y: float | None = None,
     z: float | None = None,
@@ -814,7 +814,7 @@ async def robots_lift(
 async def robots_gripper(
     env_id: EnvId = None,
     robot: RobotName = None,
-    command: Annotated[Literal["open", "close"] | None, Field(description="open or close to the positions of caps/gripper.yaml, instead of an explicit position")] = None,
+    command: Annotated[Literal["open", "close"] | None, Field(description="open or close to the positions of the gripper section of caps.yaml, instead of an explicit position")] = None,
     position: Annotated[float | None, Field(description="joint position of the gripper in m or rad, clamped between its open and close positions")] = None,
     max_effort: Annotated[float, Field(ge=0, description="N or Nm, 0 = the gripper's max_effort, larger values are capped to it")] = 0.0,
     instance: Annotated[str, Field(description="gripper instance (mount name), empty for the only gripper")] = "",
@@ -1126,7 +1126,7 @@ async def robots_power(env_id: EnvId = None, robot: RobotName = None) -> dict[st
     energy_topic = _topic(entry["ns"], "power_publisher/energy")
     topics = (await ROS.graph())["topics"]
     if power_topic not in topics and energy_topic not in topics:
-        raise ToolError(f"{entry['name']} has no power publisher", hint="it runs only for models with telemetry/power.yaml or an assembly power block, robots_definition shows the power profile")
+        raise ToolError(f"{entry['name']} has no power publisher", hint="it runs only for models with a power section in caps.yaml or an assembly power block, robots_definition shows the power profile")
     (power, power_error), (energy, energy_error) = await asyncio.gather(
         _maybe(ROS.latest(Power, power_topic, qos=RELIABLE, timeout=3.0)),
         _maybe(ROS.latest(Energy, energy_topic, qos=RELIABLE, timeout=3.0)),

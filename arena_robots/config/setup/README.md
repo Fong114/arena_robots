@@ -73,7 +73,7 @@ Morphology directives and `frames` are only valid for a robot whose
 ### Cap overrides
 
 A dotted key `<cap>.<path>` overrides values of the instance's
-`caps/<cap>.yaml`, for this instance only. A path segment is a key, an integer
+`<cap>` section of `caps.yaml`, for this instance only. A path segment is a key, an integer
 list index (`mobile.footprint.0`, negative counts from the end) or `*` for every
 key or element at that level (`mobile.velocity_limits.*`, `arm.*.stall_time`).
 Every parent of the path must exist in the cap, except a top-level field the cap
@@ -95,8 +95,8 @@ after its variant, paths within its cap instance: `top: arm/fr3[stall_time=2.0]`
 part to whatever mount it resolves to, so a type directive without a mount
 works too. A `<cap>.<mount>.<path>` key aimed at a placed part raises and names
 the bracket form. Robots whose `arm`, `lift` or `gripper` instances come from
-their static `caps/<cap>.yaml` (no assembly) address them as
-`<cap>.<instance>.<path>`, the instance being the key in that file.
+their static `caps.yaml` (no assembly) address them as
+`<cap>.<instance>.<path>`, the instance being the key in that section.
 
 A bracket key the part's component declares under `xacro.args` in its
 `component.yaml` is an xacro argument of the part, not a cap override:
@@ -132,8 +132,8 @@ The robot-wide fact blocks of the effective caps are overridable the same way:
 and `acoustics.<key>` (`power.power_system.rolling_resistance_crr=0.05`). `body.mass` is
 not overridable and raises: it is the summed inertial mass of the rendered URDF, after the
 `urdf_patches.yaml` of the robot and its placed components, which
-the simulators simulate and the power model reads. The robot needs the file the block is read
-from (`telemetry/power.yaml`, `telemetry/acoustics.yaml`), otherwise the override
+the simulators simulate and the power model reads. The robot needs the section the block is read
+from (`power`, `acoustics` in `caps.yaml`), otherwise the override
 raises.
 
 Overrides are validated when the robot is parsed: an unknown cap, instance or
@@ -175,7 +175,7 @@ robot spawns, and `arena robot paths` marks such paths `only in <sims>`.
 `robots_check` reports range sanity (a min above its max, a non-positive radius or
 acceleration) and clamped planner limits as warnings. It also warns where a value
 written in two places differs from its owner: the masses of
-`model_params.yaml` (base plus parts), the URDF and `telemetry/power.yaml`.
+`model_params.yaml` (base plus parts), the URDF and the `power` section of `caps.yaml`.
 
 Changing an instance's overrides respawns and relaunches it. The env-wide
 `robot.<cap>.<key>:=` launch arguments only reach the bound adapter's own

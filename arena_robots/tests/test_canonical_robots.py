@@ -19,10 +19,10 @@ def _model_params_files() -> list[Path]:
     return list(ROBOTS_DIR.rglob("model_params.yaml"))
 
 
-@pytest.mark.parametrize("yaml_path", sorted(ROBOTS_DIR.glob("*/caps/mobile.yaml")), ids=lambda p: p.parents[1].name)
+@pytest.mark.parametrize("yaml_path", sorted(ROBOTS_DIR.glob("*/caps.yaml")), ids=lambda p: p.parent.name)
 def test_every_mobile_cap_carries_a_planar_block(yaml_path: Path) -> None:
     with open(yaml_path) as f:
-        planar = MobileSpec(yaml_path, yaml.safe_load(f)).planar
+        planar = MobileSpec(yaml_path, yaml.safe_load(f)["mobile"]).planar
     assert planar is not None, f"{yaml_path}: no planar block"
     assert set(planar.velocity) == {"linear", "lateral", "angular"}, f"{yaml_path}: planar.velocity must cover every axis"
 

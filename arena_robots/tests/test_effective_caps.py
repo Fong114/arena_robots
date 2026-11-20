@@ -22,9 +22,7 @@ def _write_robot(
     if assembly is not None:
         (rd / "assembly.yaml").write_text(yaml.dump(assembly))
     if mobile_cap is not None:
-        caps_dir = rd / "caps"
-        caps_dir.mkdir()
-        (caps_dir / "mobile.yaml").write_text(yaml.dump(mobile_cap))
+        (rd / "caps.yaml").write_text(yaml.dump({"mobile": mobile_cap}))
     return rd
 
 
@@ -37,7 +35,7 @@ class TestEffectiveCapsNoAssembly:
         assert view.assembly is None
         caps = view.effective_caps({})
         assert caps.view is view
-        assert caps.caps_dir == view.caps.caps_dir
+        assert caps.robot_dir == view.caps.robot_dir
         assert caps.overrides == {}
         assert caps.mobile.raw == view.caps.mobile.raw == {"odom_frame": "odom"}
 

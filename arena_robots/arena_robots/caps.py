@@ -1,13 +1,14 @@
-"""Capability-file loader for robots/<name>/caps/.
+"""Capability loader for robots/<name>/caps.yaml.
 
-Each YAML under caps/ declares one capability the robot advertises. File
-presence is the advertisement: `caps/arm.yaml` means the robot has `arm`.
+Each top-level key of caps.yaml declares one capability the robot advertises.
+Key presence is the advertisement: an `arm:` key means the robot has `arm`.
 
 Shape convention:
-    caps/mobile.yaml:  flat primitives + adapter sub-blocks (nav2, rl, ...)
-    caps/arm.yaml:     dict of named instances (single-arm is one entry named "arm")
-    caps/lift.yaml:    dict of named instances
-    caps/gripper.yaml: dict of named instances, with per-entry `arm:` back-ref
+    mobile:   flat primitives + adapter sub-blocks (nav2, rl, ...)
+    arm:      dict of named instances (single-arm is one entry named "arm")
+    lift:     dict of named instances
+    gripper:  dict of named instances, with per-entry `arm:` back-ref
+    power, acoustics: fact blocks, not capabilities
 
 Adapter-specific sub-blocks (moveit, drl_grasp, nav2, rl) are raw dicts inside
 each entry / at top level, read only by their matching runtime-selected adapter.
@@ -48,6 +49,8 @@ _CAPS_PREFIX = 'robot_'
 ``catalog.render_effective_sensors``'s default so cap frame names (e.g. arm
 base_link/tip_link) line up with the sensor frames on the same robot."""
 
+SOURCE_KEY = 'source'
+CAPS_FILE = 'caps.yaml'
 _DERIVED_MOBILE = {'footprint': 'urdf', 'radius': 'urdf', 'is_holonomic': 'derived'}
 
 
@@ -61,7 +64,7 @@ _ACTION_TYPES: frozenset[str] = frozenset({'stop', 'slowdown', 'approach', 'limi
 
 @attrs.define(slots=False)
 class PolygonSpec:
-    """One entry from the top-level `polygons_dict:` in caps/mobile.yaml."""
+    """One entry from the top-level `polygons_dict:` in the `mobile:` section of caps.yaml."""
 
     name: str
     type: Literal['polygon', 'circle']
@@ -413,6 +416,7 @@ class CapConfig:
 
     path: Path
     raw: dict[str, typing.Any]
+    source: str | None = attrs.field(default=None, kw_only=True)
 
     def sub(self, adapter: str) -> dict[str, typing.Any]:
         """Return the adapter-specific sub-block or an empty dict."""
@@ -428,7 +432,7 @@ CLIMBABLE = ('stairs', 'escalator')
 
 @attrs.define(slots=False)
 class MobileSpec(CapConfig):
-    """Primitives from caps/mobile.yaml (flat, single-instance), with footprint, radius and is_holonomic derived from the rendered URDF and controllers unless authored, and the laser block of the rendered URDF."""
+    """Primitives from the `mobile:` section of caps.yaml (flat, single-instance), with footprint, radius and is_holonomic derived from the rendered URDF and controllers unless authored, and the laser block of the rendered URDF."""
 
     laser_block: Callable[[], dict[str, typing.Any] | None] | None = None
 
@@ -944,7 +948,7 @@ class BodySpec(CapConfig):
 
 @attrs.define(slots=False)
 class PowerSpec(CapConfig):
-    """The power model's parameters from ``telemetry/power.yaml``."""
+    """The power model's parameters from the `power:` section of caps.yaml."""
 
     @property
     def power_system(self) -> dict[str, typing.Any]:
@@ -953,7 +957,7 @@ class PowerSpec(CapConfig):
 
 @attrs.define(slots=False)
 class AcousticsSpec(CapConfig):
-    """The acoustic emission model's parameters from ``telemetry/acoustics.yaml``."""
+    """The acoustic emission model's parameters from the `acoustics:` section of caps.yaml."""
 
 
 _FACT_CLASSES: dict[str, type[CapConfig]] = {'body': BodySpec, 'power': PowerSpec, 'acoustics': AcousticsSpec}
@@ -1059,15 +1063,15 @@ def _split_instance_overrides(cap: str, overrides: typing.Mapping[str, object]) 
 
 @attrs.define(slots=False)
 class RobotCaps:
-    """Lazy, typed view over a robot's caps/ directory.
+    """Lazy, typed view over a robot's caps.yaml.
 
-    File presence → cap advertisement. Typed accessors front the cap files;
+    Section presence is cap advertisement. Typed accessors front the cap sections;
     the generic `raw(<cap>)` exposes adapter-sub-blocks authored on a cap
     Arena doesn't model as a first-class spec yet.
 
     ``resolved``/``catalog`` (optional, allocation-derived caps): when set,
     a placement whose component declares a `caps:` block advertises that cap even
-    without a static `caps/<type>.yaml` file, and instances render one spec per
+    without a static `<type>:` section in caps.yaml, and instances render one spec per
     placement instead of reading the static file. Leaving both `None` (the
     default) reproduces the file-only behavior byte-identically.
 
@@ -1076,7 +1080,7 @@ class RobotCaps:
     together with each placement's own ``caps`` (as ``<type>.<mount>.<path>``).
     """
 
-    caps_dir: Path
+    robot_dir: Path
     resolved: ResolvedAssembly | None = None
     catalog: Catalog | None = None
     # chassis assembly prefix (${prefix}); robots with no prefix convention (jackal) pass ""
@@ -1091,29 +1095,60 @@ class RobotCaps:
     _urdf_leaves: set[str] = attrs.field(factory=set, init=False)
 
     @property
+    def caps_file(self) -> Path:
+        return self.robot_dir / CAPS_FILE
+
+    def _sections(self) -> dict[str, typing.Any]:
+        if 'sections' not in self._cached:
+            self._cached['sections'] = _read_mapping(self.caps_file) or {}
+        return self._cached['sections']
+
+    def _section(self, name: str) -> dict[str, typing.Any] | None:
+        if name not in self._sections():
+            return None
+        data = copy.deepcopy(self._sections()[name])
+        if data is None:
+            return {}
+        if not isinstance(data, dict):
+            raise ValueError(f"{self.caps_file}: section '{name}' must be a mapping; got {type(data).__name__}")
+        return data
+
+    @property
     def available(self) -> frozenset[str]:
-        """Cap names present as `caps/<name>.yaml`, unioned with placement types
+        """Cap names present as sections of caps.yaml, unioned with placement types
         whose component declares a `caps:` block when `resolved` is set."""
-        file_stems = frozenset(p.stem for p in self.caps_dir.glob('*.yaml')) if self.caps_dir.is_dir() else frozenset()
+        file_caps = frozenset(self._sections()) - set(FACT_BLOCKS)
         if self.resolved is None:
-            return file_stems
+            return file_caps
         assert self.catalog is not None
         placed = frozenset(placement.type for placement in self.resolved.placements if self.catalog.get(placement.type, placement.variant).caps)
-        return file_stems | placed
+        return file_caps | placed
 
     def _load_cap_file(self, cap: str) -> dict[str, typing.Any]:
         if cap in self._cached:
             return self._cached[cap]
-        path = self.caps_dir / f'{cap}.yaml'
-        if not path.is_file():
-            raise FileNotFoundError(f"cap '{cap}' not declared: {path} does not exist")
-        with open(path) as f:
-            data = yaml.safe_load(f) or {}
-        if not isinstance(data, dict):
-            raise ValueError(f"{path}: top-level structure must be a mapping; got {type(data).__name__}")
+        path = self.caps_file
+        data = None if cap in FACT_BLOCKS else self._section(cap)
+        if data is None:
+            raise FileNotFoundError(f"cap '{cap}' not declared: {path} has no '{cap}' section")
+        self._take_source(cap, data, path)
         data = self._overlay_file(cap, data, path)
         self._cached[cap] = data
         return data
+
+    def _take_source(self, name: str, data: dict[str, typing.Any], path: Path) -> None:
+        source = data.pop(SOURCE_KEY, None)
+        if source is not None and not isinstance(source, str):
+            raise ValueError(f"{path}: '{SOURCE_KEY}' must be a string; got {type(source).__name__}")
+        self._cached[f'{SOURCE_KEY}:{name}'] = source
+
+    def source(self, name: str) -> str | None:
+        """The `source` the file of cap or fact block ``name`` cites for its values."""
+        if name in FACT_BLOCKS:
+            self._load_fact(name)
+        else:
+            self._load_cap_file(name)
+        return self._cached.get(f'{SOURCE_KEY}:{name}')
 
     @property
     def all_overrides(self) -> dict[str, object]:
@@ -1171,7 +1206,7 @@ class RobotCaps:
         """Whether the base drives sideways: a mecanum, swerve or omni drive controller or a CHAMP gait, None without a control config or gait."""
         if self.view is None:
             return None
-        if (self.caps_dir.parent / 'champ' / 'gait.yaml').is_file():
+        if (self.robot_dir / 'champ' / 'gait.yaml').is_file():
             return True
         from arena_robots import urdf_facts
 
@@ -1281,15 +1316,16 @@ class RobotCaps:
         return out
 
     def _fact_file(self, block: str) -> Path:
-        robot_dir = self.caps_dir.parent
-        return robot_dir / 'model_params.yaml' if block == 'body' else robot_dir / 'telemetry' / f'{block}.yaml'
+        return self.robot_dir / 'model_params.yaml' if block == 'body' else self.caps_file
 
     def _load_fact(self, block: str) -> dict[str, typing.Any] | None:
         key = f'fact:{block}'
         if key in self._cached:
             return self._cached[key]
         path = self._fact_file(block)
-        data = _read_mapping(path)
+        data = _read_mapping(path) if block == 'body' else self._section(block)
+        if data is not None and block != 'body':
+            self._take_source(block, data, path)
         if data is not None and block == 'body':
             control = data.get('control') or {}
             data = {
@@ -1319,12 +1355,12 @@ class RobotCaps:
     @property
     def power(self) -> PowerSpec | None:
         data = self._load_fact('power')
-        return None if data is None else PowerSpec(path=self._fact_file('power'), raw=data)
+        return None if data is None else PowerSpec(path=self._fact_file('power'), raw=data, source=self.source('power'))
 
     @property
     def acoustics(self) -> AcousticsSpec | None:
         data = self._load_fact('acoustics')
-        return None if data is None else AcousticsSpec(path=self._fact_file('acoustics'), raw=data)
+        return None if data is None else AcousticsSpec(path=self._fact_file('acoustics'), raw=data, source=self.source('acoustics'))
 
     def effective(self) -> dict[str, typing.Any]:
         """Every cap and fact block of this instance as plain data, instance caps keyed by instance."""
@@ -1360,7 +1396,7 @@ class RobotCaps:
             return 'urdf'
         if head == 'mobile' and rest.partition('.')[0] in _DERIVED_MOBILE:
             key = rest.partition('.')[0]
-            authored = _read_mapping(self.caps_dir / 'mobile.yaml') or {}
+            authored = self._section('mobile') or {}
             if key == 'radius' and 'radius' not in authored and 'footprint' in authored:
                 return 'derived'
             if key not in authored and key in self._derived_mobile():
@@ -1370,7 +1406,7 @@ class RobotCaps:
             if path in self._urdf_leaves:
                 return 'urdf'
         if head == 'mobile' and rest.startswith('limits'):
-            declared = (_read_mapping(self.caps_dir / 'mobile.yaml') or {}).get('limits')
+            declared = (self._section('mobile') or {}).get('limits')
             return 'file' if isinstance(declared, dict) and _leaf_declared(declared, rest.split('.')[1:]) else 'derived'
         if head in _INSTANCE_CLASSES and self.resolved is not None:
             instance = rest.partition('.')[0]
@@ -1389,7 +1425,7 @@ class RobotCaps:
         params = {f'{p.type}@{p.mount.name}': copy.deepcopy(p.args) for p in self.resolved.placements if p.args} if self.resolved is not None else {}
         return {
             'format': SNAPSHOT_FORMAT,
-            'model': self.caps_dir.parent.name,
+            'model': self.robot_dir.name,
             'request': {'parts': parts, 'params': params, 'overrides': copy.deepcopy(self.all_overrides)},
             'effective': effective,
             'provenance': {leaf: self.provenance(leaf) for cap, value in effective.items() for leaf in _leaves(cap, value)},
@@ -1424,7 +1460,7 @@ class RobotCaps:
         for cap in sorted({path.partition('.')[0] for path in self.all_overrides}):
             if cap in FACT_BLOCKS:
                 if self._load_fact(cap) is None:
-                    raise ValueError(f"cap override on '{cap}': the robot has no {self._fact_file(cap).name}")
+                    raise ValueError(f"cap override on '{cap}': the robot has no '{cap}' section in {CAPS_FILE}")
                 continue
             if cap not in self.available:
                 raise ValueError(f"cap override on '{cap}': the robot does not advertise it, caps: {sorted(self.available)}, facts: {list(FACT_BLOCKS)}")
@@ -1471,7 +1507,7 @@ class RobotCaps:
     @property
     def mobile(self) -> MobileSpec:
         data = self._load_cap_file('mobile')
-        return MobileSpec(path=self.caps_dir / 'mobile.yaml', raw=data, laser_block=self.laser_block)
+        return MobileSpec(path=self.caps_file, raw=data, laser_block=self.laser_block, source=self.source('mobile'))
 
     @property
     def arm(self) -> dict[str, ArmSpec] | None:
@@ -1494,7 +1530,7 @@ class RobotCaps:
         if placements:
             rel = _split_instance_overrides(cap, self._cap_overrides(cap))
             assert self.resolved is not None and self.catalog is not None
-            path = self.caps_dir / f'{cap}.yaml'
+            path = self.caps_file
             out: dict[str, typing.Any] = {}
             for placement in placements:
                 component = self.catalog.get(placement.type, placement.variant)
@@ -1525,12 +1561,12 @@ class RobotCaps:
         if cap not in self.available:
             return None
         data = self._load_cap_file(cap)
-        path = self.caps_dir / f'{cap}.yaml'
+        path = self.caps_file
         out = {}
         for name, entry in data.items():
             if not isinstance(entry, dict):
                 raise ValueError(f"{path}: '{name}' must be a mapping (dict-keyed instance); got {type(entry).__name__}. See robots/README.md on the uniform dict-keyed shape for multi-instance caps.")
-            out[str(name)] = cls(path=path, raw=self._with_joints(entry, str(name)) if cap == 'arm' else entry, name=str(name))
+            out[str(name)] = cls(path=path, raw=self._with_joints(entry, str(name)) if cap == 'arm' else entry, name=str(name), source=self.source(cap))
         return out
 
 

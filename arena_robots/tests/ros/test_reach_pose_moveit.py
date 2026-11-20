@@ -45,9 +45,9 @@ def _wait(future, timeout: float = 30.0):
 
 def _robot_dir(tmp_path: Path) -> Path:
     robot_dir = tmp_path / "robot"
-    (robot_dir / "caps").mkdir(parents=True)
+    robot_dir.mkdir(parents=True)
     (robot_dir / "model_params.yaml").write_text(yaml.dump({}))
-    (robot_dir / "caps" / "arm.yaml").write_text(yaml.dump({"arm": _ARM_ENTRY}))
+    (robot_dir / "caps.yaml").write_text(yaml.dump({"arm": {"arm": _ARM_ENTRY}}))
     return robot_dir
 
 

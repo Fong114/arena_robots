@@ -10,8 +10,7 @@ files, and the `arena feature robots` CLI all look robots up by this name.
 <robot>/
 ├── model_params.yaml    # robot-wide identity (robot_model, base_frame, z_offset, sensors)
 ├── control.yaml         # ros2_control configuration
-└── caps/
-    └── mobile.yaml      # required: every robot has a mobile base
+└── caps.yaml            # capabilities and robot facts, the `mobile` section is required
 ```
 
 ### `model_params.yaml`
@@ -59,94 +58,151 @@ depth and point cloud messages in the optical frame, Gazebo and MuJoCo in the re
 and the voxel layer poses a camera's clearing frustum in the reference link.
 `tests/test_sensor_geometry.py` checks this for every robot and camera component.
 
-### `caps/`: capability declarations
+### `caps.yaml`: capabilities and robot facts
 
-Each `caps/<cap>.yaml` declares one capability the robot physically has. **File
-presence IS the advertisement**: `caps/arm.yaml` existing means this robot
-advertises `arm`. Derived at load time as `robot_view.caps.available`, a
-`frozenset[str]` of cap stems.
+One file per robot. Each top-level key is a section, and a **section's presence
+IS the advertisement**: an `arm:` key means this robot advertises `arm`. Derived
+at load time as `robot_view.caps.available`, a `frozenset[str]` of section names.
+`power` and `acoustics` are fact blocks and never count as caps. The URDF is the
+single source of everything it defines, caps.yaml holds everything else.
 
 Adapters declare `requires: frozenset[str]` via `@BringupMeta.attach(requires=frozenset({...}))` on the `Bringup` subclass; the broker gates binding on `adapter.requires ⊆ robot.caps.available`. A cap must have a documented vocabulary entry before any adapter cites it in `requires`.
 
-#### Active cap vocabulary
+#### Active sections
 
-| Cap | File | Shape | Meaning |
-|---|---|---|---|
-| `mobile` | `caps/mobile.yaml` | **flat** (singleton) | drivable chassis (wheeled / tracked / omni) |
-| `arm` | `caps/arm.yaml` | **dict** (named instances) | serial manipulator with an IK-solvable tip |
-| `lift` | `caps/lift.yaml` | **dict** (named instances) | prismatic vertical positioner (Ewellix column, torso lift, scissor), commanded by the `direct` lift adapter (`joint`, `controller`, optional `limits`) |
-| `gripper` | `caps/gripper.yaml` | **dict** (named instances) | end effector with one actuated joint (`joint`, `controller`, `positions`, `max_effort`, optional `arm`), commanded by the `direct` gripper adapter |
+| Section | Shape | Meaning |
+|---|---|---|
+| `mobile` | **flat** (singleton) | drivable chassis (wheeled / tracked / omni) |
+| `arm` | **dict** (named instances) | serial manipulator with an IK-solvable tip |
+| `lift` | **dict** (named instances) | prismatic vertical positioner (Ewellix column, torso lift, scissor), commanded by the `direct` lift adapter (`joint`, `controller`, optional `limits`) |
+| `gripper` | **dict** (named instances) | end effector with one actuated joint (`joint`, `controller`, `positions`, `max_effort`, optional `arm`), commanded by the `direct` gripper adapter |
+| `power` | flat (fact block) | parameters of the power model |
+| `acoustics` | flat (fact block) | parameters of the acoustic emission model |
 
 Reserved for future: `ptu_head`, `dual_arm`. Continuum arms either
 discretize into the serial-chain shape or use a future `kind: continuum`
-variant of `caps/arm.yaml`.
+variant of the `arm` section.
 
-#### `caps/mobile.yaml`: flat, singleton
+#### Schema
 
 A robot has exactly one mobile base by construction. All robot-physical
-primitives live at top level; adapter sub-blocks are reserved for
-adapter-specific wiring only. `actions` is a top-level field. `laser`, `footprint`, `radius` and `is_holonomic` are not authored, see "Where each value is authored". The
+primitives of `mobile` live at its top level; adapter sub-blocks are reserved for
+adapter-specific wiring only. `actions` is a top-level field. `laser`, `radius` and `is_holonomic` are not authored and `footprint` only where the URDF collision is smaller than the robot, see "Where each value is authored". The
 optional `nav2:` sub-block carries nav2-only wiring such as
 `global_observation` and `local_observation` (the cloud sources' `min_obstacle_height` and `max_obstacle_height`, 0.1 and 0.8 m by default). The global planner's settings come from the selected
-planner config.
+planner config. `arm`, `lift` and `gripper` are always a dict of named instances: single-arm robots use a dict with one entry (by convention named `arm`), dual-arm uses two (e.g. `left`, `right`), with no single-instance shorthand.
 
 ```yaml
-odom_frame: odom
-min_turning_radius: 0.0       # optional, m, default 0.0 (turns in place)
-climbs: [stairs]              # optional, default []
+mobile:                       # required, flat
+  source: https://...         # optional, the document the section's values come from, in every section
+  odom_frame: odom
+  min_turning_radius: 0.0     # optional, m, default 0.0 (turns in place)
+  climbs: [stairs]            # optional, default []
 
-footprint_padding: 0.1        # optional
-inflation_radius: 0.9         # optional, default: outer radius of the padded footprint or radius, + 0.4
-polygons_dict:
-  StopPolygon: {type: polygon, points: [...], action_type: stop}
+  footprint_padding: 0.1      # optional
+  inflation_radius: 0.9       # optional, default: outer radius of the padded footprint or radius, + 0.4
+  polygons_dict:
+    StopPolygon: {type: polygon, points: [...], action_type: stop}
 
-velocity_limits:
-  linear: {min: -2.0, max: 2.0}
-  angular: {min: -4.0, max: 4.0}
-acceleration_limits:
-  linear: 3.0
-  angular: 3.5
+  velocity_limits:
+    linear: {min: -2.0, max: 2.0}
+    angular: {min: -4.0, max: 4.0}
+  acceleration_limits:
+    linear: 3.0
+    angular: 3.5
 
-actions:
-  continuous: {linear: {min: -2.0, max: 2.0}, angular: {min: -4.0, max: 4.0}}
-  discrete: [{name: move_forward, linear: 0.3, angular: 0.0}, ...]
+  actions:
+    continuous: {linear: {min: -2.0, max: 2.0}, angular: {min: -4.0, max: 4.0}}
+    discrete: [{name: move_forward, linear: 0.3, angular: 0.0}, ...]
 
-limits:                    # optional, per axis, each axis defaults to planar's
-  velocity: {linear: [-2.0, 2.0], angular: [-4.0, 4.0]}
-  acceleration: {linear: 20.0, angular: 25.0}
+  limits:                     # optional, per axis, each axis defaults to planar's
+    velocity: {linear: [-2.0, 2.0], angular: [-4.0, 4.0]}
+    acceleration: {linear: 20.0, angular: 25.0}
 
-planar:
-  velocity: {linear: [-2.0, 2.0], lateral: [0.0, 0.0], angular: [-4.0, 4.0]}
-  acceleration: {linear: 20.0, lateral: .inf, angular: 25.0}
-  gain: {linear: 1.0, lateral: 1.0, angular: 1.36}
-  lag: 0.0
-  traction: 7.85
-  pivot: 0.131
-  timeout: 0.25
+  planar:
+    velocity: {linear: [-2.0, 2.0], lateral: [0.0, 0.0], angular: [-4.0, 4.0]}
+    acceleration: {linear: 20.0, lateral: .inf, angular: 25.0}
+    gain: {linear: 1.0, lateral: 1.0, angular: 1.36}
+    lag: 0.0
+    traction: 7.85
+    pivot: 0.131
+    timeout: 0.25
 
-nav2:                      # optional, nav2-only wiring
-  global_observation: {...}
+  nav2:                       # optional, nav2-only wiring
+    global_observation: {...}
 
-meshnav:                   # optional, meshnav-only wiring
-  max_step: 0.2            # default 0.2 when climbs lists stairs, else 0.1
-  max_slope: 1.3           # rad, default 1.3 when climbs lists stairs, else 0.35
-  inscribed_radius: 0.21   # default inscribed circle of the padded footprint, else radius
-  inflation_radius: 0.71   # default inscribed_radius + 0.5
-  obstacles: true          # default true when the robot has a laserscan or pointcloud sensor
-  robot_height: 0.7        # m, returns higher above the walking surface are ignored
-  min_obstacle_height: 0.1 # m, returns lower above the walking surface are ground
-  obstacle_range: 11.0     # m from the sensor, default caps laser.range minus 1, else 9
-  obstacle_decay: 1.0      # s a sensor's obstacles outlive its scan
-  planner_frequency: 1.0   # Hz, MBF replans at it while a goal runs
-  planner: dijkstra        # or cvp, MBF's fast marching planner
-  resolution: 0.1          # grid spacing of the nav mesh
-  params: {}               # merged over config/meshnav/meshnav.yaml
+  meshnav:                    # optional, meshnav-only wiring
+    max_step: 0.2             # default 0.2 when climbs lists stairs, else 0.1
+    max_slope: 1.3            # rad, default 1.3 when climbs lists stairs, else 0.35
+    inscribed_radius: 0.21    # default inscribed circle of the padded footprint, else radius
+    inflation_radius: 0.71    # default inscribed_radius + 0.5
+    obstacles: true           # default true when the robot has a laserscan or pointcloud sensor
+    robot_height: 0.7         # m, returns higher above the walking surface are ignored
+    min_obstacle_height: 0.1  # m, returns lower above the walking surface are ground
+    obstacle_range: 11.0      # m from the sensor, default caps laser.range minus 1, else 9
+    obstacle_decay: 1.0       # s a sensor's obstacles outlive its scan
+    planner_frequency: 1.0    # Hz, MBF replans at it while a goal runs
+    planner: dijkstra         # or cvp, MBF's fast marching planner
+    resolution: 0.1           # grid spacing of the nav mesh
+    params: {}                # merged over config/meshnav/meshnav.yaml
+
+arm:                          # optional, dict of named instances (single-arm)
+  arm:
+    base_link: chassis_link
+    tip_link: arm_tool0
+    chain: [arm_shoulder_pan_joint, arm_shoulder_lift_joint, arm_elbow_joint,
+            arm_wrist_1_joint, arm_wrist_2_joint, arm_wrist_3_joint]
+    controller: arm_controller
+    moveit:                   # adapter-specific; consumed by the moveit adapter
+      package: ur_moveit_config
+      args: {ur_type: ur5e, safety_limits: true}
+
+lift:                         # optional, dict of named instances
+  lift:
+    joint: robot_lift_ewellix_lift_top_joint
+    controller: lift_controller
+    limits: [0.0, 0.9]        # joint range the lift adapter clamps to, optional, default the joint's URDF limit
+
+gripper:                      # optional, dict of named instances
+  gripper:
+    arm: arm                  # key into the arm section
+    joint: arm_gripper_joint
+    controller: arm_gripper_controller
+    positions: {open: 0.0, close: 0.8}
+    max_effort: 50.0          # optional, default the joint's URDF effort
+
+power:                        # optional, fact block
+  power_system:
+    system_voltage_v: 24.0
+    global_drivetrain_efficiency: 0.85
+    heating_coefficient_ch: 0.05
+    battery_capacity_wh: 270.0
+    drivetrain_damping: 0.15
+    drivetrain_friction: 0.65
+    rolling_resistance_crr: 0.035
+  joint_metrics: {topic: joint_states}
+  static_power_w: {compute_core: 20.0, idle_motors: 15.0}
+
+acoustics:                    # optional, fact block
+  L_base_0: 40.0
+  beta_0: 58.5
+  beta_1: 20.0
+  beta_2: 14.0
+  beta_3: 0.0
+  omega_ref: 10.2
+  tau_ref: 2.0
+  max_joint_torque_nm: 15.0
+  omega_deadband: 0.05
+  omega_active: 0.50
+  sigma_base: 0.8
+  sigma_dynamic: 1.2
+  sigma_no_effort: 2.0
 ```
 
 `velocity_limits` and `acceleration_limits` flow into nav2 controller configs
 via `Nav2KinematicsDerivedYAML` substitution; controller YAMLs reference them
 as `${max_linear_vel:-default}` etc. To override a specific controller without
-touching `mobile.yaml`, replace the substitution with a literal value in that
+touching the `mobile` section, replace the substitution with a literal value in that
 controller YAML. The same substitution emits `${motion_model}`, MPPI's motion
 model (`Omni` when `is_holonomic`, `Ackermann` when `min_turning_radius` is
 above 0, else `DiffDrive`), and for a car-like base `${turning_radius}`, the
@@ -206,8 +262,8 @@ config logs that the check was skipped.
 Bringups and the task server read caps through the instance's effective caps
 (`Bringup.caps`: parts, frames and the request's cap overrides applied), so an
 instance that overrides `mobile.velocity_limits` or a placed part's fields (`top=arm/fr3[stall_time=2.0]`) is
-planned, launched and served with those values, while the model's `caps/` files
-stay untouched.
+planned, launched and served with those values, while the model's `caps.yaml`
+stays untouched.
 
 The same effective caps carry the robot-wide facts as three more blocks. Authoring
 stays in the files, every consumer reads the block:
@@ -215,8 +271,8 @@ stays in the files, every consumer reads the block:
 | Block | Read from | Holds |
 | --- | --- | --- |
 | `body` | `model_params.yaml` and the rendered URDF | `base_frame`, `cmd_vel_topic` and `odom_topic` (from `control:`), `mass` (the summed inertial mass of the rendered URDF, placed parts included) |
-| `power` | `telemetry/power.yaml` | the file without `robot_model` (the power model takes the mass from `body.mass`) |
-| `acoustics` | `telemetry/acoustics.yaml` | the file as authored |
+| `power` | the `power` section of `caps.yaml` | the section without `robot_model` (the power model takes the mass from `body.mass`) |
+| `acoustics` | the `acoustics` section of `caps.yaml` | the section as authored |
 
 `body.*`, `power.*` and `acoustics.*` take cap overrides like any cap
 (`power.power_system.rolling_resistance_crr=0.05`), except `body.mass`. `RobotCaps.provenance(path)` names where a value
@@ -238,6 +294,8 @@ lazily from the canonical URDF and are not overridable.
 
 A family component (`arm/ur`) keys its entries under `variants:`, any other file lists them under `patches:`. Link and joint names are written as in the owner's own xacro, component names without the placement stem, and a name the render lacks raises.
 
+A section of `caps.yaml` takes a `source: <url>` key, the document its values come from. It is read by `RobotCaps.source(<section>)` and `CapConfig.source`, kept out of the section data, the effective caps and their hash, and cannot be overridden.
+
 `lint(view, parts, frames)` ([`arena_robots.urdf_lint`](../arena_robots/urdf_lint.py)) returns `Finding(check, severity, message)` rows on `served_urdf.canonical(...)`:
 
 - `structure`: one root link, joint parents and children are links, the base frame is a link.
@@ -250,44 +308,27 @@ A finding is an error, a URDF fault is fixed in the URDF or by a patch. `tests/t
 
 #### Where each value is authored
 
-A value is written once, by its owner. Every other file that carries it is rendered
-from the effective caps, or `robots_check` warns where it differs.
+A value is written once, by its owner. The URDF (after `urdf_patches.yaml`) is the single source of everything it defines, `caps.yaml` holds everything else, each section with the `source` of its values where one exists. Every other file that carries a value is rendered from the effective caps, or `robots_check` warns where it differs.
 
 | Value | Author it in | Read by |
 | --- | --- | --- |
-| Base velocity and acceleration the body can do (`mobile.limits`) | `caps/mobile.yaml` (`limits`, or `planar`) | flatsim drive, the drive controller keys of every axis `control*.yaml` flags (DiffDrive, Mecanum, swerve, omni), the CHAMP gait of `a1` and `go1`, the planner limits as their bound |
+| Base velocity and acceleration the body can do (`mobile.limits`) | `mobile` section (`limits`, or `planar`) | flatsim drive, the drive controller keys of every axis `control*.yaml` flags (DiffDrive, Mecanum, swerve, omni), the CHAMP gait of `a1` and `go1`, the planner limits as their bound |
 | Drive controller limit keys (`<axis>.min_velocity`, `max_velocity`, `min_acceleration`, `max_acceleration`) | `mobile.limits`, `control*.yaml` authors only the `has_velocity_limits` and `has_acceleration_limits` flags | written by `overlay_planar_limits` for every flagged axis in Gazebo, MuJoCo and Isaac, an infinite limit leaves the key unset |
 | Wheel radius, track width, mecanum center projection, swerve and omni wheel positions, omni wheel angles | the URDF wheel joints and their round collision geometry, measured in the controller's `base_frame_id` | written over the drive controller's parameters by `effective_control_yaml` in every simulator, `RobotView.drive_geometry` and `urdf_facts.drive_geometry`, `control.yaml` keeps the joint names, multipliers and tuning |
-| Power model wheels (`wheel_radius_m`, `num_wheels`) | the drive geometry and the drive controller's wheel joint count | `RobotView.power_profile`, `telemetry/power.yaml` keeps the electrical and loss terms |
+| Power model wheels (`wheel_radius_m`, `num_wheels`) | the drive geometry and the drive controller's wheel joint count | `RobotView.power_profile`, the `power` section keeps the electrical and loss terms |
 | CHAMP gait speeds | `mobile.limits` velocity bounds, the rest of the gait in `champ/gait.yaml` | the CHAMP bringup's `gait_config`, written per instance by `champ.served_champ_files` |
 | CHAMP joint and link maps | the URDF: the four leg chains below the base frame, classified by their hip joint origins | the CHAMP bringup's `joints_map` and `links_map`, written per instance by `champ.served_champ_files` |
-| Footprint and radius (`mobile.footprint`, `mobile.radius`) | the URDF collision geometry | the convex ground outline of the base (`body.outline`) and the circumradius of the effective footprint, provenance `urdf`, overridable per instance, `footprint_padding` stays authored |
+| Footprint and radius (`mobile.footprint`, `mobile.radius`) | the URDF collision geometry | the convex ground outline of the base (`body.outline`) and the circumradius of the effective footprint, provenance `urdf`, overridable per instance, never authored in the `mobile` section (`footprint_padding` stays authored) |
 | Holonomy (`mobile.is_holonomic`) | the drive controller of `control.yaml` and `champ/gait.yaml` | true for a mecanum, swerve or omni drive controller or a CHAMP gait, false for diff drive, provenance `derived`, overridable per instance |
 | Lift range (`lift.<name>.limits`), gripper effort (`gripper.<name>.max_effort`) | the lift or gripper joint's URDF `<limit>` | the direct adapters, authored only where a deliberate value differs from the URDF |
-| Lidar geometry (`mobile.laser`) | the lidar component's xacro arguments (a bracket on the part) or the URDF | read from the scan sensor of the rendered URDF on the primary lidar (the first `laserscan` sensor), never authored in `caps/mobile.yaml` |
+| Lidar geometry (`mobile.laser`) | the lidar component's xacro arguments (a bracket on the part) or the URDF | read from the scan sensor of the rendered URDF on the primary lidar (the first `laserscan` sensor), never authored in the `mobile` section |
 | MoveIt joint limits (`arm.<mount>.joint_limits`) | the URDF `<limit>` for `max_velocity`, `min_position`, `max_position` and `max_effort`, the component's `joint_limits/` file for `max_acceleration`, the scaling factors and any value it authors | `moveit_factory`, overridable per instance, tightened-only against the URDF `<limit>` |
 | Joint position, velocity and effort limits | the URDF | the simulators, the bound of the MoveIt limits |
 | Body mass | the URDF inertials, each component's in its xacro, corrected to the vendor's figure by `urdf_patches.yaml` (robot directory or component directory) | `body.mass`, the power model, the evaluation metrics through the caps snapshot |
 | Collision geometry | the URDF | `body.outline` |
+| Everything the URDF does not define (limits, speeds, polygons, actions, power and acoustics terms) | `caps.yaml`, with a `source` key in a section where a manufacturer document backs the values | the consumers of each cap |
 
-#### `caps/arm.yaml`, `caps/lift.yaml`, `caps/gripper.yaml`: dict-keyed
-
-Always a dict of named instances. Single-arm robots use a dict with one entry
-(by convention named `arm`); dual-arm uses two entries (e.g. `left`, `right`).
-No single-instance shorthand, uniform shape keeps the loader trivial.
-
-```yaml
-# caps/arm.yaml (single-arm)
-arm:
-  base_link: chassis_link
-  tip_link: arm_tool0
-  chain: [arm_shoulder_pan_joint, arm_shoulder_lift_joint, arm_elbow_joint,
-          arm_wrist_1_joint, arm_wrist_2_joint, arm_wrist_3_joint]
-  controller: arm_controller
-  moveit:                  # adapter-specific; consumed by the moveit adapter
-    package: ur_moveit_config
-    args: {ur_type: ur5e, safety_limits: true}
-```
+#### `arm`, `lift`, `gripper`
 
 The `moveit:` block declares what `moveit_factory.build_moveit_params` needs and assumes no
 vendor. `planning_group` names the group the task handlers plan for; `srdf` and `joint_limits`
@@ -326,35 +367,14 @@ arm:
 Loader precedence per field: explicit > SRDF-derived > raise. No URDF-alone
 derivation (structural-without-semantics is ambiguous).
 
-`caps/lift.yaml`:
-
-```yaml
-lift:
-  joint: robot_lift_ewellix_lift_top_joint
-  controller: lift_controller
-  limits: [0.0, 0.9]       # joint range the lift adapter clamps to, optional, default the joint's URDF limit
-```
-
-`caps/gripper.yaml` (when a platform gets one) uses a back-reference to its
-arm:
-
-```yaml
-gripper:
-  arm: arm                 # key into caps/arm.yaml
-  joint: arm_gripper_joint
-  controller: arm_gripper_controller
-  positions: {open: 0.0, close: 0.8}
-  max_effort: 50.0         # optional, default the joint's URDF effort
-```
-
 `positions` holds the joint values of `open` and `close`, `max_effort` the effort every gripper
 command carries (the joint's URDF effort unless authored). Gripper components carry the same block under `caps:`.
 
 #### Adapter sub-blocks are namespaced, not dispatch
 
-`moveit:`, `nav2:`, `rl:`, `drl_grasp:`, ... inside a cap file are pure data
+`moveit:`, `nav2:`, `rl:`, `drl_grasp:`, ... inside a section are pure data
 organization. **No in-file handler declaration**: adapters are selected at
-runtime (CLI / setup YAML) and are handed the cap YAML, reading whichever
+runtime (CLI / setup YAML) and are handed the section, reading whichever
 primitives + adapter-sub-block they know about.
 
 ### `control.yaml`
@@ -487,8 +507,8 @@ their URDFs reference `package://jackal_description/…` etc., supplied by
 
 1. `mkdir -p arena_robots/arena_robots/robots/<name>/caps`
 2. Write `model_params.yaml` (minimal identity), `control.yaml`.
-3. Write `caps/mobile.yaml` (every robot has a mobile base). Add `caps/arm.yaml`
-   and/or `caps/lift.yaml` if the robot has those subsystems.
+3. Write `caps.yaml` with a `mobile` section (every robot has a mobile base). Add `arm`
+   and/or `lift` sections if the robot has those subsystems.
 4. (Optional) add `urdf/<name>.urdf.xacro` and/or a `meshes/` submodule.
    For component-catalog sensors, add `assembly.yaml` + a golden (see "Moving a
    robot's sensors to the component catalog" above).

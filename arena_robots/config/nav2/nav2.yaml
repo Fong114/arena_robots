@@ -357,7 +357,7 @@ collision_monitor:
 #                       false, false, false]
 velocity_smoother:
   ros__parameters:
-    # planner envelope from caps/mobile.yaml, nav2's default would cap linear at 0.5 m/s
+    # planner envelope from the caps.yaml mobile section, nav2's default would cap linear at 0.5 m/s
     use_sim_time: true
     smoothing_frequency: 20.0
     scale_velocities: false

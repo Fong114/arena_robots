@@ -16,7 +16,7 @@ def _load_goto_pose_drl() -> type:
     return GotoPoseHandlerDrl
 
 
-# caps/mobile.yaml sub-block consumed by this bringup (key: "drl"):
+# mobile section sub-block of caps.yaml consumed by this bringup (key: "drl"):
 #
 #   drl:
 #     planner: str            # required, planner name, e.g. drlvo
@@ -47,7 +47,7 @@ class DrlBringup(Bringup):
     def planner(self) -> str:
         v = self._cfg.get("planner")
         if not v:
-            raise ValueError(f"drl bringup for '{self.robot.name}' missing required 'planner': set caps/mobile.yaml 'drl.planner' or pass robot.mobile.planner:=<name>")
+            raise ValueError(f"drl bringup for '{self.robot.name}' missing required 'planner': set caps.yaml mobile 'drl.planner' or pass robot.mobile.planner:=<name>")
         return str(v)
 
     @property

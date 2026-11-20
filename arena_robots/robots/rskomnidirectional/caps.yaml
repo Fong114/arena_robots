@@ -1,0 +1,86 @@
+mobile:
+  odom_frame: odom
+
+  polygons_dict:
+    StopPolygon:
+      type: polygon
+      points: [[0.1, 0.1], [0.1, -0.1], [-0.1, -0.1], [-0.1, 0.1]]
+      action_type: stop
+      min_points: 4
+      visualize: true
+      polygon_pub_topic: polygon_stop
+      enabled: true
+
+  planar:
+    velocity: {linear: [-.inf, .inf], lateral: [-.inf, .inf], angular: [-.inf, .inf]}
+    acceleration: {linear: .inf, lateral: .inf, angular: .inf}
+    gain: {linear: 1.0, lateral: 1.0, angular: 1.0}
+    lag: 0.0
+    traction: 0.49
+    pivot: 0.0
+    timeout: 0.5
+
+  actions:
+    continuous:
+      linear:
+        min: -1.0
+        max: 1.0
+      angular:
+        min: -4.0
+        max: 4.0
+    discrete:
+      - angular: 0.0
+        linear: 0.3
+        name: move_forward
+      - angular: 0.0
+        linear: -0.15
+        name: move_backward
+      - angular: 0.35
+        linear: 0.15
+        name: turn_left
+      - angular: -0.35
+        linear: 0.15
+        name: turn_right
+      - angular: 0.75
+        linear: 0.0
+        name: turn_strong_left
+      - angular: -0.75
+        linear: 0.0
+        name: turn_strong_right
+      - angular: 0.0
+        linear: 0.0
+        name: stop
+
+power:
+  robot_model: "rskomnidirectional"
+
+  power_system:
+    system_voltage_v: 24.0
+    global_drivetrain_efficiency: 0.85
+    heating_coefficient_ch: 0.05
+    battery_capacity_wh: 270.0
+    drivetrain_damping: 0.001
+    drivetrain_friction: 0.01
+    rolling_resistance_crr: 0.02
+
+  joint_metrics:
+    topic: "joint_states"
+
+  static_power_w:
+    compute_core: 20.0
+    idle_motors: 15.0
+
+acoustics:
+  L_base_0: 40.0
+  beta_0: 58.5
+  beta_1: 20.0
+  beta_2: 14.0
+  beta_3: 0.0
+  omega_ref: 10.2
+  tau_ref: 2.0
+  max_joint_torque_nm: 15.0
+  omega_deadband: 0.05
+  omega_active: 0.50
+  sigma_base: 0.8
+  sigma_dynamic: 1.2
+  sigma_no_effort: 2.0

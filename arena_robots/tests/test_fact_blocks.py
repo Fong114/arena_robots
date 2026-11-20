@@ -54,7 +54,7 @@ def test_jackal_power_holds_the_power_system_without_the_model_name():
     assert "robot_model" not in power.raw
 
 
-def test_jackal_acoustics_holds_the_telemetry_profile():
+def test_jackal_acoustics_holds_the_acoustic_profile():
     acoustics = _jackal_caps().acoustics
     assert acoustics is not None
     assert acoustics.raw["L_base_0"] == pytest.approx(40.0)

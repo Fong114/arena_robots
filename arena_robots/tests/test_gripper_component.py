@@ -114,7 +114,7 @@ class TestGripperChainsOntoArmTip:
         from arena_robots.caps import RobotCaps
 
         _, resolved = _jackal_gripper_resolved()
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="")
+        rc = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="")
         grippers = rc.gripper
         assert grippers is not None and set(grippers) == {"top_tool"}
         assert grippers["top_tool"].joint == f"top_tool_{KNUCKLE}"
@@ -153,7 +153,7 @@ class TestRbkairosGripperMount:
         from arena_robots.caps import RobotCaps
 
         _, resolved = placed
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
+        rc = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
         assert rc.gripper is not None and set(rc.gripper) == {"gripper_mount"}
         gripper = rc.gripper["gripper_mount"]
         assert gripper.joint == f"robot_gripper_{KNUCKLE}"

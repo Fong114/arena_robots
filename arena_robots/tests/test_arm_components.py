@@ -214,7 +214,7 @@ class TestEffectiveCapsHonorsMountFrame:
         mount = Mount(name="arm", parent="chassis_link", xyz=(0.0, 0.0, 0.235), accepts=("arm",), frame="arm0")
         resolved = ResolvedAssembly(placements=[Placement(type="arm", variant="ur5e", mount=mount)])
         catalog = Catalog(root=COMPONENTS_ROOT)
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=catalog)
+        rc = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=catalog)
 
         arms = rc.arm
         assert set(arms) == {"arm"}
@@ -234,7 +234,7 @@ class TestEffectiveCapsHonorsChassisPrefix:
         mount = Mount(name="arm", parent="chassis_link", xyz=(0.0, 0.0, 0.235), accepts=("arm",))
         resolved = ResolvedAssembly(placements=[Placement(type="arm", variant="ur5e", mount=mount)])
         catalog = Catalog(root=COMPONENTS_ROOT)
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=catalog, prefix="")
+        rc = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=catalog, prefix="")
 
         arm = rc.arm["arm"].raw
         assert arm["base_link"] == "chassis_link"
