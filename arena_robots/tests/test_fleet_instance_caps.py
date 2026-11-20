@@ -11,13 +11,13 @@ WIDE_BODY = {"cap:mobile.radius": json.dumps(0.5)}
 
 
 def test_instance_caps_without_params_are_the_model_caps():
-    assert instance_caps("jackal", {}).mobile.radius == pytest.approx(0.267)
+    assert instance_caps("jackal", {}).mobile.radius == pytest.approx(0.3092, abs=2e-3)
 
 
 def test_instance_caps_apply_the_cap_params_as_overrides():
     mobile = instance_caps("jackal", WIDE_BODY).mobile
     assert mobile.radius == pytest.approx(0.5)
-    assert instance_caps("jackal", {}).mobile.radius == pytest.approx(0.267)
+    assert instance_caps("jackal", {}).mobile.radius == pytest.approx(0.3092, abs=2e-3)
 
 
 def test_fleet_facts_of_an_overridden_instance_differ_from_the_model():

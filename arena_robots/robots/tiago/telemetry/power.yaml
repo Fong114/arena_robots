@@ -8,8 +8,6 @@ power_system:
   drivetrain_damping: 0.05
   drivetrain_friction: 0.1
   rolling_resistance_crr: 0.02
-  wheel_radius_m: 0.0985
-  num_wheels: 2
 
 joint_metrics:
   topic: "joint_states"

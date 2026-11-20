@@ -43,9 +43,12 @@ def test_turtlebot_power_model_takes_its_upstream_urdf_mass(require_installed: C
     assert profile["robot_mass_kg"] == pytest.approx(4.454)
 
 
-def test_rbvogui_wheels_match_the_urdf(require_installed: Callable[[str], None]):
+def test_rbvogui_swerve_geometry_comes_from_the_urdf(require_installed: Callable[[str], None]):
     require_installed("rbvogui")
-    assert "control.wheels" not in _checks("rbvogui")
+    view = mcp._view("rbvogui")
+    geometry = view.drive_geometry(view.effective_caps({}).rendered_urdf())
+    assert geometry["wheel_radius"] == pytest.approx(0.1165)
+    assert geometry["wheel_positions_y"] == [-0.235, 0.235, -0.235, 0.235]
 
 
 def test_jackal_raises_no_drift_finding(require_installed: Callable[[str], None]):

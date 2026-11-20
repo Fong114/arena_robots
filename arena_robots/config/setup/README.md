@@ -115,6 +115,8 @@ else `(max - min) / (n - 1)`), and its provenance is `urdf`. A robot without a
 `laserscan` sensor has no laser. A `mobile.laser` override raises and names the
 bracket form of the lidar part.
 
+`mobile.footprint` and `mobile.radius` are the convex ground outline of the base's collision geometry in the base frame and its circumradius, `mobile.is_holonomic` is true for a mecanum, swerve or omni drive controller or a CHAMP gait and false otherwise. Their provenance is `urdf`, `urdf` and `derived`, and an override replaces them like any mobile key. `lift.<mount>.limits` and `gripper.<mount>.max_effort` default to the joint's URDF `<limit>` (provenance `urdf`).
+
 `arm.<mount>.joint_limits.<joint>.<key>` are the arm's MoveIt joint limits (`max_velocity`,
 `max_acceleration`, `max_effort`, `min_position`, `max_position` and their `has_*`
 flags), keyed by rendered joint name from the component's `joint_limits/` file, in
@@ -170,7 +172,7 @@ robot spawns, and `arena robot paths` marks such paths `only in <sims>`.
 `robots_check` reports range sanity (a min above its max, a non-positive radius or
 acceleration) and clamped planner limits as warnings. It also warns where a value
 written in two places differs from its owner: a `control*.yaml` limit literal from
-`mobile.limits`, `control.yaml` wheel geometry from the URDF, `champ/gait.yaml` from
+`mobile.limits`, `champ/gait.yaml` from
 `mobile.limits`, a
 `joint_limits/` file value above the URDF `<limit>`, and the masses of
 `model_params.yaml` (base plus parts), the URDF and `telemetry/power.yaml`.

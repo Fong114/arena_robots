@@ -1,4 +1,4 @@
-"""Facts read from a rendered URDF: joint limits, lidar block, mass, wheel geometry and the ground outline of the base."""
+"""Facts read from a rendered URDF: joint limits, lidar block, mass, drive geometry and the ground outline of the base."""
 
 from __future__ import annotations
 
@@ -7,8 +7,9 @@ import math
 import struct
 import typing
 import xml.etree.ElementTree as ET
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import Any
 
 import attrs
 import numpy as np
@@ -21,6 +22,15 @@ _LOGGER = logging.getLogger(__name__)
 _LIDAR_TYPES = frozenset({"gpu_lidar", "gpu_ray", "ray", "lidar"})
 _FULL_TURN = 2.0 * math.pi
 _ARC_SEGMENTS = 16
+_TOLERANCE = 1e-3
+_DECIMALS = 6
+DIFF_DRIVE = "diff_drive_controller/DiffDriveController"
+MECANUM_DRIVE = "mecanum_drive_controller/MecanumDriveController"
+SWERVE_DRIVE = "arena_swerve_controller/SwerveController"
+OMNI_DRIVE = "arena_omni_drive_controller/OmniDriveController"
+DRIVE_CONTROLLER_TYPES = frozenset({DIFF_DRIVE, MECANUM_DRIVE, SWERVE_DRIVE, OMNI_DRIVE})
+DriveGeometry = dict[str, float | list[float]]
+_MECANUM_JOINTS = ("front_left_wheel_command_joint_name", "front_right_wheel_command_joint_name", "rear_left_wheel_command_joint_name", "rear_right_wheel_command_joint_name")
 
 
 @attrs.frozen
@@ -149,33 +159,90 @@ def _collision_radius(link: ET.Element) -> float | None:
     return None
 
 
-def wheel_geometry(urdf: str, base_link: str, left: list[str], right: list[str]) -> dict[str, float] | None:
-    """Wheel radius and track width from the named wheel joints, None when a joint or radius is missing."""
-    if not left or not right:
-        return None
-    root = ET.fromstring(urdf)
+def drive_controller(control: Mapping[str, Any]) -> tuple[str, str, dict[str, Any]] | None:
+    """Name, type and ``ros__parameters`` of the first wheel drive controller the ``controller_manager`` section lists, None without one."""
+    listed = (control.get("controller_manager") or {}).get("ros__parameters") or {}
+    for name, entry in listed.items():
+        kind = entry.get("type") if isinstance(entry, Mapping) else None
+        if kind in DRIVE_CONTROLLER_TYPES:
+            return str(name), str(kind), dict(control[name]["ros__parameters"])
+    return None
+
+
+def wheel_joints(controller_type: str, params: Mapping[str, Any]) -> list[str]:
+    """The wheel joint names a drive controller commands."""
+    if controller_type == DIFF_DRIVE:
+        return [str(name) for key in ("left_wheel_names", "right_wheel_names") for name in params[key]]
+    if controller_type == MECANUM_DRIVE:
+        return [str(params[key]) for key in _MECANUM_JOINTS]
+    return [str(name) for name in params["wheel_joint_names"]]
+
+
+def _joint_frames(root: ET.Element, base_link: str) -> dict[str, np.ndarray]:
+    poses = _link_poses(root, base_link)
+    return {str(joint.get("name")): poses[str(parent.get("link"))] @ _transform(joint.find("origin")) for joint in root.findall("joint") if (parent := joint.find("parent")) is not None and str(parent.get("link")) in poses}
+
+
+def _wheel_radius(root: ET.Element, names: Sequence[str]) -> float:
     links = {str(link.get("name")): link for link in root.findall("link")}
     joints = {str(joint.get("name")): joint for joint in root.findall("joint")}
-    poses = _link_poses(root, base_link)
-    lateral: dict[str, list[float]] = {"left": [], "right": []}
     radii: list[float] = []
-    for side, names in (("left", left), ("right", right)):
+    for name in names:
+        child = joints[name].find("child")
+        radius = _collision_radius(links[str(child.get("link"))]) if child is not None else None
+        if radius is None:
+            raise ValueError(f"wheel joint {name} has no round collision on its child link")
+        radii.append(radius)
+    if max(radii) - min(radii) > _TOLERANCE:
+        raise ValueError(f"wheel joints {list(names)} disagree on the wheel radius: {radii}")
+    return sum(radii) / len(radii)
+
+
+def _rounded(value: float) -> float:
+    return round(value, _DECIMALS) + 0.0
+
+
+def drive_geometry(urdf: str, controller_type: str, params: Mapping[str, Any]) -> DriveGeometry:
+    """Geometry parameters of one drive controller measured in its ``base_frame_id`` (the root link when it has none)."""
+    root = ET.fromstring(urdf)
+    base_link = str(params.get("base_frame_id") or _root_link(root))
+    frames = _joint_frames(root, base_link)
+    names = wheel_joints(controller_type, params)
+    missing = [name for name in names if name not in frames]
+    if missing:
+        raise ValueError(f"wheel joints {missing} are not below the base frame {base_link}")
+    radius = _rounded(_wheel_radius(root, names))
+    if controller_type == DIFF_DRIVE:
+        sides = [[float(frames[str(name)][1, 3]) for name in params[key]] for key in ("left_wheel_names", "right_wheel_names")]
+        return {"wheel_radius": radius, "wheel_separation": _rounded(abs(sum(sides[0]) / len(sides[0]) - sum(sides[1]) / len(sides[1])))}
+    if controller_type == MECANUM_DRIVE:
+        sums = [abs(float(frames[name][0, 3])) + abs(float(frames[name][1, 3])) for name in names]
+        if max(sums) - min(sums) > _TOLERANCE:
+            raise ValueError(f"mecanum wheels disagree on the center projection: {sums}")
+        return {"kinematics.wheels_radius": radius, "kinematics.sum_of_robot_center_projection_on_X_Y_axis": _rounded(sum(sums) / len(sums))}
+    if controller_type == SWERVE_DRIVE:
+        steering = [str(name) for name in params["steering_joint_names"]]
+        if len(steering) != len(names) or any(name not in frames for name in steering):
+            raise ValueError(f"steering joints {steering} do not match the wheel joints {names} below {base_link}")
+        places = [frames[name] for name in steering]
+    else:
+        places = [frames[name] for name in names]
+    geometry: DriveGeometry = {"wheel_radius": radius, "wheel_positions_x": [_rounded(float(pose[0, 3])) for pose in places], "wheel_positions_y": [_rounded(float(pose[1, 3])) for pose in places]}
+    if controller_type == OMNI_DRIVE:
+        joints = {str(joint.get("name")): joint for joint in root.findall("joint")}
+        angles: list[float] = []
         for name in names:
-            joint = joints.get(name)
-            if joint is None:
-                return None
-            parent = joint.find("parent")
-            child = joint.find("child")
-            if parent is None or child is None or str(parent.get("link")) not in poses or str(child.get("link")) not in links:
-                return None
-            origin = poses[str(parent.get("link"))] @ _transform(joint.find("origin"))
-            lateral[side].append(float(origin[1, 3]))
-            radius = _collision_radius(links[str(child.get("link"))])
-            if radius is None:
-                return None
-            radii.append(radius)
-    separation = abs(sum(lateral["left"]) / len(lateral["left"]) - sum(lateral["right"]) / len(lateral["right"]))
-    return {"wheel_radius": sum(radii) / len(radii), "wheel_separation": separation}
+            element = joints[name].find("axis")
+            axis = np.array(_floats(element.get("xyz") if element is not None else "1 0 0", 3))
+            along = frames[name][:3, :3] @ axis
+            angles.append(_rounded((math.atan2(float(along[1]), float(along[0])) - math.pi / 2) % _FULL_TURN))
+        geometry["wheel_angles"] = angles
+    return geometry
+
+
+def _root_link(root: ET.Element) -> str:
+    children = {str(child.get("link")) for joint in root.findall("joint") if (child := joint.find("child")) is not None}
+    return next(str(link.get("name")) for link in root.findall("link") if str(link.get("name")) not in children)
 
 
 def _default_resolver(uri: str) -> Path | None:

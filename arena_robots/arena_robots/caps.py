@@ -44,11 +44,19 @@ from arena_robots.inline import APPEND_KEY, OFFSET_KEY, SCALE_KEY, WILDCARD, is_
 if typing.TYPE_CHECKING:
     from arena_robots.Robot import RobotView
     from arena_robots.served_urdf import ServedURDF
+    from arena_robots.urdf_facts import DriveGeometry, JointLimit
 
 _CAPS_PREFIX = 'robot_'
 """Frame-templating prefix for placement-rendered caps; matches
 ``catalog.render_effective_sensors``'s default so cap frame names (e.g. arm
 base_link/tip_link) line up with the sensor frames on the same robot."""
+
+_DERIVED_MOBILE = {'footprint': 'urdf', 'radius': 'urdf', 'is_holonomic': 'derived'}
+
+
+def _circumradius(footprint: list[list[float]]) -> float:
+    return round(max(math.hypot(float(x), float(y)) for x, y in footprint), 4)
+
 
 _POLYGON_TYPES: frozenset[str] = frozenset({'polygon', 'circle'})
 _ACTION_TYPES: frozenset[str] = frozenset({'stop', 'slowdown', 'approach', 'limit'})
@@ -423,18 +431,13 @@ CLIMBABLE = ('stairs', 'escalator')
 
 @attrs.define(slots=False)
 class MobileSpec(CapConfig):
-    """Primitives from caps/mobile.yaml (flat, single-instance), and the laser block of the rendered URDF."""
+    """Primitives from caps/mobile.yaml (flat, single-instance), with footprint, radius and is_holonomic derived from the rendered URDF and controllers unless authored, and the laser block of the rendered URDF."""
 
     laser_block: Callable[[], dict[str, typing.Any] | None] | None = None
 
     @property
     def odom_frame(self) -> str:
         return str(self.raw.get('odom_frame', 'odom'))
-
-    @property
-    def sensor_frame(self) -> str | None:
-        v = self.raw.get('sensor_frame')
-        return None if v is None else str(v)
 
     @property
     def radius(self) -> float | None:
@@ -689,6 +692,19 @@ class LiftSpec(InstanceSpec):
             raise ValueError(f"{self.path}: lift '{self.name}' missing 'controller'")
         return str(v)
 
+    @property
+    def limits(self) -> tuple[float, float] | None:
+        """Joint range, the lift joint's URDF limit unless authored."""
+        v = self.raw.get('limits')
+        if v is None:
+            return None
+        if not isinstance(v, list | tuple) or len(v) != 2:
+            raise ValueError(f"{self.path}: lift '{self.name}' limits must be [lower, upper]; got {v!r}")
+        lower, upper = float(v[0]), float(v[1])
+        if not lower <= upper:
+            raise ValueError(f"{self.path}: lift '{self.name}' limits lower {lower} exceeds upper {upper}")
+        return lower, upper
+
 
 @attrs.define(slots=False)
 class GripperSpec(InstanceSpec):
@@ -722,6 +738,7 @@ class GripperSpec(InstanceSpec):
 
     @property
     def max_effort(self) -> float:
+        """Effort cap, the gripper joint's URDF effort unless authored."""
         v = self.raw.get('max_effort')
         if v is None:
             raise ValueError(f"{self.path}: gripper '{self.name}' missing 'max_effort'")
@@ -1059,6 +1076,7 @@ class RobotCaps:
 
     _cached: dict[str, typing.Any] = attrs.field(factory=dict, init=False)
     _notes: list[str] = attrs.field(factory=list, init=False)
+    _urdf_leaves: set[str] = attrs.field(factory=set, init=False)
 
     @property
     def available(self) -> frozenset[str]:
@@ -1137,6 +1155,68 @@ class RobotCaps:
         self._cached[key] = block
         return copy.deepcopy(block)
 
+    def holonomic(self) -> bool | None:
+        """Whether the base drives sideways: a mecanum, swerve or omni drive controller or a CHAMP gait, None without a control config or gait."""
+        if self.view is None:
+            return None
+        if (self.caps_dir.parent / 'champ' / 'gait.yaml').is_file():
+            return True
+        from arena_robots import urdf_facts
+
+        try:
+            controller = self.view.drive_controller()
+        except FileNotFoundError:
+            return None
+        return None if controller is None else controller[1] != urdf_facts.DIFF_DRIVE
+
+    def drive_geometry(self) -> DriveGeometry:
+        """The drive controller's geometry parameters measured in the instance's URDF, empty without a drive controller."""
+        return {} if self.view is None else self.view.drive_geometry(self.rendered_urdf())
+
+    def _derived_mobile(self) -> dict[str, typing.Any]:
+        key = 'derived:mobile'
+        if key not in self._cached:
+            out: dict[str, typing.Any] = {}
+            outline = self.body.outline if self.view is not None else None
+            if outline:
+                footprint = [[round(x, 4), round(y, 4)] for x, y in outline]
+                out['footprint'] = footprint
+                out['radius'] = _circumradius(footprint)
+            holonomic = self.holonomic()
+            if holonomic is not None:
+                out['is_holonomic'] = holonomic
+            self._cached[key] = out
+        return copy.deepcopy(self._cached[key])
+
+    def _joint_limit(self, joint: str) -> JointLimit | None:
+        if self.view is None:
+            return None
+        from arena_robots import urdf_facts
+
+        if not urdf_facts.source(self.view).is_file():
+            return None
+        key = 'derived:joint_limits'
+        if key not in self._cached:
+            self._cached[key] = urdf_facts.joint_limits(self.rendered_urdf())
+        return self._cached[key].get(joint)
+
+    def _with_urdf_defaults(self, cap: str, name: str, entry: dict[str, typing.Any]) -> dict[str, typing.Any]:
+        """The lift or gripper entry with the joint's URDF limit or effort filled in where it does not author one."""
+        field = {'lift': 'limits', 'gripper': 'max_effort'}.get(cap)
+        joint = entry.get('joint')
+        if field is None or field in entry or joint is None:
+            return entry
+        bound = self._joint_limit(str(joint))
+        if bound is None:
+            return entry
+        value: object = [bound.lower, bound.upper] if bound.lower is not None and bound.upper is not None else None
+        if cap == 'gripper':
+            value = bound.effort
+        if value is None:
+            return entry
+        self._urdf_leaves.add(f'{cap}.{name}.{field}')
+        return {**entry, field: value}
+
     def joints_overridden(self, instance: str) -> bool:
         """Whether an override changes the MoveIt joint limits of arm ``instance``."""
         for path in self.all_overrides:
@@ -1164,7 +1244,14 @@ class RobotCaps:
         if cap == 'mobile':
             if any(key.partition('.')[0] == 'laser' for key in rel):
                 raise ValueError(f"{path}: cap override 'mobile.laser': the laser block is read from the rendered URDF, set the xacro arguments of the lidar part in its brackets{self._lidar_form()}")
-            return normalize_mobile(data, rel, label=str(path), known=typed_fields(MobileSpec) | adapter_blocks(cap), notes=self._notes)
+            authored = data
+            data = normalize_mobile({**self._derived_mobile(), **authored}, rel, label=str(path), known=typed_fields(MobileSpec) | adapter_blocks(cap), notes=self._notes)
+            footprint = data.get('footprint')
+            if 'radius' not in authored and not any(key.partition('.')[0] == 'radius' for key in rel) and footprint:
+                data['radius'] = _circumradius(footprint)
+            return data
+        if cap in ('lift', 'gripper'):
+            data = {name: self._with_urdf_defaults(cap, str(name), entry) if isinstance(entry, dict) else entry for name, entry in data.items()}
         if not rel:
             return data
         instance_cls = _INSTANCE_CLASSES.get(cap)
@@ -1261,6 +1348,17 @@ class RobotCaps:
             return 'urdf'
         if head == 'body' and rest == 'mass':
             return 'urdf'
+        if head == 'mobile' and rest.partition('.')[0] in _DERIVED_MOBILE:
+            key = rest.partition('.')[0]
+            authored = _read_mapping(self.caps_dir / 'mobile.yaml') or {}
+            if key == 'radius' and 'radius' not in authored and 'footprint' in authored:
+                return 'derived'
+            if key not in authored and key in self._derived_mobile():
+                return _DERIVED_MOBILE[key]
+        if head in ('lift', 'gripper'):
+            getattr(self, head)
+            if path in self._urdf_leaves:
+                return 'urdf'
         if head == 'mobile' and rest.startswith('limits'):
             declared = (_read_mapping(self.caps_dir / 'mobile.yaml') or {}).get('limits')
             return 'file' if isinstance(declared, dict) and _leaf_declared(declared, rest.split('.')[1:]) else 'derived'
@@ -1343,7 +1441,7 @@ class RobotCaps:
     def _check_joints_against_urdf(self, arms: dict[str, typing.Any]) -> None:
         from arena_robots import urdf_facts
 
-        limits: dict[str, urdf_facts.JointLimit] | None = None
+        limits: dict[str, JointLimit] | None = None
         for name, arm in arms.items():
             if not self.joints_overridden(name):
                 continue
@@ -1404,6 +1502,7 @@ class RobotCaps:
                     raise ValueError(f"{placement.type} component {placement.variant!r}: 'caps' must render to a mapping; got {type(rendered).__name__}")
                 if cap == 'arm':
                     rendered = _with_joints(rendered)
+                rendered = self._with_urdf_defaults(cap, placement.mount.name, rendered)
                 for instance_rel in (rel.get(WILDCARD), rel.get(placement.mount.name)):
                     if instance_rel:
                         rendered = overlay(rendered, instance_rel, label=f'{placement.type} {placement.mount.name}', known=typed_fields(cls))

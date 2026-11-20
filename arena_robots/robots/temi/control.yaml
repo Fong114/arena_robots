@@ -16,9 +16,6 @@ temi_velocity_controller:
     left_wheel_names: [ "left_wheel" ]
     right_wheel_names: [ "right_wheel" ]
 
-    wheel_separation: 0.28
-    wheel_radius: 0.06
-
     wheel_separation_multiplier: 1.0
 
     publish_rate: 50.0

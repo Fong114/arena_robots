@@ -158,7 +158,7 @@ def _mobile(caps: RobotCaps) -> dict[str, Any] | None:
     if "mobile" not in caps.available:
         return None
     mobile = caps.mobile
-    out: dict[str, Any] = {"odom_frame": mobile.odom_frame, "sensor_frame": mobile.sensor_frame, "radius": mobile.radius, "is_holonomic": mobile.is_holonomic}
+    out: dict[str, Any] = {"odom_frame": mobile.odom_frame, "radius": mobile.radius, "is_holonomic": mobile.is_holonomic}
     for field in ("min_turning_radius", "footprint", "footprint_padding", "inflation_radius"):
         try:
             out[field] = getattr(mobile, field)
@@ -356,12 +356,11 @@ def _file_drift_findings(view: RobotView, caps: RobotCaps) -> list[dict[str, Any
     limits = view.caps.mobile.limits if "mobile" in view.caps.available else None
     findings = _drift_findings(name, "control.limits", lambda: drift.limit_drift(view, limits)) + _drift_findings(name, "gait", lambda: drift.gait_drift(view, limits))
     try:
-        urdf = view.effective_caps({}).rendered_urdf()
+        view.effective_caps({}).rendered_urdf()
     except ImportError:
         return findings
     except Exception as exc:
         return [*findings, _finding(name, "urdf", f"the default URDF does not render, the URDF checks are skipped: {_error(exc)}", "warning")]
-    findings += _drift_findings(name, "control.wheels", lambda: drift.wheel_drift(view, urdf, view.caps.body.base_frame))
     for instance, arm in (caps.arm or {}).items():
         findings += _drift_findings(name, "joint_limits", lambda instance=instance, arm=arm: drift.joint_drift(instance, arm, caps.rendered_urdf()))
     return findings
@@ -796,7 +795,7 @@ async def robots_lift(
     """Set the height of a robot's lift (torso, column) through its lift adapter and return the clamped height sent to the controller, the call does not wait for the lift to arrive."""
     from std_msgs.msg import Float64
 
-    from arena_robots.actuators import lift_limits, lift_topic
+    from arena_robots.actuators import lift_topic
 
     if not math.isfinite(height):
         raise ToolError("height must be finite")
@@ -804,7 +803,7 @@ async def robots_lift(
     name, spec = _actuator_spec(entry, "lift", instance)
     topic = lift_topic(entry["ns"], name)
     echo = await _actuate(entry, "lift", Float64, topic, Float64(data=float(height)))
-    return {"robot": entry["name"], "instance": name, "topic": topic, "joint": spec.joint, "requested": height, "applied": echo.data, "clamped": echo.data != height, "limits": lift_limits(spec)}
+    return {"robot": entry["name"], "instance": name, "topic": topic, "joint": spec.joint, "requested": height, "applied": echo.data, "clamped": echo.data != height, "limits": spec.limits}
 
 
 @domain.tool()

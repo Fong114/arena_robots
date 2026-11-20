@@ -84,20 +84,16 @@ variant of `caps/arm.yaml`.
 
 A robot has exactly one mobile base by construction. All robot-physical
 primitives live at top level; adapter sub-blocks are reserved for
-adapter-specific wiring only. `actions` is a top-level field, `laser` is not authored, see "Where each value is authored". The
+adapter-specific wiring only. `actions` is a top-level field. `laser`, `footprint`, `radius` and `is_holonomic` are not authored, see "Where each value is authored". The
 optional `nav2:` sub-block carries nav2-only wiring such as
 `global_observation` and `local_observation` (the cloud sources' `min_obstacle_height` and `max_obstacle_height`, 0.1 and 0.8 m by default). The global planner's settings come from the selected
 planner config.
 
 ```yaml
 odom_frame: odom
-sensor_frame: base_scan
-radius: 0.5
-is_holonomic: false
 min_turning_radius: 0.0       # optional, m, default 0.0 (turns in place)
 climbs: [stairs]              # optional, default []
 
-footprint: [[0.5, 0.35], [0.5, -0.35], [-0.5, -0.35], [-0.5, 0.35]]
 footprint_padding: 0.1        # optional
 inflation_radius: 0.9         # optional, default: outer radius of the padded footprint or radius, + 0.4
 polygons_dict:
@@ -239,8 +235,12 @@ from the effective caps, or `robots_check` warns where it differs.
 | --- | --- | --- |
 | Base velocity and acceleration the body can do (`mobile.limits`) | `caps/mobile.yaml` (`limits`, or `planar`) | flatsim drive, the drive controller keys `control*.yaml` declares (DiffDrive, Mecanum), the CHAMP gait of `a1` and `go1`, the planner limits as their bound |
 | Controller limit literals | `control*.yaml`, only to declare which keys exist | the controller, overlaid from `mobile.limits` on an override, `robots_check` warns on a different literal |
-| Wheel radius, separation | `control.yaml` | the controller, `robots_check` compares them with the URDF's wheel joints |
+| Wheel radius, track width, mecanum center projection, swerve and omni wheel positions, omni wheel angles | the URDF wheel joints and their round collision geometry, measured in the controller's `base_frame_id` | written over the drive controller's parameters by `effective_control_yaml` in every simulator, `RobotView.drive_geometry` and `urdf_facts.drive_geometry`, `control.yaml` keeps the joint names, multipliers and tuning |
+| Power model wheels (`wheel_radius_m`, `num_wheels`) | the drive geometry and the drive controller's wheel joint count | `RobotView.power_profile`, `telemetry/power.yaml` keeps the electrical and loss terms |
 | CHAMP gait speeds | `champ/gait.yaml` | the CHAMP bringup, rendered per instance from `mobile.limits` on an override |
+| Footprint and radius (`mobile.footprint`, `mobile.radius`) | the URDF collision geometry | the convex ground outline of the base (`body.outline`) and the circumradius of the effective footprint, provenance `urdf`, overridable per instance, `footprint_padding` stays authored |
+| Holonomy (`mobile.is_holonomic`) | the drive controller of `control.yaml` and `champ/gait.yaml` | true for a mecanum, swerve or omni drive controller or a CHAMP gait, false for diff drive, provenance `derived`, overridable per instance |
+| Lift range (`lift.<name>.limits`), gripper effort (`gripper.<name>.max_effort`) | the lift or gripper joint's URDF `<limit>` | the direct adapters, authored only where a deliberate value differs from the URDF |
 | Lidar geometry (`mobile.laser`) | the lidar component's xacro arguments (a bracket on the part) or the URDF | read from the scan sensor of the rendered URDF on the primary lidar (the first `laserscan` sensor), never authored in `caps/mobile.yaml` |
 | MoveIt joint limits (`arm.<mount>.joint_limits`) | the component's `joint_limits/` file | `moveit_factory`, overridable per instance, tightened-only against the URDF `<limit>` |
 | Joint position, velocity and effort limits | the URDF | the simulators, the bound of the MoveIt limits |
@@ -309,7 +309,7 @@ derivation (structural-without-semantics is ambiguous).
 lift:
   joint: robot_lift_ewellix_lift_top_joint
   controller: lift_controller
-  limits: [0.0, 0.9]       # joint range the lift adapter clamps to, optional
+  limits: [0.0, 0.9]       # joint range the lift adapter clamps to, optional, default the joint's URDF limit
 ```
 
 `caps/gripper.yaml` (when a platform gets one) uses a back-reference to its
@@ -321,11 +321,11 @@ gripper:
   joint: arm_gripper_joint
   controller: arm_gripper_controller
   positions: {open: 0.0, close: 0.8}
-  max_effort: 50.0
+  max_effort: 50.0         # optional, default the joint's URDF effort
 ```
 
 `positions` holds the joint values of `open` and `close`, `max_effort` the effort every gripper
-command carries. Gripper components carry the same block under `caps:`.
+command carries (the joint's URDF effort unless authored). Gripper components carry the same block under `caps:`.
 
 #### Adapter sub-blocks are namespaced, not dispatch
 
@@ -348,6 +348,13 @@ An optional sibling `control.<sim>.yaml` (`sim` a `SimSimulator` value such as
 simulator only, for a value the simulator's physics needs and the real robot
 does not. [`jackal/control.gazebo.yaml`](jackal/control.gazebo.yaml) sets the
 `wheel_separation_multiplier` Gazebo's skid steer turns at.
+
+The drive controller's geometry is not written in `control.yaml`: `wheel_radius`,
+`wheel_separation` (diff drive), `kinematics.wheels_radius` and
+`kinematics.sum_of_robot_center_projection_on_X_Y_axis` (mecanum),
+`wheel_positions_x`, `wheel_positions_y` (swerve at the steering joints, omni at
+the wheel joints) and `wheel_angles` (omni, the rolling direction of each wheel
+axle) come from the URDF at spawn.
 
 Every simulator spawns a joint at the `initial_value` of its ros2_control
 position state interface, so a legged robot's `urdf/base_hw/<name>.ros2_control.urdf`

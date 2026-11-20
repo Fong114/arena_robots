@@ -83,8 +83,6 @@ class PowerSpec:
     drivetrain_damping: float = 0.0
     drivetrain_friction: float = 0.0
     rolling_resistance_crr: float = 0.0
-    wheel_radius_m: float = 0.0
-    num_wheels: int = 1
 
     @classmethod
     def parse(cls, data: dict[str, typing.Any]) -> PowerSpec:
@@ -102,8 +100,7 @@ class PowerSpec:
         missing = required - set(data)
         if missing:
             raise AssemblyError(f"assembly.yaml 'power' is missing keys {sorted(missing)}")
-        values = {k: float(v) for k, v in data.items() if k != "num_wheels"}
-        return cls(**values, num_wheels=int(data.get("num_wheels", 1)))
+        return cls(**{k: float(v) for k, v in data.items()})
 
 
 @attrs.define

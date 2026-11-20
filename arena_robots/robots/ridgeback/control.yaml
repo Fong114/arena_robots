@@ -16,9 +16,6 @@ ridgeback_velocity_controller:
     left_wheel_names: [front_left_wheel, rear_left_wheel]
     right_wheel_names: [front_right_wheel, rear_right_wheel]
 
-    wheel_separation: 0.551
-    wheel_radius: 0.0759
-
     # 4-wheel skid scrubs during rotation; 1.5 is empirical for ridgeback.
     wheel_separation_multiplier: 1.5
 

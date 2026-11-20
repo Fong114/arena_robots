@@ -30,11 +30,6 @@ robotnik_base_controller:
       - robot_back_right_steering_joint
       - robot_back_left_steering_joint
 
-    wheel_radius: 0.1165
-    # wheel_base 0.736 m, track_width 0.47 m, base_link at geometric center.
-    wheel_positions_x: [ 0.368,  0.368, -0.368, -0.368]
-    wheel_positions_y: [-0.235, 0.235, -0.235, 0.235]
-
     max_steering_angle: 2.8
     allow_reverse_drive: true
     cmd_vel_timeout: 0.5

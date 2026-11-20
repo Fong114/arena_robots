@@ -37,16 +37,13 @@ class _ModelFacts:
     max_linear_mps: float
 
 
-def _wheel_separation(control: Mapping[str, typing.Any]) -> float | None:
-    for name, value in control.items():
-        if name == "controller_manager" or not isinstance(value, Mapping):
-            continue
-        params = value.get("ros__parameters")
-        if not isinstance(params, Mapping) or "wheel_separation" not in params:
-            continue
-        effective = float(params["wheel_separation"]) * float(params.get("wheel_separation_multiplier", 1.0))
-        return effective if effective > 0.0 and math.isfinite(effective) else None
-    return None
+def _wheel_separation(view: RobotView, urdf: str) -> float | None:
+    controller = view.drive_controller()
+    separation = view.drive_geometry(urdf).get("wheel_separation")
+    if controller is None or separation is None:
+        return None
+    effective = float(typing.cast(float, separation)) * float(controller[2].get("wheel_separation_multiplier", 1.0))
+    return effective if effective > 0.0 and math.isfinite(effective) else None
 
 
 PART_ARG_PREFIX = "param:"
@@ -111,7 +108,7 @@ def _model_facts(model: str, params: frozenset[tuple[str, str]]) -> _ModelFacts:
     body = caps.body
     mobile = caps.mobile if "mobile" in caps.available else None
     try:
-        separation = _wheel_separation(view.control)
+        separation = _wheel_separation(view, caps.rendered_urdf())
     except _MODEL_ERRORS:
         separation = None
     return _ModelFacts(

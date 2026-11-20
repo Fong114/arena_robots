@@ -1,4 +1,4 @@
-"""Robot values written in two places, compared with their owner: controller limits, wheel geometry, gait limits and joint limits."""
+"""Robot values written in two places, compared with their owner: controller limits, gait limits and joint limits."""
 
 from __future__ import annotations
 
@@ -17,8 +17,6 @@ if typing.TYPE_CHECKING:
 AXES = {'linear': 'linear.x', 'lateral': 'linear.y', 'angular': 'angular.z'}
 LIMIT_SUFFIXES = ('min_velocity', 'max_velocity', 'min_acceleration', 'max_acceleration')
 GAIT_KEYS = {'linear': 'max_linear_velocity_x', 'lateral': 'max_linear_velocity_y', 'angular': 'max_angular_velocity_z'}
-WHEEL_RELATIVE_TOLERANCE = 0.01
-WHEEL_ABSOLUTE_TOLERANCE = 1e-4
 JOINT_LIMIT_TOLERANCE = 1e-6
 
 
@@ -75,34 +73,6 @@ def limit_drift(view: RobotView, limits: LimitsSpec | None) -> list[str]:
                     key = f'{prefix}.{suffix}'
                     if key in params and math.isfinite(want) and not math.isclose(float(params[key]), want, rel_tol=1e-9, abs_tol=1e-9):
                         out.append(f'{file.name} {name}: {key} {params[key]} differs from mobile.limits {want}')
-    return out
-
-
-def wheel_drift(view: RobotView, urdf: str, base_link: str) -> list[str]:
-    """Wheel radius and track width literals of `control.yaml` that differ from the URDF's wheel joints."""
-    from arena_robots import urdf_facts
-
-    path = view.path / 'control.yaml'
-    if not path.is_file():
-        return []
-    out: list[str] = []
-    for name, params in _controllers(path):
-        left, right = params.get('left_wheel_names'), params.get('right_wheel_names')
-        names = params.get('wheel_joint_names')
-        if isinstance(left, list) and isinstance(right, list):
-            measured = urdf_facts.wheel_geometry(urdf, base_link, [str(n) for n in left], [str(n) for n in right])
-            keys = ('wheel_radius', 'wheel_separation')
-        elif isinstance(names, list) and names and 'wheel_radius' in params:
-            pair = [str(n) for n in names[:2]]
-            measured = urdf_facts.wheel_geometry(urdf, base_link, pair[:1], pair[1:] or pair[:1])
-            keys = ('wheel_radius',)
-        else:
-            continue
-        if measured is None:
-            continue
-        for key in keys:
-            if key in params and not math.isclose(float(params[key]), measured[key], rel_tol=WHEEL_RELATIVE_TOLERANCE, abs_tol=WHEEL_ABSOLUTE_TOLERANCE):
-                out.append(f'control.yaml {name}: {key} {params[key]} differs from the URDF {measured[key]:.4g}')
     return out
 
 

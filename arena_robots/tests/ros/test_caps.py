@@ -53,13 +53,11 @@ class TestMobileSpec:
             path=caps_dir / "mobile.yaml",
             raw={
                 "odom_frame": "robot_odom",
-                "sensor_frame": "laser_frame",
                 "radius": 0.3,
                 "is_holonomic": True,
             },
         )
         assert spec.odom_frame == "robot_odom"
-        assert spec.sensor_frame == "laser_frame"
         assert spec.radius == pytest.approx(0.3)
         assert spec.is_holonomic is True
 
@@ -113,7 +111,7 @@ class TestMobileSpec:
         robot_caps = RobotCaps(caps_dir=caps)
         mob = robot_caps.mobile
         assert mob.odom_frame == "myodom"
-        assert mob.sensor_frame is None
+        assert mob.radius is None and mob.footprint is None and mob.is_holonomic is False
 
 
 class TestRobotCaps:

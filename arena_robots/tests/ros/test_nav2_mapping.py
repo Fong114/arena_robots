@@ -14,7 +14,8 @@ ENV_NODE = "/arena/env_0/arena_env_node"
 
 
 def _entities(mapping: str, scan_topic: str = f"{NAMESPACE}/lidar") -> tuple[list, object]:
-    from ament_index_python.packages import get_package_share_directory
+    from arena_robots.bringup.mobile.nav2 import Nav2Bringup
+    from arena_robots.Robot import RobotIdentifier
     from launch import LaunchContext
     from launch.actions import OpaqueFunction
 
@@ -43,7 +44,7 @@ def _entities(mapping: str, scan_topic: str = f"{NAMESPACE}/lidar") -> tuple[lis
             "agent": "",
             "mapping": mapping,
             "scan_topic": scan_topic,
-            "mobile_caps": str(Path(get_package_share_directory("arena_robots")) / "robots" / "jackal" / "caps" / "mobile.yaml"),
+            "mobile_caps": Nav2Bringup(RobotIdentifier("jackal").resolve_sync(), NAMESPACE).planner_launch_arguments()["mobile_caps"],
             "base_frame": "base_link",
         }
     )

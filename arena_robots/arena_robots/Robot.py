@@ -14,6 +14,7 @@ from arena_simulation_setup.utils.models import ModelWrapper
 from arena_simulation_setup.utils.models.model_loader import ModelProvider_USD
 
 from arena_robots import assembly as assembly_mod
+from arena_robots import urdf_facts
 from arena_robots.caps import MobileSpec, RobotCaps
 from arena_robots.catalog import Catalog, render_effective_sensors
 from arena_robots.Sensor import SensorSpec
@@ -268,6 +269,18 @@ class RobotView(PathView):
             return data
         return _overlay(data, _read_mapping(overlay_path))
 
+    def drive_controller(self, sim: str | None = None) -> tuple[str, str, dict[str, typing.Any]] | None:
+        """Name, type and parameters of the drive controller in ``control_config(sim)``, ``None`` for a robot without one."""
+        control = self.model_params.control
+        if control is None or control.config is None:
+            return None
+        return urdf_facts.drive_controller(self.control_config(sim))
+
+    def drive_geometry(self, urdf: str, sim: str | None = None) -> urdf_facts.DriveGeometry:
+        """The drive controller's geometry parameters measured in ``urdf``, empty for a robot without a drive controller."""
+        controller = self.drive_controller(sim)
+        return {} if controller is None else urdf_facts.drive_geometry(urdf, controller[1], controller[2])
+
     def bridge_mappings(self) -> list[dict[str, typing.Any]]:
         """The rows of ``mappings.yaml``."""
         with open(self.path / 'mappings.yaml') as f:
@@ -374,8 +387,11 @@ class RobotView(PathView):
         damping = float(ps.get('drivetrain_damping', 0.0))
         friction = float(ps.get('drivetrain_friction', 0.0))
         crr = float(ps.get('rolling_resistance_crr', 0.0))
-        wheel_r = float(ps.get('wheel_radius_m', 0.0))
-        num_wheels = int(ps.get('num_wheels', 1))
+        controller = self.drive_controller()
+        geometry = self.drive_geometry(caps.rendered_urdf())
+        radius = geometry.get('wheel_radius', geometry.get('kinematics.wheels_radius', 0.0))
+        wheel_r = radius if isinstance(radius, float) else 0.0
+        num_wheels = len(urdf_facts.wheel_joints(controller[1], controller[2])) if controller is not None else 0
         mass_kg = float(caps.body.mass or 0.0)
 
         if assembly_power is not None:
@@ -394,10 +410,6 @@ class RobotView(PathView):
                 friction = spec.drivetrain_friction
             if crr == 0.0:
                 crr = spec.rolling_resistance_crr
-            if wheel_r == 0.0:
-                wheel_r = spec.wheel_radius_m
-            if num_wheels <= 1 and spec.num_wheels > 1:
-                num_wheels = spec.num_wheels
 
         if caps.resolved is not None:
             for placement in caps.resolved.placements:

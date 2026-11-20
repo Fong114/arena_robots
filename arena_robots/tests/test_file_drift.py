@@ -11,13 +11,8 @@ from arena_robots.caps import simulators_honoring
 from arena_robots.Robot import RobotIdentifier
 
 ROBOTS_DIR = Path(ARENA_ROBOTS_DIR) / "robots"
-GOLDEN_DIR = Path(__file__).parent / "golden"
 MODELS = sorted(p.parent.parent.name for p in ROBOTS_DIR.glob("*/caps/mobile.yaml"))
 HALF = {"mobile.limits": {"scale": 0.5}}
-
-
-def _golden(robot: str) -> str:
-    return (GOLDEN_DIR / f"{robot}_default.urdf").read_text()
 
 
 def _gait(path: str) -> dict[str, float]:
@@ -36,19 +31,6 @@ def test_a_control_literal_that_differs_from_the_limits_is_listed():
     found = drift.limit_drift(view, limits)
     assert any("linear.x.max_velocity 2.0 differs from mobile.limits 1.0" in message for message in found)
     assert any("linear.x.min_velocity -2.0 differs from mobile.limits -1.0" in message for message in found)
-
-
-@pytest.mark.parametrize("robot", sorted(p.name.removesuffix("_default.urdf") for p in GOLDEN_DIR.glob("*_default.urdf")))
-def test_control_wheel_geometry_equals_the_urdf(robot: str):
-    view = RobotIdentifier(robot).resolve_sync()
-    assert drift.wheel_drift(view, _golden(robot), view.caps.body.base_frame) == []
-
-
-def test_a_wheel_radius_that_differs_from_the_urdf_is_listed():
-    view = RobotIdentifier("rbvogui").resolve_sync()
-    urdf = _golden("rbvogui").replace('radius="0.1165"', 'radius="0.125"')
-    found = drift.wheel_drift(view, urdf, view.caps.body.base_frame)
-    assert any("wheel_radius 0.1165 differs from the URDF 0.125" in message for message in found)
 
 
 @pytest.mark.parametrize("model", ("a1", "go1"))

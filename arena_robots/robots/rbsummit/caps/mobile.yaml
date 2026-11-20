@@ -1,8 +1,4 @@
 odom_frame: odom
-sensor_frame: robot_top_3d_laser_link
-radius: 0.61
-
-footprint: [[0.5, 0.35], [0.5, -0.35], [-0.5, -0.35], [-0.5, 0.35]]
 
 polygons_dict:
   StopPolygon:

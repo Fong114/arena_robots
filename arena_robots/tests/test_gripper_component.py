@@ -65,7 +65,7 @@ class TestGripperComponentSpec:
         assert spec.caps["controller"] == "${mount}_controller"
         assert spec.caps["moveit"]["srdf"]["path"] == "components/gripper/robotiq_2f_85/srdf/robotiq_2f_85.srdf.xacro"
         assert spec.caps["positions"] == {"open": 0.0, "close": 0.8}
-        assert spec.caps["max_effort"] == 50.0
+        assert "max_effort" not in spec.caps
 
 
 def _jackal_gripper_resolved() -> tuple[object, object]:
@@ -120,7 +120,6 @@ class TestGripperChainsOntoArmTip:
         assert grippers["top_tool"].joint == f"top_tool_{KNUCKLE}"
         assert grippers["top_tool"].controller == "top_tool_controller"
         assert grippers["top_tool"].positions == {"open": 0.0, "close": 0.8}
-        assert grippers["top_tool"].max_effort == 50.0
 
 
 @pytest.mark.parametrize(
@@ -159,7 +158,7 @@ class TestRbkairosGripperMount:
         gripper = rc.gripper["gripper_mount"]
         assert gripper.joint == f"robot_gripper_{KNUCKLE}"
         assert gripper.controller == "gripper_controller"
-        assert (gripper.positions, gripper.max_effort) == ({"open": 0.0, "close": 0.8}, 50.0)
+        assert gripper.positions == {"open": 0.0, "close": 0.8}
 
 
 @pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")

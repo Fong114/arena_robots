@@ -5,4 +5,3 @@ gripper:
   positions:
     open: 0.044
     close: 0.0
-  max_effort: 16.0

@@ -1,9 +1,4 @@
 odom_frame: odom
-sensor_frame: lidar
-radius: 0.3
-is_holonomic: false
-
-footprint: [[0.28, 0.0], [0.2, 0.2], [0.0, 0.28], [-0.2, 0.2], [-0.28, 0.0], [-0.2, -0.2], [0.0, -0.28], [0.2, -0.2]]
 
 polygons_dict:
   StopPolygon:

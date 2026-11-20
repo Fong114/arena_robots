@@ -1,9 +1,4 @@
 odom_frame: odom
-sensor_frame: robot_front_laser_link
-radius: 0.45
-is_holonomic: true
-
-footprint: [[0.38, 0.24], [0.38, -0.24], [-0.38, -0.24], [-0.38, 0.24]]
 
 polygons_dict:
   StopPolygon:

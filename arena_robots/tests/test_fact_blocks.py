@@ -99,6 +99,30 @@ def test_power_profile_takes_the_urdf_mass(xacro):
     assert profile["rolling_resistance_crr"] == pytest.approx(0.035)
 
 
+def test_power_profile_takes_its_wheels_from_the_drive_controller(xacro):
+    view = _jackal()
+    profile = view.power_profile(view.effective_caps({}))
+    assert profile is not None
+    assert profile["wheel_radius_m"] == pytest.approx(0.098)
+    assert profile["num_wheels"] == 4
+
+
+def test_power_profile_of_a_mecanum_robot_counts_its_four_wheels(xacro):
+    view = RobotIdentifier("rbkairos").resolve_sync()
+    profile = view.power_profile(view.effective_caps({}))
+    assert profile is not None
+    assert profile["wheel_radius_m"] == pytest.approx(0.127)
+    assert profile["num_wheels"] == 4
+
+
+def test_power_profile_of_a_legged_robot_has_no_wheels(xacro):
+    view = RobotIdentifier("a1").resolve_sync()
+    profile = view.power_profile(view.effective_caps({}))
+    assert profile is not None
+    assert profile["wheel_radius_m"] == 0.0
+    assert profile["num_wheels"] == 0
+
+
 def test_power_profile_follows_a_power_override():
     view = _jackal()
     profile = view.power_profile(view.effective_caps({}, caps={"power.power_system.rolling_resistance_crr": 0.05}))
@@ -142,7 +166,7 @@ def test_hash_changes_with_a_fact_block_override():
 
 def test_provenance_of_an_override_path():
     assert _jackal_caps({"mobile.radius": 0.5}).provenance("mobile.radius") == "override"
-    assert _jackal_caps().provenance("mobile.radius") == "file"
+    assert _jackal_caps().provenance("mobile.radius") == "urdf"
 
 
 def test_provenance_of_a_component_path():

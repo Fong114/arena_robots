@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from arena_robots.actuators import clamp_gripper, clamp_lift, gripper_range, gripper_topic, lift_limits, lift_topic
+from arena_robots.actuators import clamp_gripper, clamp_lift, gripper_range, gripper_topic, lift_topic
 from arena_robots.caps import GripperSpec, LiftSpec
 from arena_robots.Robot import RobotIdentifier
 
@@ -27,7 +27,7 @@ class TestLift:
 
     def test_undeclared_limits_pass_the_height_through(self):
         spec = _lift({})
-        assert lift_limits(spec) is None
+        assert spec.limits is None
         assert clamp_lift(spec, 4.0) == 4.0
 
     @pytest.mark.parametrize("height", [float("nan"), float("inf")])
@@ -38,11 +38,11 @@ class TestLift:
     @pytest.mark.parametrize("limits", [[0.0], [1.0, 0.0], "x"])
     def test_malformed_limits_are_rejected(self, limits: object):
         with pytest.raises(ValueError, match="limits"):
-            lift_limits(_lift({"limits": limits}))
+            _lift({"limits": limits}).limits
 
     def test_tiago_torso_declares_its_joint_range(self):
         torso = RobotIdentifier("tiago").resolve_sync().effective_caps({}).lift["torso"]
-        assert lift_limits(torso) == (0.0, 0.35)
+        assert torso.limits == (0.0, 0.35)
 
     def test_topics_sit_under_the_robot_namespace(self):
         assert lift_topic("/env_0/tiago/", "torso") == "/env_0/tiago/lift/torso/command"

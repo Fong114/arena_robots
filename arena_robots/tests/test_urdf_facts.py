@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 from arena_robots import urdf_facts
-from arena_robots.urdf_facts import collision_outline, joint_limits, laser_block, total_mass, wheel_geometry
+from arena_robots.urdf_facts import collision_outline, drive_controller, drive_geometry, joint_limits, laser_block, total_mass
 
 PKG = Path(__file__).resolve().parents[2] / "arena_robots"
 ROBOTS_DIR = PKG / "robots"
@@ -148,16 +148,108 @@ def test_total_mass_sums_link_inertials() -> None:
     assert total_mass(_golden("boxer")) == pytest.approx(107.0, abs=1e-3)
 
 
-def test_jackal_wheel_geometry_equals_control_yaml() -> None:
-    control = yaml.safe_load((ROBOTS_DIR / "jackal" / "control.yaml").read_text())["jackal_velocity_controller"]["ros__parameters"]
-    facts = wheel_geometry(_golden("jackal"), "base_link", control["left_wheel_names"], control["right_wheel_names"])
-    assert facts is not None
-    assert facts["wheel_radius"] == pytest.approx(control["wheel_radius"]) == pytest.approx(0.098)
-    assert facts["wheel_separation"] == pytest.approx(control["wheel_separation"]) == pytest.approx(0.37559)
+def _drive(robot: str) -> tuple[str, dict]:
+    control = yaml.safe_load((ROBOTS_DIR / robot / "control.yaml").read_text())
+    drive = drive_controller(control)
+    assert drive is not None
+    return drive[1], drive[2]
 
 
-def test_wheel_geometry_of_unknown_joint_is_none() -> None:
-    assert wheel_geometry(_golden("jackal"), "base_link", ["missing_joint"], ["front_right_wheel_joint"]) is None
+def _geometry(robot: str) -> dict:
+    kind, params = _drive(robot)
+    return drive_geometry(_golden(robot), kind, params)
+
+
+def test_drive_controller_is_the_listed_wheel_controller() -> None:
+    control = yaml.safe_load((ROBOTS_DIR / "jackal" / "control.yaml").read_text())
+    name, kind, params = drive_controller(control)
+    assert (name, kind) == ("jackal_velocity_controller", "diff_drive_controller/DiffDriveController")
+    assert params["left_wheel_names"] == ["front_left_wheel_joint", "rear_left_wheel_joint"]
+
+
+@pytest.mark.parametrize("robot", ("a1", "go1"))
+def test_a_legged_robot_has_no_drive_controller(robot: str) -> None:
+    assert drive_controller(yaml.safe_load((ROBOTS_DIR / robot / "control.yaml").read_text())) is None
+
+
+DERIVED_KEYS = frozenset({"wheel_radius", "wheel_separation", "wheel_positions_x", "wheel_positions_y", "wheel_angles", "kinematics.wheels_radius", "kinematics.sum_of_robot_center_projection_on_X_Y_axis"})
+WHEELED = sorted(path.name.removesuffix("_default.urdf") for path in GOLDEN_DIR.glob("*_default.urdf") if path.name not in ("a1_default.urdf", "go1_default.urdf"))
+
+
+@pytest.mark.parametrize("robot", WHEELED)
+def test_a_shipped_control_file_declares_no_derived_geometry(robot: str) -> None:
+    _, params = _drive(robot)
+    assert DERIVED_KEYS.isdisjoint(params)
+
+
+@pytest.mark.parametrize("robot", WHEELED)
+def test_every_shipped_drive_controller_has_derivable_geometry(robot: str) -> None:
+    assert set(_geometry(robot)) <= DERIVED_KEYS
+
+
+def test_jackal_diff_drive_geometry_is_its_wheel_joints() -> None:
+    assert _geometry("jackal") == {"wheel_radius": 0.098, "wheel_separation": 0.37559}
+
+
+def test_turtlebot_wheel_radius_is_the_collision_radius() -> None:
+    assert _geometry("turtlebot")["wheel_radius"] == pytest.approx(0.03575)
+
+
+def test_rbkairos_mecanum_projection_is_half_wheelbase_plus_half_track() -> None:
+    assert _geometry("rbkairos") == {"kinematics.wheels_radius": 0.127, "kinematics.sum_of_robot_center_projection_on_X_Y_axis": 0.47428}
+
+
+def test_rbrobout_mecanum_projection() -> None:
+    assert _geometry("rbrobout")["kinematics.sum_of_robot_center_projection_on_X_Y_axis"] == pytest.approx(0.8445)
+
+
+def test_rbvogui_swerve_positions_are_the_steering_joints() -> None:
+    assert _geometry("rbvogui") == {"wheel_radius": 0.1165, "wheel_positions_x": [0.368, 0.368, -0.368, -0.368], "wheel_positions_y": [-0.235, 0.235, -0.235, 0.235]}
+
+
+def test_mpo700_swerve_positions_are_the_caster_pivots_not_the_offset_wheels() -> None:
+    geometry = _geometry("mpo700")
+    assert geometry["wheel_positions_x"] == [0.24, 0.24, -0.24, -0.24]
+    assert geometry["wheel_positions_y"] == [-0.18, 0.18, -0.18, 0.18]
+
+
+def test_rskomnidirectional_omni_geometry_is_the_wheel_joint_frames() -> None:
+    geometry = _geometry("rskomnidirectional")
+    assert geometry["wheel_radius"] == pytest.approx(0.0345)
+    assert geometry["wheel_positions_x"] == pytest.approx([0.0235875, 0.0235875, -0.0472125], abs=1e-6)
+    assert geometry["wheel_positions_y"] == pytest.approx([0.0408763, -0.0408765, 0.0], abs=1e-6)
+    assert geometry["wheel_angles"] == pytest.approx([5 * math.pi / 6, math.pi / 6, 3 * math.pi / 2], abs=1e-5)
+
+
+def test_a_controller_without_a_base_frame_measures_in_the_root_link() -> None:
+    kind, params = _drive("jackal")
+    assert drive_geometry(_golden("jackal"), kind, {key: value for key, value in params.items() if key != "base_frame_id"}) == _geometry("jackal")
+
+
+def test_a_base_frame_that_does_not_hold_the_wheels_raises() -> None:
+    kind, params = _drive("jackal")
+    with pytest.raises(ValueError, match="not below the base frame"):
+        drive_geometry(_golden("jackal"), kind, {**params, "base_frame_id": "front_left_wheel_link"})
+
+
+def test_a_missing_wheel_joint_raises() -> None:
+    kind, params = _drive("jackal")
+    with pytest.raises(ValueError, match="missing_joint"):
+        drive_geometry(_golden("jackal"), kind, {**params, "left_wheel_names": ["missing_joint"]})
+
+
+def test_wheels_of_different_radii_raise() -> None:
+    kind, params = _drive("jackal")
+    urdf = _golden("jackal").replace('radius="0.098"', 'radius="0.1"', 1)
+    with pytest.raises(ValueError, match="disagree on the wheel radius"):
+        drive_geometry(urdf, kind, params)
+
+
+def test_mecanum_wheels_that_disagree_on_the_projection_raise() -> None:
+    kind, params = _drive("rbkairos")
+    urdf = _golden("rbkairos").replace('xyz="-0.21528 -0.259 0.0"', 'xyz="-0.31528 -0.259 0.0"', 1)
+    with pytest.raises(ValueError, match="center projection"):
+        drive_geometry(urdf, kind, params)
 
 
 def test_jackal_outline_is_a_small_convex_polygon_around_the_origin() -> None:

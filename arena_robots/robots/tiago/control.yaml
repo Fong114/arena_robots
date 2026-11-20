@@ -25,9 +25,6 @@ tiago_velocity_controller:
     left_wheel_names: [ "wheel_left_joint" ]
     right_wheel_names: [ "wheel_right_joint" ]
 
-    wheel_separation: 0.4044
-    wheel_radius: 0.0985
-
     wheel_separation_multiplier: 1.0
 
     publish_rate: 50.0
