@@ -380,6 +380,7 @@ mast) stays inline in the robot's own xacro; it gets no mount or component entry
 | `urdf/<name>.urdf.xacro` | robot description; mesh refs use `package://arena_robots/robots/<name>/meshes/…` or a fixed upstream package (`package://jackal_description/…`) |
 | `meshes/` | STL/DAE/OBJ files, normally a git submodule under `github.com/arena-robots/<name>` (opt-in via `arena feature robots add <name>`) |
 | `launch/` | robot-specific launch files (e.g. nav2 overrides) |
+| `launch/bringup.launch.py` | per-robot sidecar (a legged robot's gait controller, `cmd_vel` to joint trajectories), included by `RobotManager` once per spawn inside the robot namespace in every simulator, gated only on the file existing, with launch arguments `base_frame` and `use_sim_time` |
 | `README.md` | free-form robot docs (upstream references, env vars, etc.) |
 
 ## Meshes
