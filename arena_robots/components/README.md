@@ -12,7 +12,7 @@ xacro:                    # how the wrapper invokes this component
   include: <path>         # robot-tree-relative, OR "$(find pkg)/..." / absolute (passed verbatim)
   macro: <macro name>     # must accept an <origin> block param (*origin)
   attach: {...}           # macro args; ${mount}/${parent}/${prefix}/${key:-default} templated
-  args: {...}             # declared overridable arg surface with defaults (documentation)
+  args: {...}             # declared overridable arg surface with defaults, an attach entry that is a bare ${arg} takes its default from here
 sensor:
   gz:                     # LIST of bridged outputs (one component may emit several)
     - name: "${name:-lidar}"
@@ -61,8 +61,7 @@ variants: [...]           # family component: variant names this one dir serves,
 - **Family components**: a dir whose `variants:` lists the variant names it serves resolves
   any of them through the one shared spec (`Catalog` falls back when no dedicated dir
   exists; an exact dir still wins). `${variant}` joins the render context per placement;
-  per-variant data files live beside the spec keyed by `${variant}` (e.g.
-  `arm/ur/joint_limits/${variant}.yaml`).
+  per-variant data files live beside the spec keyed by `${variant}`.
 - **Gripper components** chain onto an arm's exported `tip` frame (a gripper mount's
   `parent: "@<arm mount>:tip"`). The actuated joint carries command interfaces; mimic
   joints ride along state-only with `mimic: true` (the explicit jazzy ros2_control
@@ -75,7 +74,10 @@ variants: [...]           # family component: variant names this one dir serves,
   (`moveit_factory._gripper_srdf_extras`, context adds `arm` = the carrying arm's stem).
 - **Arm MoveIt blocks**: an arm component's `caps.moveit` carries `planning_group`, `srdf` and
   `joint_limits` files (xacro/yaml templated on `${prefix}${mount}`, re-keyed per placement by
-  `moveit_factory`) and `args` with `prefix`/`mount`/`parent`. `package` is only set when a vendor
+  `moveit_factory`, the file authors the acceleration only, the URDF `<limit>` supplies the rest) and `args` with `prefix`/`mount`/`parent`.
+  The arm's `tip_link`, `chain` and its `stow` and `ready` poses come from the SRDF fragment and the URDF, and
+  a ros2_control joint with `initial_value: stow` starts at the fragment's `stow` group state. `package` is only set when a vendor
   MoveIt config package supplies defaults (`arm/ur` names `ur_moveit_config`); `arm/fr3` has none and
   gets OMPL defaults, a KDL solver on its group and the arm controller mapping from the factory.
-  Franka Hand ships its fragment (`gripper/franka_hand/srdf`) the same way as the Robotiq one.
+  Franka Hand ships its fragment (`gripper/franka_hand/srdf`) the same way as the Robotiq one, and a
+  gripper's `caps.moveit.args` (`prefix`, `mount`) render it so its `open` and `close` group states give `positions`.

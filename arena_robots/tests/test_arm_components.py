@@ -14,8 +14,10 @@ from pathlib import Path
 import pytest
 import yaml
 from arena_rclpy_mixins.yaml_replace import YAMLReplacer
+from arena_robots.assembly import RequestPart
 from arena_robots.caps import ArmSpec
 from arena_robots.catalog import Catalog, ComponentSpec
+from arena_robots.Robot import RobotIdentifier
 
 COMPONENTS_ROOT = Path(__file__).resolve().parent.parent / "components"
 FAMILY = COMPONENTS_ROOT / "arm" / "ur"
@@ -54,11 +56,12 @@ class TestFamilyComponentSpec:
     def test_caps_moveit_paths_point_at_shared_family_files(self, spec: ComponentSpec) -> None:
         caps = spec.caps
         assert caps["base_link"] == "${prefix}${parent}"
-        assert caps["tip_link"] == "${prefix}${mount}_tool0"
+        assert "tip_link" not in caps
+        assert "chain" not in caps
         assert caps["moveit"]["planning_group"] == "${mount}_manipulator"
         assert caps["moveit"]["srdf"]["path"] == "components/arm/ur/srdf/ur.srdf.xacro"
-        assert caps["moveit"]["joint_limits"]["path"] == "components/arm/ur/joint_limits/${variant}.yaml"
-        assert set(caps["named_poses"]) == {"stow", "ready", "wave_up", "wave_l", "wave_r"}
+        assert caps["moveit"]["joint_limits"]["path"] == "components/arm/ur/joint_limits.yaml"
+        assert set(caps["named_poses"]) == {"wave_up", "wave_l", "wave_r"}
 
 
 class TestCatalogFamilyResolution:
@@ -73,7 +76,7 @@ class TestCatalogFamilyResolution:
     def test_every_variant_resolves_to_family(self, catalog: Catalog, variant: str) -> None:
         spec = catalog.get("arm", variant)
         assert variant in spec.variants
-        assert spec.caps["tip_link"] == "${prefix}${mount}_tool0"
+        assert "tip_link" not in spec.caps
 
     def test_resolution_is_cached(self, catalog: Catalog) -> None:
         assert catalog.get("arm", "ur5e") is catalog.get("arm", "ur5e")
@@ -104,8 +107,6 @@ class TestRenderedCapsIsArmSpecCompatible:
         caps = self._rendered_caps(variant)
         arm = ArmSpec(path=Path("test"), raw=caps, name="arm0")
         assert arm.base_link == "robot_chassis_link"
-        assert arm.tip_link == "robot_arm0_tool0"
-        assert arm.chain == [f"robot_arm0_{j}" for j in ARM_JOINTS]
         assert arm.controller == "arm0_controller"
         assert arm.planning_group == "arm0_manipulator"
         assert arm.workspace is not None
@@ -113,9 +114,9 @@ class TestRenderedCapsIsArmSpecCompatible:
     def test_named_poses_keys_are_mount_substituted(self) -> None:
         caps = self._rendered_caps("ur5e")
         arm = ArmSpec(path=Path("test"), raw=caps, name="arm0")
-        stow_joints = arm.named_poses["stow"]
-        assert "robot_arm0_shoulder_pan_joint" in stow_joints
-        assert "${prefix}${mount}_shoulder_pan_joint" not in stow_joints
+        wave_joints = arm.named_poses["wave_up"]
+        assert "robot_arm0_shoulder_pan_joint" in wave_joints
+        assert "${prefix}${mount}_shoulder_pan_joint" not in wave_joints
 
 
 class TestSrdfFragment:
@@ -126,43 +127,62 @@ class TestSrdfFragment:
         root = ET.parse(FAMILY / "srdf" / "ur.srdf.xacro").getroot()
         group = root.find("group")
         assert group.get("name") == "$(arg mount)_manipulator"
-        assert len(root.findall("group_state")) == 2
+        assert [state.get("name") for state in root.findall("group_state")] == ["stow", "ready"]
         # 8 intra-arm + 2 mount-adjacency (chassis_link vs arm base_link/base_link_inertia)
         assert len(root.findall("disable_collisions")) == 10
 
+    @pytest.mark.parametrize("pose", ["stow", "ready"])
+    def test_group_states_are_the_named_poses_of_the_arm(self, pose: str) -> None:
+        rc = RobotIdentifier("jackal").resolve_sync().effective_caps({"arm": [RequestPart(variant="ur5e", mount="top")]})
+        joints = [f"top_{joint}" for joint in ARM_JOINTS]
+        assert [rc.arm["top"].named_poses[pose][joint] for joint in joints] == POSES[pose]
+
 
 class TestJointLimits:
-    """Per-variant MoveIt planning joint_limits under `arm/ur/joint_limits/<variant>.yaml`:
-    velocity from ur_description (matches the URDF/controller), uniform `max_acceleration`,
-    templated `${prefix}${mount}_*` keys."""
+    """The family `arm/ur/joint_limits.yaml` authors the acceleration only, `max_velocity`,
+    the position range and `max_effort` of each variant are its ur_description URDF limits."""
+
+    def _file(self) -> dict:
+        return yaml.safe_load((FAMILY / "joint_limits.yaml").read_text())["joint_limits"]
 
     def _limits(self, variant: str) -> dict:
-        return yaml.safe_load((FAMILY / "joint_limits" / f"{variant}.yaml").read_text())["joint_limits"]
+        rc = RobotIdentifier("jackal").resolve_sync().effective_caps({"arm": [RequestPart(variant=variant, mount="top")]})
+        return {joint.removeprefix("top_"): entry for joint, entry in rc.arm["top"].joint_limits.items()}
 
-    @pytest.mark.parametrize("variant", UR_VARIANTS)
-    def test_each_variant_has_six_templated_joints(self, variant: str) -> None:
-        limits = self._limits(variant)
+    def test_the_file_is_one_acceleration_entry_per_templated_joint(self) -> None:
+        limits = self._file()
         assert set(limits) == {f"${{prefix}}${{mount}}_{j}" for j in ARM_JOINTS}
         for entry in limits.values():
+            assert entry == {"has_acceleration_limits": True, "max_acceleration": 15.0}
+
+    @pytest.mark.parametrize("variant", UR_VARIANTS)
+    def test_each_variant_has_six_joints_with_urdf_limits_and_the_family_acceleration(self, variant: str) -> None:
+        limits = self._limits(variant)
+        assert set(limits) == set(ARM_JOINTS)
+        for entry in limits.values():
             assert entry["has_velocity_limits"] is True
+            assert entry["has_effort_limits"] is True
             assert entry["max_acceleration"] == 15.0
 
     def test_ur5e_moves_every_joint_at_its_vendor_180_degrees_per_second(self) -> None:
         limits = self._limits("ur5e")
         for joint in ARM_JOINTS:
-            assert limits[f"${{prefix}}${{mount}}_{joint}"]["max_velocity"] == pytest.approx(math.pi)
+            assert limits[joint]["max_velocity"] == pytest.approx(math.pi)
 
     def test_ur10e_differs_from_ur5e(self) -> None:
-        """ur10e's shipped limits once byte-copied ur5e's, the family derives correct
-        per-variant values: ur10e shoulders are slower (120deg/s)."""
+        """ur10e shoulders are slower (120deg/s)."""
         ur5e, ur10e = self._limits("ur5e"), self._limits("ur10e")
         assert ur5e != ur10e
-        assert ur10e["${prefix}${mount}_shoulder_pan_joint"]["max_velocity"] == pytest.approx(math.radians(120))
-        assert ur10e["${prefix}${mount}_wrist_1_joint"]["max_velocity"] == pytest.approx(math.radians(180))
+        assert ur10e["shoulder_pan_joint"]["max_velocity"] == pytest.approx(math.radians(120))
+        assert ur10e["wrist_1_joint"]["max_velocity"] == pytest.approx(math.radians(180))
 
     def test_cb_ur5_follows_ur_description_not_ur5e(self) -> None:
         """CB-series ur5 takes ur_description's 180deg/s wrists (the URDF/controller value)."""
-        assert self._limits("ur5")["${prefix}${mount}_wrist_1_joint"]["max_velocity"] == pytest.approx(math.pi)
+        assert self._limits("ur5")["wrist_1_joint"]["max_velocity"] == pytest.approx(math.pi)
+
+    def test_a_continuous_wrist_has_no_position_limits(self) -> None:
+        assert self._limits("ur3")["wrist_3_joint"]["has_position_limits"] is False
+        assert self._limits("ur5e")["wrist_3_joint"]["has_position_limits"] is True
 
 
 POSES = {
@@ -207,7 +227,7 @@ class TestEffectiveCapsHonorsMountFrame:
     """A mount's ``frame`` (identity stem) drives caps content via ``catalog._frame_stem``,
     not the mount's addressing ``name``; the instance dict key stays the addressing name."""
 
-    def test_tip_link_and_chain_use_frame_not_name(self) -> None:
+    def test_tip_link_and_poses_use_frame_not_name(self) -> None:
         from arena_robots.assembly import Mount, Placement, ResolvedAssembly
         from arena_robots.caps import RobotCaps
 
@@ -220,7 +240,7 @@ class TestEffectiveCapsHonorsMountFrame:
         assert set(arms) == {"arm"}
         arm = arms["arm"].raw
         assert arm["tip_link"] == "robot_arm0_tool0"
-        assert arm["chain"][0] == "robot_arm0_shoulder_pan_joint"
+        assert arm["named_poses"]["stow"]["joints"]["robot_arm0_shoulder_pan_joint"] == 0.0
 
 
 class TestEffectiveCapsHonorsChassisPrefix:
@@ -239,4 +259,22 @@ class TestEffectiveCapsHonorsChassisPrefix:
         arm = rc.arm["arm"].raw
         assert arm["base_link"] == "chassis_link"
         assert arm["tip_link"] == "arm_tool0"
-        assert arm["chain"][0] == "arm_shoulder_pan_joint"
+        assert arm["named_poses"]["stow"]["joints"]["arm_shoulder_pan_joint"] == 0.0
+
+
+class TestChainFromTheUrdf:
+    @pytest.mark.parametrize("variant", UR_VARIANTS)
+    def test_the_chain_is_the_six_arm_joints_between_the_srdf_links(self, variant: str) -> None:
+        rc = RobotIdentifier("jackal").resolve_sync().effective_caps({"arm": [RequestPart(variant=variant, mount="top")]})
+        arm = rc.arm["top"]
+        assert arm.chain == [f"top_{joint}" for joint in ARM_JOINTS]
+        assert arm.tip_link == "top_tool0"
+        assert arm.base_link == "chassis_link"
+
+    def test_the_urdf_and_srdf_leaves_have_derived_provenance(self) -> None:
+        rc = RobotIdentifier("jackal").resolve_sync().effective_caps({"arm": [RequestPart(variant="ur5e", mount="top")]})
+        assert rc.provenance("arm.top.chain") == "derived"
+        assert rc.provenance("arm.top.tip_link") == "derived"
+        assert rc.provenance("arm.top.named_poses.stow.joints.top_elbow_joint") == "derived"
+        assert rc.provenance("arm.top.named_poses.wave_up.joints.top_elbow_joint") == "component"
+        assert rc.provenance("arm.top.base_link") == "component"

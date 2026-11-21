@@ -84,6 +84,23 @@ def test_body_mass_override_raises():
         caps.validate_overrides()
 
 
+def test_body_height_override_raises():
+    caps = _jackal_caps({"body.height": 2.0})
+    with pytest.raises(ValueError, match="not overridable"):
+        caps.validate_overrides()
+
+
+def test_jackal_body_height_is_the_urdf_extent(xacro):
+    caps = _jackal_caps()
+    assert caps.body.height == pytest.approx(urdf_facts.body_height(caps.rendered_urdf(), "base_link"))
+    assert caps.body.height > 0.3
+
+
+def test_a_placed_arm_raises_the_body_height(xacro, require_installed):
+    require_installed("arm/ur")
+    assert _jackal_with_ur5e().body.height > _jackal_caps().body.height
+
+
 def test_body_frame_override_applies():
     caps = _jackal_caps({"body.base_frame": "chassis"})
     caps.validate_overrides()

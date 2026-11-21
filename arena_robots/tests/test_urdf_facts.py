@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 from arena_robots import urdf_facts
-from arena_robots.urdf_facts import collision_outline, drive_controller, drive_geometry, joint_limits, laser_block, total_mass
+from arena_robots.urdf_facts import body_height, collision_outline, drive_controller, drive_geometry, joint_limits, laser_block, total_mass, wheelbase
 
 PKG = Path(__file__).resolve().parents[2] / "arena_robots"
 ROBOTS_DIR = PKG / "robots"
@@ -329,3 +329,50 @@ def test_reduction_encloses_every_hull_vertex():
     assert len(polygon) == 8
     for point in hull:
         assert all(urdf_facts._cross(polygon[i - 1], polygon[i], point) >= -1e-9 for i in range(len(polygon)))
+
+
+_HEIGHT_URDF = """<robot name="r">
+  <link name="base_link"><collision><origin xyz="0 0 0.15"/><geometry><box size="0.4 0.3 0.2"/></geometry></collision></link>
+  <link name="wheel"><collision><origin rpy="1.5708 0 0"/><geometry><cylinder radius="0.05" length="0.04"/></geometry></collision></link>
+  <link name="caster"><collision><geometry><sphere radius="0.04"/></geometry></collision></link>
+  <link name="mast"><collision><origin xyz="0 0 0.3"/><geometry><box size="0.1 0.1 0.6"/></geometry></collision></link>
+  <joint name="wheel_joint" type="continuous"><parent link="base_link"/><child link="wheel"/><axis xyz="0 1 0"/></joint>
+  <joint name="caster_joint" type="fixed"><parent link="base_link"/><child link="caster"/><origin xyz="0.1 0 -0.06"/></joint>
+  <joint name="mast_joint" type="revolute"><parent link="base_link"/><child link="mast"/><origin xyz="0 0 0.25"/><axis xyz="0 0 1"/><limit lower="-1" upper="1" effort="1" velocity="1"/></joint>
+</robot>"""
+
+
+def test_body_height_spans_the_ground_contact_to_the_highest_collision_of_every_link() -> None:
+    assert body_height(_HEIGHT_URDF, "base_link") == pytest.approx(0.95)
+
+
+def test_body_height_reaches_a_sensor_frame_above_every_collision() -> None:
+    urdf = _HEIGHT_URDF.replace(
+        "</robot>",
+        '<link name="lidar_link"/><joint name="lidar_joint" type="fixed"><parent link="base_link"/><child link="lidar_link"/><origin xyz="0 0 1.2"/></joint><gazebo reference="lidar_link"><sensor name="lidar" type="gpu_lidar"/></gazebo></robot>',
+    )
+    assert body_height(urdf, "base_link") == pytest.approx(1.3)
+
+
+def test_body_height_counts_a_sphere_by_its_radius_not_its_center() -> None:
+    urdf = _HEIGHT_URDF.replace('<link name="mast">', '<link name="mast_unused">').replace("mast_joint", "mast_unused_joint")
+    assert body_height(urdf, "base_link") == pytest.approx(0.25 - (-0.1))
+
+
+def test_body_height_of_a_robot_without_collision_geometry_is_none() -> None:
+    assert body_height('<robot name="r"><link name="base_link"/></robot>', "base_link") is None
+    assert body_height(_HEIGHT_URDF, "missing") is None
+
+
+def test_jackal_body_height_reaches_its_lidar_plane() -> None:
+    height = body_height(_golden("jackal"), "base_link")
+    assert height == pytest.approx(0.0635 + 0.284, abs=1e-3)
+
+
+def test_wheelbase_is_the_front_to_rear_distance_of_the_wheel_joints() -> None:
+    assert wheelbase(_golden("jackal"), *_drive("jackal")) == pytest.approx(0.262)
+    assert wheelbase(_golden("rbvogui"), *_drive("rbvogui")) == pytest.approx(0.736)
+
+
+def test_a_two_wheel_base_has_no_wheelbase() -> None:
+    assert wheelbase(_golden("tiago"), *_drive("tiago")) is None

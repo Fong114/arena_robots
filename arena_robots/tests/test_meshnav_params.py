@@ -14,7 +14,7 @@ def _params(robot: str, mesh_file: str = "/tmp/arena_meshnav/abc.ply") -> tuple[
         odom_frame=f"env_0/{robot}/odom",
         base_frame=f"env_0/{robot}/base",
         mesh_file=mesh_file,
-        sensors=view.model_params.sensors,
+        sensors=view.effective_sensors({}),
     )
 
 
@@ -52,7 +52,7 @@ def _obstacle_params(bringup: MeshNavBringup, sensors: list[SensorSpec] | None =
         odom_frame=f"env_0/{name}/odom",
         base_frame=f"env_0/{name}/base",
         mesh_file="/tmp/arena_meshnav/abc.ply",
-        sensors=bringup.robot.model_params.sensors if sensors is None else sensors,
+        sensors=bringup.robot.effective_sensors({}) if sensors is None else sensors,
     )
 
 
@@ -68,7 +68,7 @@ def test_the_obstacle_layer_reads_the_filtered_cloud_by_default():
 
 def test_the_obstacle_layer_is_off_without_range_sensors():
     bringup = _bringup("jackal")
-    imu = [spec for spec in bringup.robot.model_params.sensors if spec.type == SensorType.IMU]
+    imu = [spec for spec in bringup.robot.effective_sensors({}) if spec.type == SensorType.IMU]
     params = bringup.parameters(odom_frame="env_0/jackal/odom", base_frame="env_0/jackal/base", mesh_file="/tmp/arena_meshnav/abc.ply", sensors=imu)
     assert imu
     assert not bringup.sees_obstacles(imu)
@@ -78,7 +78,7 @@ def test_the_obstacle_layer_is_off_without_range_sensors():
 
 def test_the_obstacle_layer_is_off_when_the_robot_turns_it_off():
     bringup = _bringup("jackal", {"obstacles": False})
-    params = bringup.parameters(odom_frame="env_0/jackal/odom", base_frame="env_0/jackal/base", mesh_file="/tmp/arena_meshnav/abc.ply", sensors=bringup.robot.model_params.sensors)
+    params = bringup.parameters(odom_frame="env_0/jackal/odom", base_frame="env_0/jackal/base", mesh_file="/tmp/arena_meshnav/abc.ply", sensors=bringup.robot.effective_sensors({}))
     assert "obstacle" not in params["mesh_map"]
 
 
@@ -86,7 +86,7 @@ def test_the_obstacle_node_reads_one_namespaced_stream_per_range_sensor_preferri
     params = _obstacle_params(_bringup("jackal"))
     assert params["pointcloud_topics"] == ["/arena/env_0/arena_env_node/jackal/lidar/points"]
     assert "laserscan_topics" not in params
-    scan_only = [spec for spec in _bringup("jackal").robot.model_params.sensors if spec.type == SensorType.LASERSCAN]
+    scan_only = [spec for spec in _bringup("jackal").robot.effective_sensors({}) if spec.type == SensorType.LASERSCAN]
     params = _obstacle_params(_bringup("jackal"), scan_only)
     assert params["laserscan_topics"] == ["/arena/env_0/arena_env_node/jackal/lidar"]
     assert "pointcloud_topics" not in params
@@ -115,7 +115,7 @@ def test_meshnav_settings_override_the_obstacle_node_and_layer():
     assert params["max_obstacle_height"] == pytest.approx(1.0)
     assert params["obstacle_range"] == pytest.approx(4.0)
     assert params["obstacle_decay"] == pytest.approx(0.5)
-    layer = bringup.parameters(odom_frame="o", base_frame="b", mesh_file="/tmp/arena_meshnav/abc.ply", sensors=bringup.robot.model_params.sensors)
+    layer = bringup.parameters(odom_frame="o", base_frame="b", mesh_file="/tmp/arena_meshnav/abc.ply", sensors=bringup.robot.effective_sensors({}))
     assert layer["mesh_map"]["obstacle"]["robot_height"] > 1.0
 
 
@@ -129,7 +129,7 @@ def test_mbf_replans_at_the_planner_frequency():
 def test_the_launch_runs_the_obstacle_node_only_when_the_layer_is_on():
     bringup = _bringup("jackal")
     kwargs = {"mesh_file": "/tmp/arena_meshnav/abc.ply", "odom_frame": "env_0/jackal/odom", "base_frame": "env_0/jackal/base"}
-    with_sensors = bringup._launch_actions(sensors=bringup.robot.model_params.sensors, **kwargs)
+    with_sensors = bringup._launch_actions(sensors=bringup.robot.effective_sensors({}), **kwargs)
     without = bringup._launch_actions(sensors=[], **kwargs)
     assert "meshnav_obstacles" in [action.node_executable for action in with_sensors]
     assert "meshnav_obstacles" not in [action.node_executable for action in without]
@@ -161,3 +161,20 @@ def test_goals_go_to_the_dijkstra_planner_unless_the_robot_picks_cvp():
     assert set(params["planners"]) == {"dijkstra", "cvp"}
     view = RobotIdentifier("jackal").resolve_sync()
     assert MeshNavBringup(view, "/arena/env_0/arena_env_node/jackal", request=InstanceRequest(caps={"mobile.meshnav.planner": "cvp"})).planner == "cvp"
+
+
+def test_the_obstacle_height_clears_the_body_height_of_the_robot():
+    pytest.importorskip("xacro")
+    for robot in ("jackal", "go1"):
+        bringup = _bringup(robot)
+        assert bringup.caps.body.height is not None
+        assert bringup.settings["robot_height"] == pytest.approx(bringup.caps.body.height + 0.1)
+    assert _bringup("go1").settings["robot_height"] != pytest.approx(_bringup("jackal").settings["robot_height"])
+
+
+def test_the_obstacle_layer_follows_the_effective_sensors_of_the_instance():
+    pytest.importorskip("xacro")
+    bringup = _bringup("jackal")
+    assert bringup.settings["obstacles"] is True
+    assert bringup.sees_obstacles(bringup.robot.effective_sensors({}))
+    assert not bringup.sees_obstacles([spec for spec in bringup.robot.effective_sensors({}) if spec.type == SensorType.IMU])

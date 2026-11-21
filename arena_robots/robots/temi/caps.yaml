@@ -24,17 +24,9 @@ mobile:
     gain: {linear: 1.0, lateral: 1.0, angular: 1.0}
     lag: 0.0
     traction: 4.9
-    pivot: 0.0
     timeout: 0.25
 
   actions:
-    continuous:
-      linear:
-        min: -1.0
-        max: 1.0
-      angular:
-        min: -1.5
-        max: 1.5
     discrete:
       - angular: 0.0
         linear: 0.3
@@ -59,8 +51,6 @@ mobile:
         name: stop
 
 power:
-  robot_model: "temi"
-
   power_system:
     system_voltage_v: 24.0
     global_drivetrain_efficiency: 0.85

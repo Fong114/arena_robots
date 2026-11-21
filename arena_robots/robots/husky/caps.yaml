@@ -22,7 +22,7 @@ mobile:
     gain: {linear: 1.0, lateral: 1.0, angular: 1.23}
     lag: 0.0
     traction: 9.81
-    pivot: -0.256
+    pivot: rear
     timeout: 0.25
 
   actions:
@@ -56,8 +56,6 @@ mobile:
   nav2: {}
 
 power:
-  robot_model: "husky"
-
   power_system:
     system_voltage_v: 24.0
     global_drivetrain_efficiency: 0.85

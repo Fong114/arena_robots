@@ -62,12 +62,12 @@ control:
 caps:
   joint: "${prefix}${mount}_robotiq_85_left_knuckle_joint"
   controller: "${mount}_controller"
-  positions:
-    open: 0.0
-    close: 0.8
   moveit:
     srdf:
       package: arena_robots
       path: components/gripper/robotiq_2f_85/srdf/robotiq_2f_85.srdf.xacro
+    args:
+      prefix: "${prefix}"
+      mount: "${mount}"
 power:
   static_power_w: 3.0

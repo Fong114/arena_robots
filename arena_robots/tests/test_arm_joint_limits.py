@@ -70,7 +70,7 @@ class TestJointPaths:
         item = found["arm.top.joint_limits.top_elbow_joint.max_velocity"]
         assert item.part == "top"
         assert item.relative == "joint_limits.top_elbow_joint.max_velocity"
-        assert item.provenance == "component"
+        assert item.provenance == "urdf"
         assert item.overridable
 
     def test_an_overridden_joint_key_has_the_override_provenance(self):

@@ -119,7 +119,7 @@ bracket form of the lidar part.
 
 `arm.<mount>.joint_limits.<joint>.<key>` are the arm's MoveIt joint limits (`max_velocity`,
 `max_acceleration`, `max_effort`, `min_position`, `max_position` and their `has_*`
-flags), keyed by rendered joint name from the component's `joint_limits/` file, with
+flags), keyed by rendered joint name from the component's `joint_limits.yaml` file, with
 the URDF `<limit>` of each listed joint (`max_velocity`, `min_position`, `max_position`,
 `max_effort`) filling what the file does not author, in
 brackets for a placed part: `top=arm/ur5e[joint_limits.*.max_velocity=*0.5]`. An override
@@ -169,7 +169,7 @@ from a `velocity_limits` override) is clamped and warns.
 Not every override changes every simulator. `mobile.limits` reaches flatsim and
 the drive controllers of Gazebo, MuJoCo and Isaac that set a limit flag, while the
 `mobile.planar` dynamics (`gain`, `lag`, `traction`, `pivot`, `timeout`) reach
-flatsim only, everything else is planner- or adapter-facing and reaches every
+flatsim only (an override of `pivot` is a number in metres), everything else is planner- or adapter-facing and reaches every
 simulator. An override the env's simulator does not honor logs a warning when the
 robot spawns, and `arena robot paths` marks such paths `only in <sims>`.
 `robots_check` reports range sanity (a min above its max, a non-positive radius or

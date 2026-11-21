@@ -1,48 +1,6 @@
 robot_model: rbtheron
 base_frame: robot_base_footprint
 z_offset: 0.0
-sensors:
-  - name: lidar
-    type: laserscan
-    topic: ${namespace}/scan
-    sensor: front_laser
-  - name: lidar_points
-    type: pointcloud
-    topic: ${namespace}/scan/points
-    sensor: front_laser
-  - name: lidar_rear
-    type: laserscan
-    topic: ${namespace}/scan/rear
-    sensor: rear_laser
-  - name: lidar_rear_points
-    type: pointcloud
-    topic: ${namespace}/scan/rear/points
-    sensor: rear_laser
-  - name: imu
-    type: imu
-    topic: ${namespace}/imu/data
-    sensor: imu_sensor
-  - name: front_camera_image
-    type: image
-    topic: ${namespace}/front_camera/image
-    sensor: front_camera_color
-  - name: front_camera_info
-    type: camera_info
-    topic: ${namespace}/front_camera/camera_info
-    sensor: front_camera_color
-  - name: rear_camera_image
-    type: image
-    topic: ${namespace}/rear_camera/image
-    sensor: rear_camera_color
-  - name: rear_camera_info
-    type: camera_info
-    topic: ${namespace}/rear_camera/camera_info
-    sensor: rear_camera_color
 control:
   mode: ros2_control
   config: package://arena_robots/robots/rbtheron/control.yaml
-  controllers:
-    - joint_state_broadcaster
-    - rbtheron_velocity_controller
-  cmd_vel_topic: rbtheron_velocity_controller/cmd_vel
-  odom_topic: rbtheron_velocity_controller/odom

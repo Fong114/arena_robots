@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import collections
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 import yaml
-from arena_robots.caps import MobileSpec
+from arena_robots.Robot import RobotIdentifier
 from arena_robots.sensors import SENSOR_TYPES
 
 ROBOTS_DIR = Path(__file__).resolve().parents[2] / "arena_robots" / "robots"
@@ -20,9 +21,9 @@ def _model_params_files() -> list[Path]:
 
 
 @pytest.mark.parametrize("yaml_path", sorted(ROBOTS_DIR.glob("*/caps.yaml")), ids=lambda p: p.parent.name)
-def test_every_mobile_cap_carries_a_planar_block(yaml_path: Path) -> None:
-    with open(yaml_path) as f:
-        planar = MobileSpec(yaml_path, yaml.safe_load(f)["mobile"]).planar
+def test_every_mobile_cap_carries_a_planar_block(yaml_path: Path, require_installed: Callable[[str], None]) -> None:
+    require_installed(yaml_path.parent.name)
+    planar = RobotIdentifier(yaml_path.parent.name).resolve_sync().effective_caps({}).mobile.planar
     assert planar is not None, f"{yaml_path}: no planar block"
     assert set(planar.velocity) == {"linear", "lateral", "angular"}, f"{yaml_path}: planar.velocity must cover every axis"
 
@@ -32,13 +33,11 @@ def test_no_robot_named_auto() -> None:
     assert "auto" not in names, "'auto' is a reserved token and must not be used as a robot directory name"
 
 
-@pytest.mark.parametrize("yaml_path", _model_params_files())
-def test_sensor_types_are_canonical(yaml_path: Path) -> None:
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-    for entry in data.get("sensors", []):
-        sensor_type = entry.get("type", "")
-        assert sensor_type in SENSOR_TYPES, f"{yaml_path}: sensor type {sensor_type!r} is not in SENSOR_TYPES"
+@pytest.mark.parametrize("yaml_path", _model_params_files(), ids=lambda p: p.parent.name)
+def test_sensor_types_are_canonical(yaml_path: Path, require_installed: Callable[[str], None]) -> None:
+    require_installed(yaml_path.parent.name)
+    for sensor in RobotIdentifier(yaml_path.parent.name).resolve_sync().effective_sensors({}):
+        assert sensor.type in SENSOR_TYPES, f"{yaml_path.parent.name}: sensor type {sensor.type!r} is not in SENSOR_TYPES"
 
 
 def test_priority_uniqueness_informational(capsys: pytest.CaptureFixture[str]) -> None:
@@ -50,7 +49,7 @@ def test_priority_uniqueness_informational(capsys: pytest.CaptureFixture[str]) -
             data = yaml.safe_load(f)
         robot_name = yaml_path.parent.name
         is_holonomic = bool(data.get("is_holonomic", False))
-        sensor_types: frozenset[str] = frozenset(str(s.get("type", "")) for s in data.get("sensors", []))
+        sensor_types: frozenset[str] = frozenset(str(s.type) for s in RobotIdentifier(robot_name).resolve_sync().effective_sensors({}))
         priority = int(data.get("priority", 0))
         sig: Sig = (is_holonomic, sensor_types)
         groups[sig].append((robot_name, priority))

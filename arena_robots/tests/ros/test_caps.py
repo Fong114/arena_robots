@@ -159,6 +159,27 @@ class TestRobotCaps:
         with pytest.raises(ValueError, match="must be a mapping"):
             rc._load_cap_file("mobile")
 
+    def test_cap_section_returns_the_section_with_the_overrides_applied(self, tmp_path: Path):
+        from arena_robots.caps import RobotCaps
+
+        (tmp_path / "caps.yaml").write_text(yaml.dump({"mobile": {"odom_frame": "odom", "nav2": {"a": 1}}}))
+        rc = RobotCaps(robot_dir=tmp_path, overrides={"mobile.odom_frame": "world"})
+        assert rc.cap_section("mobile") == {"odom_frame": "world", "nav2": {"a": 1}}
+
+    def test_cap_section_is_a_copy(self, tmp_path: Path):
+        from arena_robots.caps import RobotCaps
+
+        (tmp_path / "caps.yaml").write_text(yaml.dump({"mobile": {"odom_frame": "odom"}}))
+        rc = RobotCaps(robot_dir=tmp_path)
+        rc.cap_section("mobile")["odom_frame"] = "changed"
+        assert rc.cap_section("mobile") == {"odom_frame": "odom"}
+
+    def test_cap_section_of_an_undeclared_cap_raises(self, tmp_path: Path):
+        from arena_robots.caps import RobotCaps
+
+        with pytest.raises(FileNotFoundError, match="not declared"):
+            RobotCaps(robot_dir=tmp_path).cap_section("arm")
+
 
 class TestInstanceSpecs:
     def test_arm_instances(self, tmp_path: Path):
@@ -350,77 +371,6 @@ class TestRobotCapsAllocationDerived:
 
 
 class TestArmSpecSRDF:
-    def _make_srdf_xml(self, group_name: str, base: str, tip: str, joints: list[str]) -> str:
-        joints_xml = "".join(f'<joint name="{j}"/>' for j in joints)
-        return f"""<robot><group name="{group_name}"><chain base_link="{base}" tip_link="{tip}"/>{joints_xml}</group></robot>"""
-
-    def test_parse_srdf_group_direct_xml(self, tmp_path: Path):
-        from arena_robots.caps import _parse_srdf_group, _resolve_find_ref
-
-        srdf_path = tmp_path / "robot.srdf"
-        srdf_path.write_text(self._make_srdf_xml("arm", "base", "tip", ["j1", "j2"]))
-        result = _parse_srdf_group(str(srdf_path), "arm")
-        assert result["base_link"] == "base"
-        assert result["tip_link"] == "tip"
-        assert result["chain"] == ["j1", "j2"]
-
-    def test_parse_srdf_group_missing_group_raises(self, tmp_path: Path):
-        from arena_robots.caps import _parse_srdf_group
-
-        srdf_path = tmp_path / "robot.srdf"
-        srdf_path.write_text('<robot><group name="other_arm"></group></robot>')
-        with pytest.raises(ValueError, match="no <group"):
-            _parse_srdf_group(str(srdf_path), "arm")
-
-    def test_parse_srdf_group_no_chain_no_joints(self, tmp_path: Path):
-        from arena_robots.caps import _parse_srdf_group
-
-        srdf_path = tmp_path / "robot.srdf"
-        srdf_path.write_text('<robot><group name="arm"></group></robot>')
-        result = _parse_srdf_group(str(srdf_path), "arm")
-        assert "base_link" not in result
-        assert "tip_link" not in result
-        assert "chain" not in result
-
-    def test_parse_srdf_xacro_variant(self, tmp_path: Path):
-        from arena_robots.caps import _parse_srdf_group
-
-        xacro_path = tmp_path / "robot.srdf.xacro"
-        xacro_path.write_text(self._make_srdf_xml("my_arm", "bl", "tl", []))
-        xml_output = self._make_srdf_xml("my_arm", "bl", "tl", [])
-        with patch("subprocess.check_output", return_value=xml_output):
-            result = _parse_srdf_group(str(xacro_path), "my_arm")
-        assert result["base_link"] == "bl"
-        assert result["tip_link"] == "tl"
-
-    def test_arm_spec_uses_srdf_fallback(self, tmp_path: Path):
-        from arena_robots.caps import ArmSpec
-
-        srdf_path = tmp_path / "robot.srdf"
-        srdf_path.write_text(self._make_srdf_xml("arm", "b", "t", ["jA"]))
-        arm = ArmSpec(
-            path=tmp_path / "arm.yaml",
-            raw={"srdf": str(srdf_path), "controller": "ctrl"},
-            name="arm",
-        )
-        assert arm.base_link == "b"
-        assert arm.tip_link == "t"
-        assert arm.chain == ["jA"]
-
-    def test_arm_explicit_wins_over_srdf(self, tmp_path: Path):
-        from arena_robots.caps import ArmSpec
-
-        srdf_path = tmp_path / "robot.srdf"
-        srdf_path.write_text(self._make_srdf_xml("arm", "srdf_base", "srdf_tip", []))
-        arm = ArmSpec(
-            path=tmp_path / "arm.yaml",
-            raw={"srdf": str(srdf_path), "base_link": "explicit_base", "tip_link": "explicit_tip", "chain": ["explicit_j"], "controller": "ctrl"},
-            name="arm",
-        )
-        assert arm.base_link == "explicit_base"
-        assert arm.tip_link == "explicit_tip"
-        assert arm.chain == ["explicit_j"]
-
     def test_arm_missing_controller_always_raises(self, tmp_path: Path):
         from arena_robots.caps import ArmSpec
 

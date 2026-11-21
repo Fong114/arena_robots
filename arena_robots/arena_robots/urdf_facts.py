@@ -1,4 +1,4 @@
-"""Facts read from a rendered URDF: joint limits, lidar block, mass, drive geometry and the ground outline of the base."""
+"""Facts read from a rendered URDF: joint limits, lidar block, mass, drive geometry, wheelbase and the ground outline and height of the base."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ MECANUM_DRIVE = "mecanum_drive_controller/MecanumDriveController"
 SWERVE_DRIVE = "arena_swerve_controller/SwerveController"
 OMNI_DRIVE = "arena_omni_drive_controller/OmniDriveController"
 DRIVE_CONTROLLER_TYPES = frozenset({DIFF_DRIVE, MECANUM_DRIVE, SWERVE_DRIVE, OMNI_DRIVE})
+DRIVE_TOPICS = {DIFF_DRIVE: ("cmd_vel", "odom"), MECANUM_DRIVE: ("reference", "odometry"), SWERVE_DRIVE: ("cmd_vel", "odometry"), OMNI_DRIVE: ("cmd_vel", "odometry")}
 DriveGeometry = dict[str, float | list[float]]
 _MECANUM_JOINTS = ("front_left_wheel_command_joint_name", "front_right_wheel_command_joint_name", "rear_left_wheel_command_joint_name", "rear_right_wheel_command_joint_name")
 
@@ -84,6 +85,20 @@ def joint_limits(urdf: str) -> dict[str, JointLimit]:
             continue
         out[name] = JointLimit(_optional_float(limit, "lower"), _optional_float(limit, "upper"), _optional_float(limit, "velocity"), _optional_float(limit, "effort"))
     return out
+
+
+def chain_joints(urdf: str, base_link: str, tip_link: str) -> list[str]:
+    """Names of the non-fixed joints between ``base_link`` and its descendant ``tip_link``, base first."""
+    parents = {child.get("link"): (joint, parent.get("link")) for joint in ET.fromstring(urdf).findall("joint") if (child := joint.find("child")) is not None and (parent := joint.find("parent")) is not None}
+    out: list[str] = []
+    link = tip_link
+    while link != base_link:
+        if link not in parents:
+            raise ValueError(f"link {tip_link!r} is not below {base_link!r}")
+        joint, link = parents[link]
+        if joint.get("type") != "fixed":
+            out.append(str(joint.get("name")))
+    return out[::-1]
 
 
 def sensor_frames(urdf: str) -> dict[str, str]:
@@ -186,6 +201,12 @@ def drive_controller(control: Mapping[str, Any]) -> tuple[str, str, dict[str, An
     return None
 
 
+def controller_names(control: Mapping[str, Any]) -> tuple[str, ...]:
+    """Names of the controllers the ``controller_manager`` section lists, in file order."""
+    listed = (control.get("controller_manager") or {}).get("ros__parameters") or {}
+    return tuple(str(name) for name, entry in listed.items() if isinstance(entry, Mapping) and "type" in entry)
+
+
 def wheel_joints(controller_type: str, params: Mapping[str, Any]) -> list[str]:
     """The wheel joint names a drive controller commands."""
     if controller_type == DIFF_DRIVE:
@@ -215,8 +236,24 @@ def _wheel_radius(root: ET.Element, names: Sequence[str]) -> float:
     return sum(radii) / len(radii)
 
 
+def wheelbase(urdf: str, controller_type: str, params: Mapping[str, Any]) -> float | None:
+    """Front to rear distance of a drive controller's wheel joints along the base x axis, None when they share one x."""
+    root = ET.fromstring(urdf)
+    frames = _joint_frames(root, str(params.get("base_frame_id") or _root_link(root)))
+    xs = [float(frames[name][0, 3]) for name in wheel_joints(controller_type, params) if name in frames]
+    extent = _rounded(max(xs) - min(xs)) if xs else 0.0
+    return extent or None
+
+
 def _rounded(value: float) -> float:
     return round(value, _DECIMALS) + 0.0
+
+
+def wheel_axles(urdf: str, controller_type: str, params: Mapping[str, Any]) -> list[float]:
+    """Sorted base x of every wheel joint of a drive controller, measured in its ``base_frame_id``."""
+    root = ET.fromstring(urdf)
+    frames = _joint_frames(root, str(params.get("base_frame_id") or _root_link(root)))
+    return sorted(_rounded(float(frames[name][0, 3])) for name in wheel_joints(controller_type, params) if name in frames)
 
 
 def drive_geometry(urdf: str, controller_type: str, params: Mapping[str, Any]) -> DriveGeometry:
@@ -457,3 +494,39 @@ def collision_outline(
     if len(hull) < 3:
         return None
     return _reduce(hull, max_vertices)
+
+
+def body_height(
+    urdf: str,
+    base_link: str,
+    mesh_resolver: Callable[[str], Path | None] | None = None,
+) -> float | None:
+    """Vertical extent of the collision geometry and the sensor frames of every link below `base_link` at zero joint position."""
+    resolver = mesh_resolver if mesh_resolver is not None else _default_resolver
+    root = ET.fromstring(urdf)
+    links = {str(link.get("name")): link for link in root.findall("link")}
+    if base_link not in links:
+        return None
+    poses = _link_poses(root, base_link)
+    heights: list[float] = []
+    for name, pose in poses.items():
+        link = links.get(name)
+        if link is None:
+            continue
+        for collision in link.findall("collision"):
+            geometry = collision.find("geometry")
+            if geometry is None:
+                continue
+            placed = pose @ _transform(collision.find("origin"))
+            sphere = geometry.find("sphere")
+            if sphere is not None:
+                radius = float(sphere.get("radius", 0.0))
+                heights.extend((float(placed[2, 3]) - radius, float(placed[2, 3]) + radius))
+                continue
+            points = _geometry_points(geometry, placed, resolver)
+            if points is not None:
+                heights.extend(float(z) for z in points[:, 2])
+    if not heights:
+        return None
+    heights.extend(float(poses[frame][2, 3]) for frame in set(sensor_frames(urdf).values()) if frame in poses)
+    return _rounded(max(heights) - min(heights))

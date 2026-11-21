@@ -1,44 +1,6 @@
 robot_model: boxer
 base_frame: base_link
 z_offset: 0.005
-sensors:
-  - name: front_laser
-    type: laserscan
-    topic: ${namespace}/front_laser
-    sensor: front_laser
-  - name: front_laser_points
-    type: pointcloud
-    topic: ${namespace}/front_laser/points
-    sensor: front_laser
-  - name: rear_laser
-    type: laserscan
-    topic: ${namespace}/rear_laser
-    sensor: rear_laser
-  - name: rear_laser_points
-    type: pointcloud
-    topic: ${namespace}/rear_laser/points
-    sensor: rear_laser
-  - name: imu
-    type: imu
-    topic: ${namespace}/imu/data
-    sensor: imu_sensor
-  - name: front_realsense_mount_link_info
-    type: camera_info
-    topic: ${namespace}/front_realsense_mount_link/camera_info
-    sensor: realsense_front_camera
-  - name: front_realsense_mount_link_depth
-    type: depth
-    topic: ${namespace}/front_realsense_mount_link/depth_image
-    sensor: realsense_front_camera
-  - name: front_realsense_mount_link_points
-    type: pointcloud
-    topic: ${namespace}/front_realsense_mount_link/depth_image/points
-    sensor: realsense_front_camera
 control:
   mode: ros2_control
   config: package://arena_robots/robots/boxer/control.yaml
-  controllers:
-    - joint_state_broadcaster
-    - boxer_velocity_controller
-  cmd_vel_topic: boxer_velocity_controller/cmd_vel
-  odom_topic: boxer_velocity_controller/odom

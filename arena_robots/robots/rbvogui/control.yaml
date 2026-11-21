@@ -37,8 +37,6 @@ robotnik_base_controller:
 
     publish_odom: true
     publish_tf: false
-    odom_frame_id: odom
-    base_frame_id: robot_base_footprint
 
     linear.x.has_velocity_limits: true
     linear.x.has_acceleration_limits: true

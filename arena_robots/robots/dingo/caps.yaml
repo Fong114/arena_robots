@@ -22,7 +22,7 @@ mobile:
     gain: {linear: 1.0, lateral: 1.0, angular: 1.0}
     lag: 0.0
     traction: 4.9
-    pivot: 0.099
+    pivot: front
     timeout: 0.25
 
   actions:
@@ -57,8 +57,6 @@ mobile:
         name: stop
 
 power:
-  robot_model: "dingo"
-
   power_system:
     system_voltage_v: 24.0
     global_drivetrain_efficiency: 0.85

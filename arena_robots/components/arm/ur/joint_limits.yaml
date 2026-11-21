@@ -1,0 +1,19 @@
+joint_limits:
+  "${prefix}${mount}_shoulder_pan_joint":
+    has_acceleration_limits: true
+    max_acceleration: 15.0
+  "${prefix}${mount}_shoulder_lift_joint":
+    has_acceleration_limits: true
+    max_acceleration: 15.0
+  "${prefix}${mount}_elbow_joint":
+    has_acceleration_limits: true
+    max_acceleration: 15.0
+  "${prefix}${mount}_wrist_1_joint":
+    has_acceleration_limits: true
+    max_acceleration: 15.0
+  "${prefix}${mount}_wrist_2_joint":
+    has_acceleration_limits: true
+    max_acceleration: 15.0
+  "${prefix}${mount}_wrist_3_joint":
+    has_acceleration_limits: true
+    max_acceleration: 15.0

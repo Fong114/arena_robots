@@ -156,6 +156,17 @@ def test_voxel_layer_takes_its_min_obstacle_height_from_local_observation(robot,
     assert {source["min_obstacle_height"] for source in marking.values()} == {height}
 
 
+@pytest.mark.parametrize("robot", ["mpo700", "tiago"])
+def test_planar_costmap_sources_reach_as_far_as_the_primary_lidar(robot):
+    pytest.importorskip("xacro")
+    laser = RobotIdentifier(robot).resolve_sync().effective_caps({}).mobile.laser
+    assert laser is not None
+    derived = yaml.safe_load(Path(_derived_file(robot)).read_text())
+    assert derived["observation_sources_dict_planar"]
+    assert {source["raytrace_max_range"] for source in derived["observation_sources_dict_planar"].values()} == {laser.range}
+    assert derived["slam_range"] == laser.range
+
+
 def test_cloud_sources_stay_below_a_two_meter_ceiling_while_scans_keep_their_reach():
     sources = compile_sensors_to_nav2([_spec("lidar", SensorType.LASERSCAN, "ns/lidar"), _spec("oakd_points", SensorType.POINTCLOUD, "ns/oakd/points")], max_range=6.0)
     assert sources["oakd_points"]["max_obstacle_height"] == 0.8

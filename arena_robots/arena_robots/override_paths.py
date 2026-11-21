@@ -17,7 +17,7 @@ Kind = typing.Literal['value', 'list', 'map', 'unset', 'arg']
 
 _INSTANCE_CAPS = ('arm', 'lift', 'gripper')
 _SUFFIXES: dict[Kind, tuple[str, ...]] = {'value': ('=',), 'list': ('=',), 'map': ('.',), 'unset': ('=', '.'), 'arg': ('=',)}
-_NOT_OVERRIDABLE = ('body.mass', 'body.outline', 'mobile.laser')
+_NOT_OVERRIDABLE = ('body.mass', 'body.outline', 'body.height', 'mobile.laser')
 _COMPLETION_ERRORS = (ValueError, RuntimeError, FileNotFoundError, KeyError)
 
 

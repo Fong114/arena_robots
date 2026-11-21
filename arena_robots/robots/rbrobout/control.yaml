@@ -30,8 +30,6 @@ rbrobout_velocity_controller:
     reference_timeout: 0.5
     use_stamped_vel: false
 
-    base_frame_id: robot_base_footprint
-    odom_frame_id: odom
     enable_odom_tf: false
 
     pose_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]

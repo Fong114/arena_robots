@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 from arena_rclpy_mixins.shared import Namespace
 from launch import Action
 
+from arena_robots import urdf_facts
 from arena_robots.request import InstanceRequest
 from arena_robots.Sensor import SensorType
 from arena_robots.sensor_geometry import parse_sensor_geometry
@@ -83,12 +84,14 @@ class Bringup(ABC):
         return path
 
     def planner_launch_arguments(self) -> dict[str, str]:
-        """`mobile_caps` (per-host, per-namespace temp file of the effective mobile cap with the laser block of the rendered URDF) and `sensors_json` (effective sensors with their geometry) for the nav2 launch files."""
+        """`mobile_caps` (per-host, per-namespace temp file of the effective mobile cap with the laser block and wheelbase of the rendered URDF) and `sensors_json` (effective sensors with their geometry) for the nav2 launch files."""
         laser = self.caps.laser_block()
         geometry = parse_sensor_geometry(self.caps.rendered_urdf())
         sensors = self.robot.effective_sensors(self.parts, frames=self.caps.frames or None)
+        controller = self.robot.drive_controller()
+        wheelbase = None if controller is None else urdf_facts.wheelbase(self.caps.rendered_urdf(), controller[1], controller[2])
         return {
-            "mobile_caps": self._temp_yaml("mobile_caps", {**self.caps.mobile.raw, **({} if laser is None else {"laser": laser})}),
+            "mobile_caps": self._temp_yaml("mobile_caps", {**self.caps.mobile.raw, **({} if laser is None else {"laser": laser}), **({} if wheelbase is None else {"wheelbase": wheelbase})}),
             "sensors_json": json.dumps(
                 [
                     {

@@ -413,6 +413,7 @@ def render_wrapper_xacro(view: RobotView, resolved: ResolvedAssembly, *, catalog
             'namespace': '$(arg namespace)',
             'gazebo_classic': '$(arg gazebo_classic)',
             'gazebo_ignition': '$(arg gazebo_ignition)',
+            **{key: value for key, value in component.args.items() if f'${{{key}}}' in component.attach.values()},
             **placement.params,
             **placement.overrides,
         }
@@ -459,8 +460,30 @@ def render_control_joints(resolved: ResolvedAssembly, catalog: Catalog, *, prefi
             **placement.params,
             **placement.overrides,
         }
-        out.extend(YAMLReplacer(context).replace(copy.deepcopy(component.ros2_control_joints)))
+        joints = YAMLReplacer(context).replace(copy.deepcopy(component.ros2_control_joints))
+        if any(joint.get('initial_value') == STOW for joint in joints):
+            stow = _stow_values(component, context)
+            for joint in joints:
+                if joint.get('initial_value') == STOW:
+                    joint['initial_value'] = stow[joint['name']]
+        out.extend(joints)
     return out
+
+
+STOW = 'stow'
+
+
+def _stow_values(component: ComponentSpec, context: dict[str, typing.Any]) -> dict[str, float]:
+    """The joint values of the ``stow`` group state of the placement's SRDF group, empty when its SRDF has none."""
+    from arena_robots.caps import srdf_document, srdf_group_states
+
+    moveit = component.caps.get('moveit')
+    if not isinstance(moveit, dict) or 'planning_group' not in moveit:
+        return {}
+    root = srdf_document(moveit, {key: context[key] for key in ('prefix', 'mount')})
+    if root is None:
+        return {}
+    return srdf_group_states(root, YAMLReplacer(context).replace(moveit['planning_group'])).get(STOW, {})
 
 
 def render_effective_control(resolved: ResolvedAssembly, base_control: dict, catalog: Catalog, *, prefix: str = 'robot_') -> tuple[dict, list[str]]:

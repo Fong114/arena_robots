@@ -19,8 +19,6 @@ rskomni_velocity_controller:
     use_stamped_vel:   true
     publish_odom:      true
     publish_tf:        false
-    odom_frame_id:     odom
-    base_frame_id:     base
 
     linear.x.has_velocity_limits: true
     linear.x.has_acceleration_limits: true

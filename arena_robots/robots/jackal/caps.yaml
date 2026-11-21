@@ -35,17 +35,10 @@ mobile:
     gain: {linear: 1.0, lateral: 1.0, angular: 1.0}
     lag: 0.0
     traction: 7.85
-    pivot: 0.131
+    pivot: front
     timeout: 0.25
 
   actions:
-    continuous:
-      linear:
-        min: -2.0
-        max: 2.0
-      angular:
-        min: -4.0
-        max: 4.0
     discrete:
       - angular: 0.0
         linear: 0.3
@@ -70,8 +63,6 @@ mobile:
         name: stop
 
 power:
-  robot_model: "jackal"
-
   power_system:
     system_voltage_v: 24.0
     global_drivetrain_efficiency: 0.85
@@ -96,7 +87,6 @@ acoustics:
   beta_3: 0.0
   omega_ref: 10.2
   tau_ref: 2.0
-  max_joint_torque_nm: 15.0
   omega_deadband: 0.05
   omega_active: 0.50
   sigma_base: 0.8

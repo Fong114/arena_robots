@@ -1,24 +1,6 @@
 robot_model: ridgeback
 base_frame: base_link
 z_offset: 0.0259
-sensors:
-  - name: lidar
-    type: laserscan
-    topic: ${namespace}/lidar
-    sensor: gpu_lidar
-  - name: lidar_points
-    type: pointcloud
-    topic: ${namespace}/lidar/points
-    sensor: gpu_lidar
-  - name: imu
-    type: imu
-    topic: ${namespace}/imu/data
-    sensor: imu_sensor
 control:
   mode: ros2_control
   config: package://arena_robots/robots/ridgeback/control.yaml
-  controllers:
-    - joint_state_broadcaster
-    - ridgeback_velocity_controller
-  cmd_vel_topic: ridgeback_velocity_controller/cmd_vel
-  odom_topic: ridgeback_velocity_controller/odom

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import functools
 import hashlib
 import json
 import math
@@ -26,6 +27,8 @@ _LIDAR_RANGE = 10.0
 _OBSTACLE_RANGE_MARGIN = 1.0
 _RAY_MARGIN = 0.3
 _OBSTACLES_TOPIC = "meshnav/obstacles"
+_FALLBACK_ROBOT_HEIGHT = 0.7
+_HEIGHT_CLEARANCE = 0.1
 _RANGING = (SensorType.LASERSCAN.value, SensorType.POINTCLOUD.value)
 
 
@@ -92,6 +95,10 @@ class MeshNavBringup(Bringup):
             return max(math.hypot(x, y) for x, y in mobile.footprint) + (mobile.footprint_padding or 0.0)
         return mobile.radius or 0.3
 
+    @functools.cached_property
+    def _sensors(self) -> list[SensorSpec]:
+        return self.robot.effective_sensors(self.parts, frames=self.caps.frames or None)
+
     @property
     def settings(self) -> dict[str, Any]:
         """The robot's `meshnav:` block over defaults derived from its padded footprint or radius and the stair kinds it climbs."""
@@ -99,6 +106,7 @@ class MeshNavBringup(Bringup):
         climbs = "stairs" in mobile.climbs
         radius = _inscribed(mobile.footprint, mobile.footprint_padding or 0.0) if mobile.footprint else mobile.radius or 0.3
         laser = mobile.laser
+        height = self.caps.body.height
         defaults = {
             "planner": "dijkstra",
             "resolution": 0.1,
@@ -106,8 +114,8 @@ class MeshNavBringup(Bringup):
             "max_slope": _STAIR_SLOPE if climbs else _FLAT_SLOPE,
             "inscribed_radius": radius,
             "inflation_radius": radius + _INFLATION_MARGIN,
-            "obstacles": any(_ranging(self.robot.model_params.sensors).values()),
-            "robot_height": 0.7,
+            "obstacles": any(_ranging(self._sensors).values()),
+            "robot_height": height + _HEIGHT_CLEARANCE if height is not None else _FALLBACK_ROBOT_HEIGHT,
             "min_obstacle_height": 0.1,
             "obstacle_range": (laser.range if laser is not None else _LIDAR_RANGE) - _OBSTACLE_RANGE_MARGIN,
             "obstacle_decay": 1.0,

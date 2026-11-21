@@ -26,11 +26,6 @@ def _plugin(filename: str, **fields: str) -> str:
 
 
 @pytest.mark.parametrize("robot", GOLDEN_ROBOTS)
-def test_model_params_sensors_state_no_frame(robot):
-    assert all(spec.frame == "" for spec in RobotIdentifier(robot).resolve_sync().model_params.sensors)
-
-
-@pytest.mark.parametrize("robot", GOLDEN_ROBOTS)
 def test_effective_sensor_frames_are_the_frames_of_their_urdf_sensors(robot):
     frames = sensor_frames(_golden(robot))
     view = RobotIdentifier(robot).resolve_sync()
@@ -38,9 +33,10 @@ def test_effective_sensor_frames_are_the_frames_of_their_urdf_sensors(robot):
 
 
 @pytest.mark.parametrize("robot", GOLDEN_ROBOTS)
-def test_filled_model_params_frames_are_the_effective_frames(robot):
+def test_filling_the_effective_sensors_with_the_golden_frames_changes_nothing(robot):
     view = RobotIdentifier(robot).resolve_sync()
-    assert fill_frames(view.model_params.sensors, lambda: _golden(robot)) == view.effective_sensors({})
+    sensors = view.effective_sensors({})
+    assert fill_frames(sensors, lambda: _golden(robot)) == sensors
 
 
 def test_gz_frame_id_wins_over_the_reference_link_and_loses_its_leading_slash():

@@ -214,7 +214,7 @@ def _load_mobile(path_str: str) -> MobileSpec:
         data = yaml.safe_load(f) or {}
     if not isinstance(data, dict):
         raise ValueError(f"{path_str}: mobile cap file must be a mapping at top level")
-    return MobileSpec(path=Path(path_str), raw=data)
+    return MobileSpec(path=Path(path_str), raw=data, laser_block=lambda: data.get('laser'))
 
 
 class SensorsDerivedYAML(YAMLFileSubstitution):
@@ -286,6 +286,7 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
         collision_sources = compile_sensors_to_collision_monitor(sensors, geometry)
 
         derived = {
+            **({} if mobile.laser is None else {'slam_range': max_range}),
             'observation_sources_string': ' '.join(local_sources.keys()),
             'observation_sources_string_planar': ' '.join(planar_sources.keys()),
             'observation_sources_string_global': ' '.join(global_sources.keys()),
@@ -369,9 +370,10 @@ class Nav2KinematicsDerivedYAML(YAMLFileSubstitution):
             out['angular_acc'] = acc.angular
             out['linear_decel'] = -acc.linear
             out['angular_decel'] = -acc.angular
-            if acc.lateral is not None:
-                out['lateral_acc'] = acc.lateral
-                out['lateral_decel'] = -acc.lateral
+            lateral_acc = acc.lateral if acc.lateral is not None else (acc.linear if vel is not None and vel.lateral is not None else None)
+            if lateral_acc is not None:
+                out['lateral_acc'] = lateral_acc
+                out['lateral_decel'] = -lateral_acc
 
         tmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yaml')
         yaml.dump(out if out else {}, tmp)

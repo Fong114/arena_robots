@@ -2,40 +2,6 @@ robot_model: turtlebot
 priority: 1
 base_frame: base_link
 z_offset: -0.0045
-sensors:
-  - name: lidar
-    type: laserscan
-    topic: ${namespace}/lidar
-    sensor: gpu_lidar
-  - name: lidar_points
-    type: pointcloud
-    topic: ${namespace}/lidar/points
-    sensor: gpu_lidar
-  - name: oakd_imu
-    type: imu
-    topic: ${namespace}/oakd/imu/data
-    sensor: oakd_imu
-  - name: oakd_info
-    type: camera_info
-    topic: ${namespace}/oakd/camera_info
-    sensor: oakd
-  - name: oakd_depth
-    type: depth
-    topic: ${namespace}/oakd/depth_image
-    sensor: oakd
-  - name: oakd_image
-    type: image
-    topic: ${namespace}/oakd/image
-    sensor: oakd
-  - name: oakd_points
-    type: pointcloud
-    topic: ${namespace}/oakd/points
-    sensor: oakd
 control:
   mode: ros2_control
   config: package://arena_robots/robots/turtlebot/control.yaml
-  controllers:
-    - joint_state_broadcaster
-    - turtlebot_velocity_controller
-  cmd_vel_topic: turtlebot_velocity_controller/cmd_vel
-  odom_topic: turtlebot_velocity_controller/odom

@@ -1,5 +1,4 @@
-"""Tests for RobotView.effective_caps and the effective_sensors consistency guard
-(allocation-derived caps)."""
+"""Tests for RobotView.effective_caps and effective_sensors (allocation-derived caps)."""
 
 from __future__ import annotations
 
@@ -53,16 +52,15 @@ class TestEffectiveCapsRbtheron:
         assert caps.arm is None
 
 
-class TestEffectiveSensorsGuard:
-    """Owner decision 2: warn when model_params declares a sensor name the
-    assembly's own DEFAULTS render doesn't produce."""
+class TestEffectiveSensorsOfAssemblyRobots:
+    """An assembly renders its sensors, whatever model_params declares."""
 
     _ASSEMBLY = {
         "mounts": {"front_laser": {"parent": "base_link", "xyz": [0, 0, 0], "accepts": ["lidar"]}},
         "defaults": {"lidar": [{"variant": "sick_s300", "mount": "front_laser"}]},
     }
 
-    def test_guard_warns_on_missing_defaults_sensor(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    def test_declared_sensors_do_not_join_the_rendered_ones(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
         from arena_robots.Robot import RobotView
 
         rd = _write_robot(
@@ -71,19 +69,11 @@ class TestEffectiveSensorsGuard:
             assembly=self._ASSEMBLY,
         )
         view = RobotView(rd)
-        view.effective_sensors({})
-        err = capsys.readouterr().err
-        assert "ghost_sensor" in err
-        assert "assembly.yaml incomplete" in err
+        assert [sensor.name for sensor in view.effective_sensors({})] == ["lidar", "lidar_points"]
+        assert capsys.readouterr().err == ""
 
-    def test_no_warning_when_defaults_cover_declared_sensors(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    def test_a_model_params_without_sensors_renders_the_same_sensors(self, tmp_path: Path):
         from arena_robots.Robot import RobotView
 
-        rd = _write_robot(
-            tmp_path,
-            model_params={"sensors": [{"name": "lidar", "type": "laserscan", "topic": "/scan", "frame": "f"}]},
-            assembly=self._ASSEMBLY,
-        )
-        view = RobotView(rd)
-        view.effective_sensors({})
-        assert capsys.readouterr().err == ""
+        rd = _write_robot(tmp_path, model_params={}, assembly=self._ASSEMBLY)
+        assert [(sensor.name, sensor.topic) for sensor in RobotView(rd).effective_sensors({})] == [("lidar", "${namespace}/scan"), ("lidar_points", "${namespace}/scan/points")]

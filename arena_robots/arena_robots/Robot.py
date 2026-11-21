@@ -1,6 +1,5 @@
 import functools
 import os
-import sys
 import typing
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from arena_simulation_setup.utils.models.model_loader import ModelProvider_USD
 from arena_robots import assembly as assembly_mod
 from arena_robots import preset as preset_mod
 from arena_robots import urdf_facts
+from arena_robots.acoustic_profile import effective_profile
 from arena_robots.caps import MobileSpec, RobotCaps
 from arena_robots.catalog import Catalog, render_effective_sensors
 from arena_robots.Sensor import SensorSpec, fill_frames
@@ -41,19 +41,25 @@ class ControlSpec:
     odom_topic: str = "odom"
 
     @classmethod
-    def from_dict(cls, data: typing.Mapping[str, typing.Any]) -> "ControlSpec":
+    def from_dict(cls, data: typing.Mapping[str, typing.Any], control: typing.Mapping[str, typing.Any] | None = None) -> "ControlSpec":
         mode = str(data.get("mode", "gazebo_native"))
-        controllers_raw = data.get("controllers", [])
-        if not isinstance(controllers_raw, list):
+        controllers_raw = data.get("controllers")
+        if controllers_raw is None:
+            controllers = urdf_facts.controller_names(control) if control is not None else ()
+        elif isinstance(controllers_raw, list):
+            controllers = tuple(str(c) for c in controllers_raw)
+        else:
             raise ValueError(f"control.controllers must be a list; got {type(controllers_raw).__name__}")
-        controllers = tuple(str(c) for c in controllers_raw)
         config = data.get("config")
+        drive = urdf_facts.drive_controller(control) if control is not None else None
+        cmd_vel_leaf, odom_leaf = urdf_facts.DRIVE_TOPICS[drive[1]] if drive is not None else ("cmd_vel", "odom")
+        prefix = f"{drive[0]}/" if drive is not None else ""
         return cls(
             mode=mode,
             controllers=controllers,
             config=str(config) if config is not None else None,
-            cmd_vel_topic=str(data.get("cmd_vel_topic", "cmd_vel")),
-            odom_topic=str(data.get("odom_topic", "odom")),
+            cmd_vel_topic=str(data.get("cmd_vel_topic", f"{prefix}{cmd_vel_leaf}")),
+            odom_topic=str(data.get("odom_topic", f"{prefix}{odom_leaf}")),
         )
 
     @property
@@ -67,6 +73,16 @@ def _read_mapping(path: str) -> dict[str, typing.Any]:
     if not isinstance(data, dict):
         raise ValueError(f"control config at {path} must be a mapping; got {type(data).__name__}")
     return data
+
+
+def _config_path(uri: str) -> str:
+    if not uri.startswith("package://"):
+        return uri
+    pkg, _, sub = uri[len("package://") :].partition('/')
+    try:
+        return os.path.join(get_package_share_directory(pkg), sub)
+    except PackageNotFoundError as e:
+        raise FileNotFoundError(f"control.config package '{pkg}' not found") from e
 
 
 def _overlay(base: dict, top: dict) -> dict:
@@ -122,16 +138,17 @@ class ModelParams(dict[str, typing.Any]):
     def z_offset(self) -> float:
         return float(self.get('z_offset', 0.0))
 
-    @property
+    @functools.cached_property
     def control(self) -> ControlSpec | None:
-        """Typed view of the ``control:`` block in model_params.yaml. ``None``
+        """Typed view of the ``control:`` block in model_params.yaml, its controllers and topics taken from the control config unless authored. ``None``
         when absent (gazebo_native pipeline)."""
         raw = self.get('control')
         if raw is None:
             return None
         if not isinstance(raw, dict):
             raise ValueError(f"model_params 'control' must be a mapping; got {type(raw).__name__}")
-        return ControlSpec.from_dict(raw)
+        config = raw.get('config')
+        return ControlSpec.from_dict(raw, _read_mapping(_config_path(str(config))) if config is not None else None)
 
     @property
     def sensors(self) -> list["SensorSpec"]:
@@ -253,16 +270,7 @@ class RobotView(PathView):
         control = self.model_params.control
         if control is None or control.config is None:
             raise FileNotFoundError(f"robot '{self.name}' declares no control.config")
-        uri = control.config
-        if uri.startswith("package://"):
-            pkg, _, sub = uri[len("package://") :].partition('/')
-            try:
-                src_path = os.path.join(get_package_share_directory(pkg), sub)
-            except PackageNotFoundError as e:
-                raise FileNotFoundError(f"control.config package '{pkg}' not found") from e
-        else:
-            src_path = uri
-
+        src_path = _config_path(control.config)
         data = _read_mapping(src_path)
         if sim is None:
             return data
@@ -273,16 +281,25 @@ class RobotView(PathView):
         return _overlay(data, _read_mapping(overlay_path))
 
     def drive_controller(self, sim: str | None = None) -> tuple[str, str, dict[str, typing.Any]] | None:
-        """Name, type and parameters of the drive controller in ``control_config(sim)``, ``None`` for a robot without one."""
+        """Name, type and parameters of the drive controller in ``control_config(sim)`` with ``base_frame_id`` set to the robot's base frame, ``None`` for a robot without one."""
         control = self.model_params.control
         if control is None or control.config is None:
             return None
-        return urdf_facts.drive_controller(self.control_config(sim))
+        drive = urdf_facts.drive_controller(self.control_config(sim))
+        if drive is None:
+            return None
+        name, kind, params = drive
+        return name, kind, {**params, 'base_frame_id': self.model_params.base_frame}
 
     def drive_geometry(self, urdf: str, sim: str | None = None) -> urdf_facts.DriveGeometry:
         """The drive controller's geometry parameters measured in ``urdf``, empty for a robot without a drive controller."""
         controller = self.drive_controller(sim)
         return {} if controller is None else urdf_facts.drive_geometry(urdf, controller[1], controller[2])
+
+    def wheel_axles(self, urdf: str, sim: str | None = None) -> list[float]:
+        """Sorted base x of the drive controller's wheel joints in ``urdf``, empty for a robot without a drive controller."""
+        controller = self.drive_controller(sim)
+        return [] if controller is None else urdf_facts.wheel_axles(urdf, controller[1], controller[2])
 
     @property
     def bringup_launch(self) -> Path | None:
@@ -325,11 +342,7 @@ class RobotView(PathView):
         return ``model_params.sensors`` with frames they omit read from the canonical URDF. Robots with an assembly.yaml
         resolve ``parts`` against the declared assembly and render it through the
         shared component catalog. No per-request caching: ``RobotView`` is a
-        per-model singleton, but resolution is per-request.
-
-        Consistency guard: warns on stderr, once per call, if ``model_params.sensors``
-        declares a name absent from the assembly's own DEFAULTS render, i.e. the
-        assembly's defaults must render every sensor model_params.yaml declares."""
+        per-model singleton, but resolution is per-request."""
         resolved = self._resolved(parts)
         if resolved is None:
             from arena_robots import served_urdf
@@ -337,16 +350,7 @@ class RobotView(PathView):
             return fill_frames(self.model_params.sensors, lambda: served_urdf.canonical(self, parts, frames))
         assert self.assembly is not None
         resolved = assembly_mod.apply_frame_overrides(resolved, frames or {})
-        prefix = self.assembly.prefix
-        rendered = render_effective_sensors(resolved, _CATALOG, prefix=prefix)
-        defaults_rendered = rendered if not parts else render_effective_sensors(assembly_mod.resolve(self.assembly, {}), _CATALOG, prefix=prefix)
-        missing = {s.name for s in self.model_params.sensors} - {s.name for s in defaults_rendered}
-        if missing:
-            print(
-                f"assembly.yaml incomplete? model_params declares sensors absent from assembly defaults: {sorted(missing)}",
-                file=sys.stderr,
-            )
-        return rendered
+        return render_effective_sensors(resolved, _CATALOG, prefix=self.assembly.prefix)
 
     def effective_caps(
         self,
@@ -390,6 +394,7 @@ class RobotView(PathView):
         wheel_r = radius if isinstance(radius, float) else 0.0
         num_wheels = len(urdf_facts.wheel_joints(controller[1], controller[2])) if controller is not None else 0
         mass_kg = float(caps.body.mass or 0.0)
+        torque_nm = effective_profile(caps.acoustics.raw if caps.acoustics is not None else None)['max_joint_torque_nm']
 
         if assembly_power is not None:
             spec = assembly_power
@@ -421,6 +426,7 @@ class RobotView(PathView):
             'drivetrain_efficiency': efficiency,
             'heating_coefficient_ch': heating_ch,
             'battery_capacity_wh': battery_wh,
+            'max_joint_torque_nm': torque_nm,
             'drivetrain_damping': damping,
             'drivetrain_friction': friction,
             'rolling_resistance_crr': crr,

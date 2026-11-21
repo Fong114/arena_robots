@@ -17,7 +17,7 @@ mobile:
     gain: {linear: 1.0, lateral: 1.0, angular: 1.23}
     lag: 0.0
     traction: 3.43
-    pivot: 0.2085
+    pivot: front
     timeout: 0.25
 
   actions:
@@ -34,8 +34,6 @@ mobile:
       - {name: stop,              linear:  0.00, angular:  0.00}
 
 power:
-  robot_model: "WLP311D"
-
   power_system:
     system_voltage_v: 24.0
     global_drivetrain_efficiency: 0.85
@@ -60,7 +58,6 @@ acoustics:
   beta_3: 0.0
   omega_ref: 10.2
   tau_ref: 2.0
-  max_joint_torque_nm: 15.0
   omega_deadband: 0.05
   omega_active: 0.50
   sigma_base: 0.8

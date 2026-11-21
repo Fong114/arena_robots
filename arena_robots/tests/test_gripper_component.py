@@ -64,7 +64,8 @@ class TestGripperComponentSpec:
         assert spec.caps["joint"] == f"${{prefix}}${{mount}}_{KNUCKLE}"
         assert spec.caps["controller"] == "${mount}_controller"
         assert spec.caps["moveit"]["srdf"]["path"] == "components/gripper/robotiq_2f_85/srdf/robotiq_2f_85.srdf.xacro"
-        assert spec.caps["positions"] == {"open": 0.0, "close": 0.8}
+        assert spec.caps["moveit"]["args"] == {"prefix": "${prefix}", "mount": "${mount}"}
+        assert "positions" not in spec.caps
         assert "max_effort" not in spec.caps
 
 
