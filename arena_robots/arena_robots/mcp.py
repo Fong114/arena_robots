@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, cast
 import yaml
 from pydantic import Field
 
-from arena_mcp.core import JOBS, LATCHED, RELIABLE, ROS, SENSOR, Domain, ToolError, cli, fleet, media, msgs, robot_ns, tg
+from arena_mcp.core import JOBS, LATCHED, RELIABLE, ROS, SENSOR, Domain, ToolError, cli, current_episode, episode_records, fleet, media, msgs, robot_ns, tg
 from arena_mcp.core.envs import SUBMIT_TASK_TIMEOUT_S
 from arena_mcp.core.jobs import RUNNING
 
@@ -512,8 +512,8 @@ async def _phase_job[FeedbackT](kind: str, title: str, env_id: int | None, entry
         raise ToolError(f"action server {name} is not available", hint=_hint(entry, served))
     node = await tg(env_id)
     service = f"{node}/runtime/submit_task"
-    episode = await ROS.latest(EpisodeRecord, f"{node}/state/episode", qos=LATCHED, hint="the env has not finished its first reset")
-    episodes = await ROS.cache(EpisodeRecord, f"{node}/state/episode", qos=LATCHED)
+    episode = await current_episode(node)
+    episodes = await episode_records(node)
     snapshots = await ROS.cache(SemanticSnapshot, f"{node}/state/semantics", qos=LATCHED)
     feedback = await ROS.cache(cast("type[_FeedbackMessage[FeedbackT]]", action_type(task_kind).Impl.FeedbackMessage), f"{name}/_action/feedback", qos=RELIABLE)
     stale = feedback.last
