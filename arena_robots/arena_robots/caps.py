@@ -8,7 +8,7 @@ Shape convention:
     arm:      dict of named instances (single-arm is one entry named "arm")
     lift:     dict of named instances
     gripper:  dict of named instances, with per-entry `arm:` back-ref
-    power, acoustics: fact blocks, not capabilities
+    power, acoustics, drives: fact blocks, not capabilities
 
 Adapter-specific sub-blocks (moveit, drl_grasp, nav2, rl) are raw dicts inside
 each entry / at top level, read only by their matching runtime-selected adapter.
@@ -36,7 +36,7 @@ from arena_simulation_setup.tree.Gesture import GestureSpec
 from arena_robots import drift
 from arena_robots.acoustic_profile import effective_profile
 from arena_robots.assembly import RequestPart, ResolvedAssembly
-from arena_robots.catalog import Catalog, _frame_stem, resolve_mount_parent
+from arena_robots.catalog import Catalog, _frame_stem, render_effective_control, resolve_mount_parent
 from arena_robots.inline import APPEND_KEY, OFFSET_KEY, SCALE_KEY, WILDCARD, is_affine, is_append, is_delete
 
 if typing.TYPE_CHECKING:
@@ -901,7 +901,7 @@ def overlay(data: dict[str, typing.Any], overrides: typing.Mapping[str, object],
     return out
 
 
-FACT_BLOCKS = ('body', 'power', 'acoustics')
+FACT_BLOCKS = ('body', 'power', 'acoustics', 'drives')
 SNAPSHOT_FORMAT = 'arena-caps/1'
 
 
@@ -965,7 +965,77 @@ class AcousticsSpec(CapConfig):
     """The acoustic emission model's parameters: the `acoustics:` section of caps.yaml over the default profile `config/acoustic_profile.yaml`."""
 
 
-_FACT_CLASSES: dict[str, type[CapConfig]] = {'body': BodySpec, 'power': PowerSpec, 'acoustics': AcousticsSpec}
+@attrs.frozen
+class DriveSpec:
+    """One joint's servo: gains in N m/rad and N m s/rad (N/m, N s/m for prismatic), effort limit, and the command interface ros2_control drives it by."""
+
+    kp: float
+    kd: float
+    effort: float
+    command: str
+
+
+@attrs.define(slots=False)
+class DrivesSpec(CapConfig):
+    """The servo of every joint ros2_control commands by position: the rendered URDF's gains and effort limit under the `drives:` section of caps.yaml, keyed by joint."""
+
+    def joint(self, name: str) -> DriveSpec:
+        entry = self.raw[name]
+        return DriveSpec(kp=float(entry['kp']), kd=float(entry['kd']), effort=float(entry['effort']), command=str(entry['command']))
+
+    def all(self) -> dict[str, DriveSpec]:
+        return {name: self.joint(name) for name in self.raw}
+
+    def commanded_by(self, command: str) -> list[str]:
+        return [name for name, drive in self.all().items() if drive.command == command]
+
+
+def _check_drives(data: dict[str, typing.Any], label: str) -> None:
+    from arena_robots.urdf_facts import DRIVE_COMMANDS
+
+    for name, entry in data.items():
+        if not isinstance(entry, dict):
+            raise ValueError(f"{label}: drives.{name} must be a mapping; got {entry!r}")
+        unknown = set(entry) - {'kp', 'kd', 'effort', 'command'}
+        if unknown:
+            raise ValueError(f"{label}: drives.{name}: unknown keys {sorted(unknown)}, known: ['command', 'effort', 'kd', 'kp']")
+        if entry.get('command') not in DRIVE_COMMANDS:
+            raise ValueError(f"{label}: drives.{name}.command is {entry.get('command')!r}, known: {list(DRIVE_COMMANDS)}")
+        for key in ('kp', 'kd', 'effort'):
+            value = entry.get(key)
+            if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+                raise ValueError(f"{label}: drives.{name}.{key} is {value!r}, not a number at least 0")
+
+
+def _controller_joints(section: dict) -> list[str]:
+    params = section.get('ros__parameters', {})
+    joints = list(params.get('joints', []))
+    for key in ('joint', 'joint_name'):
+        if isinstance(params.get(key), str):
+            joints.append(params[key])
+    return joints
+
+
+def _commands_effort(kind: str | None, params: dict) -> bool:
+    return kind == 'effort_controllers/JointGroupEffortController' or 'effort' in params.get('command_interfaces', []) or params.get('interface_name') == 'effort'
+
+
+def check_effort_drives(control: dict, drives: typing.Mapping[str, DriveSpec]) -> None:
+    """Raise ValueError when a controller claims an effort-commanded joint without commanding effort."""
+    effort = {joint for joint, spec in drives.items() if spec.command == 'effort'}
+    if not effort:
+        return
+    manager = control.get('controller_manager', {}).get('ros__parameters', {})
+    for name, section in control.items():
+        if name == 'controller_manager' or not isinstance(section, dict) or not isinstance(section.get('ros__parameters'), dict):
+            continue
+        claimed = [joint for joint in _controller_joints(section) if joint in effort]
+        kind = manager.get(name, {}).get('type')
+        if claimed and not _commands_effort(kind, section['ros__parameters']):
+            raise ValueError(f"controller {name} of type {kind} does not command effort but claims effort-commanded joints {claimed}, give it an effort command interface or command those joints by position")
+
+
+_FACT_CLASSES: dict[str, type[CapConfig]] = {'body': BodySpec, 'power': PowerSpec, 'acoustics': AcousticsSpec, 'drives': DrivesSpec}
 
 
 def _read_mapping(path: Path) -> dict[str, typing.Any] | None:
@@ -1014,9 +1084,26 @@ _REACH: dict[tuple[str, ...], frozenset[str]] = {
 }
 
 
+_SIM_SERVOS = frozenset({'mujoco', 'isaac'})
+
+
+def _drives_reach(segments: tuple[str, ...], caps: RobotCaps | None) -> frozenset[str]:
+    if len(segments) < 3 or segments[2] not in ('kp', 'kd'):
+        return _DRIVE_CONTROLLED
+    drives = caps.drives if caps is not None else None
+    if drives is None:
+        return _SIM_SERVOS
+    joints = list(drives.raw) if segments[1] == WILDCARD else [segments[1]]
+    if joints and all(name in drives.raw and drives.joint(name).command == 'effort' for name in joints):
+        return _DRIVE_CONTROLLED
+    return _SIM_SERVOS
+
+
 def simulators_honoring(path: str, caps: RobotCaps | None = None) -> frozenset[str]:
     """The simulators in which a cap override at ``path`` changes behavior, with ``caps`` given the drive controller's declared limit keys narrowing ``mobile.limits``."""
     segments = tuple(path.split('.'))
+    if segments[0] == 'drives':
+        return _drives_reach(segments, caps)
     for length in range(len(segments), 0, -1):
         reach = _REACH.get(segments[:length])
         if reach is not None:
@@ -1415,8 +1502,8 @@ class RobotCaps:
         if key in self._cached:
             return self._cached[key]
         path = self._fact_file(block)
-        data = _read_mapping(path) if block == 'body' else self._section(block)
-        if data is not None and block != 'body':
+        data = _read_mapping(path) if block == 'body' else self._derived_drives(path) if block == 'drives' else self._section(block)
+        if data is not None and block not in ('body', 'drives'):
             self._take_source(block, data, path)
         if data is not None and block == 'body':
             from arena_robots.Robot import ModelParams
@@ -1433,8 +1520,29 @@ class RobotCaps:
             rel = self._cap_overrides(block)
             if rel:
                 data = overlay(data, rel, label=str(path), known=typed_fields(_FACT_CLASSES[block]))
+            if block == 'drives':
+                _check_drives(data, str(path))
         self._cached[key] = data
         return data
+
+    def _derived_drives(self, path: Path) -> dict[str, typing.Any] | None:
+        from arena_robots import urdf_facts
+
+        if self.view is None or not urdf_facts.source(self.view).is_file():
+            return None
+        derived = urdf_facts.position_drives(self.rendered_urdf())
+        authored = self._section('drives') or {}
+        self._take_source('drives', authored, path)
+        unknown = set(authored) - set(derived)
+        if unknown:
+            raise ValueError(f"{path}: drives names joints ros2_control does not command by position: {sorted(unknown)}, joints: {sorted(derived)}")
+        self._cached['drives:authored'] = authored
+        return {name: {**entry, **(authored.get(name) or {})} for name, entry in derived.items()} if derived else None
+
+    @property
+    def drives(self) -> DrivesSpec | None:
+        data = self._load_fact('drives')
+        return None if data is None else DrivesSpec(path=self._fact_file('drives'), raw=data, source=self.source('drives'))
 
     @property
     def body(self) -> BodySpec:
@@ -1488,6 +1596,10 @@ class RobotCaps:
             return 'urdf'
         if head == 'body' and rest == 'mass':
             return 'urdf'
+        if head == 'drives':
+            self._load_fact('drives')
+            joint, _, key = rest.partition('.')
+            return 'file' if key in (self._cached.get('drives:authored') or {}).get(joint, {}) else 'urdf'
         if head == 'mobile' and rest.partition('.')[0] in _DERIVED_MOBILE:
             key = rest.partition('.')[0]
             authored = self._section('mobile') or {}
@@ -1581,6 +1693,19 @@ class RobotCaps:
                         getattr(instances[name], field)
             if cap == 'arm':
                 self._check_joints_against_urdf(instances)
+        self._check_effort_controllers()
+
+    def _check_effort_controllers(self) -> None:
+        view = self.view
+        if view is None or view.model_params.control is None or view.model_params.control.config is None:
+            return
+        drives = self.drives
+        if drives is None or not drives.commanded_by('effort'):
+            return
+        control = view.control_config()
+        if self.resolved is not None:
+            control, _ = render_effective_control(self.resolved, control, self.catalog if self.catalog is not None else Catalog(), prefix=self.prefix)
+        check_effort_drives(control, drives.all())
 
     def _check_joints_against_urdf(self, arms: dict[str, typing.Any]) -> None:
         from arena_robots import urdf_facts

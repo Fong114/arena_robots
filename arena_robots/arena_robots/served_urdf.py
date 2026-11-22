@@ -17,6 +17,7 @@ import attrs
 
 if typing.TYPE_CHECKING:
     from arena_robots.assembly import RequestPart
+    from arena_robots.caps import DriveSpec
     from arena_robots.Robot import RobotView
 
 _PACKAGE_URI = "package://"
@@ -85,6 +86,25 @@ def _ensure_effort_state(root: ET.Element) -> None:
 
 
 _GAZEBO_ROS2_CONTROL_PLUGIN = 'gz_ros2_control/GazeboSimSystem'
+DRIVE_PARAMS = ('kp', 'kd', 'effort')
+
+
+def _apply_drives(root: ET.Element, drives: Mapping[str, DriveSpec]) -> None:
+    """Write each drive's gains and effort limit onto its ``<ros2_control>`` joint, and swap its position command interface for effort when the PD controller commands it."""
+    for control in root.iter('ros2_control'):
+        for joint in control.findall('joint'):
+            drive = drives.get(str(joint.get('name')))
+            if drive is None:
+                continue
+            for param in [el for el in joint.findall('param') if el.get('name') in DRIVE_PARAMS]:
+                joint.remove(param)
+            for name in DRIVE_PARAMS:
+                ET.SubElement(joint, 'param', {'name': name}).text = repr(float(getattr(drive, name)))
+            if drive.command == 'effort':
+                for command in joint.findall('command_interface'):
+                    if command.get('name') == 'position':
+                        command.clear()
+                        command.set('name', 'effort')
 
 
 def _control_plugin_text(control: ET.Element) -> str | None:
@@ -327,6 +347,7 @@ def serve(
     xacro_args: Mapping[str, object] | None = None,
     optim: Collection[str] = (),
     sensor_topic_patches: Sequence[tuple[str, str, str]] = (),
+    drives: Mapping[str, DriveSpec] | None = None,
 ) -> ServedURDF:
     """The URDF a simulator loads, written under ``<tempdir>/arena_robots/<sha256>.urdf``."""
     root, joints = _document(view, parts, frames, xacro_args or {})
@@ -337,6 +358,7 @@ def serve(
     _strip_unregistered_ros2_control(root, _registered_hardware_plugins())
     _inject_ros2_control_joints(root, joints)
     _ensure_effort_state(root)
+    _apply_drives(root, drives or {})
     _patch_sensor_topics(root, sensor_topic_patches)
 
     data = ET.tostring(root, encoding="utf-8", method="xml", xml_declaration=True)

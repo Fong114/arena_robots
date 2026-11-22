@@ -1,4 +1,4 @@
-"""Facts read from a rendered URDF: joint limits, lidar block, mass, drive geometry, wheelbase and the ground outline and height of the base."""
+"""Facts read from a rendered URDF: joint limits, servo gains, lidar block, mass, drive geometry, wheelbase and the ground outline and height of the base."""
 
 from __future__ import annotations
 
@@ -157,6 +157,63 @@ def laser_block(urdf: str, frame: str | None = None) -> dict[str, object] | None
 def total_mass(urdf: str) -> float:
     """Sum of the inertial masses of every link."""
     return sum(float(mass.get("value", 0.0)) for link in ET.fromstring(urdf).findall("link") for mass in link.findall("inertial/mass"))
+
+
+GRAVITY = 9.81
+STIFFNESS_PER_EFFORT_REVOLUTE = 100.0
+STIFFNESS_PER_EFFORT_PRISMATIC = 8.0
+MAX_GRAVITY_SAG = 0.002
+STIFFNESS_DAMPING_RATIO = 20.0
+EFFORT_FALLBACK = 25.0
+DRIVE_COMMANDS = ("position", "effort")
+_SERVO_JOINT_TYPES = frozenset({"revolute", "continuous", "prismatic"})
+
+
+def _carried_mass(root: ET.Element, joint: ET.Element) -> float:
+    children = _joint_tree(root)
+    masses = {str(link.get("name")): sum(float(mass.get("value", 0.0)) for mass in link.findall("inertial/mass")) for link in root.findall("link")}
+    child = joint.find("child")
+    stack = [str(child.get("link"))] if child is not None else []
+    seen: set[str] = set()
+    total = 0.0
+    while stack:
+        name = stack.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        total += masses.get(name, 0.0)
+        stack.extend(link for _, link in children.get(name, []))
+    return total
+
+
+def _servo_gains(root: ET.Element, joint: ET.Element) -> dict[str, object]:
+    limit = joint.find("limit")
+    effort = _optional_float(limit, "effort") if limit is not None else None
+    effort = EFFORT_FALLBACK if effort is None else effort
+    if joint.get("type") == "prismatic":
+        mass = _carried_mass(root, joint)
+        kp = max(STIFFNESS_PER_EFFORT_PRISMATIC * effort, mass * GRAVITY / MAX_GRAVITY_SAG)
+        kd = 2.0 * math.sqrt(kp * mass) if mass > 0.0 else kp / STIFFNESS_DAMPING_RATIO
+    else:
+        kp = STIFFNESS_PER_EFFORT_REVOLUTE * effort
+        kd = kp / STIFFNESS_DAMPING_RATIO
+    return {"kp": _rounded(kp), "kd": _rounded(kd), "effort": effort, "command": "position"}
+
+
+def position_drives(urdf: str) -> dict[str, dict[str, object]]:
+    """Servo gains, effort limit and command of every joint ros2_control commands by position, in N m/rad or N/m."""
+    root = ET.fromstring(urdf)
+    joints = {str(joint.get("name")): joint for joint in root.findall("joint")}
+    out: dict[str, dict[str, object]] = {}
+    for control in root.iter("ros2_control"):
+        for entry in control.findall("joint"):
+            name = str(entry.get("name"))
+            joint = joints.get(name)
+            if joint is None or joint.get("type") not in _SERVO_JOINT_TYPES or entry.get("mimic") == "true":
+                continue
+            if any(command.get("name") == "position" for command in entry.findall("command_interface")):
+                out[name] = _servo_gains(root, joint)
+    return out
 
 
 def _joint_tree(root: ET.Element) -> dict[str, list[tuple[ET.Element, str]]]:

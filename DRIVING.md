@@ -93,8 +93,8 @@ surface for agents. `python3 -m arena_mcp ls robots` lists its tools.
   `parts`, `frames` and `caps`) with its effective value and a kind (`value`,
   `list`, `map`, `unset` for a typed field or adapter block the cap leaves
   out, or `arg` for an xacro argument of a placed part) and a `provenance`
-  (`override`, `component`, `derived`, `urdf` or `file`). The `body`, `power`
-  and `acoustics` fact blocks are listed too, with each arm's `joint_limits`.
+  (`override`, `component`, `derived`, `urdf` or `file`). The `body`, `power`,
+  `acoustics` and `drives` fact blocks are listed too, with each arm's `joint_limits`.
   `overridable` is false for `body.mass`, `body.outline` and `mobile.laser*`,
   and `simulators` names the simulators that honor the path. A part placed
   through the assembly carries its mount in `part` and the path to write inside

@@ -128,8 +128,11 @@ raises, and an instance that overrides `joint_limits` gets its MoveIt joint-limi
 rendered from the effective values.
 
 The robot-wide fact blocks of the effective caps are overridable the same way:
-`body.base_frame`, `body.cmd_vel_topic`, `body.odom_topic`, `power.power_system.<key>`
-and `acoustics.<key>` (`power.power_system.rolling_resistance_crr=0.05`). `body.mass` is
+`body.base_frame`, `body.cmd_vel_topic`, `body.odom_topic`, `power.power_system.<key>`,
+`acoustics.<key>` (`power.power_system.rolling_resistance_crr=0.05`) and
+`drives.<joint>.<kp|kd|effort|command>` (`go1[drives.*.kp=20,drives.*.kd=0.5]` servos every leg
+joint at RL policy gains, `drives.arm_2_joint.kp=*2` stiffens one servo). `kp` and `kd` reach MuJoCo
+and Isaac, which servo at physics rate, Gazebo runs its own position loop. `body.mass` is
 not overridable and raises: it is the summed inertial mass of the rendered URDF, after the
 `urdf_patches.yaml` of the robot and its placed components, which
 the simulators simulate and the power model reads. The robot needs the section the block is read

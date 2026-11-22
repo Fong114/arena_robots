@@ -65,7 +65,7 @@ and the voxel layer poses a camera's clearing frustum in the reference link.
 One file per robot. Each top-level key is a section, and a **section's presence
 IS the advertisement**: an `arm:` key means this robot advertises `arm`. Derived
 at load time as `robot_view.caps.available`, a `frozenset[str]` of section names.
-`power` and `acoustics` are fact blocks and never count as caps. The URDF is the
+`power`, `acoustics` and `drives` are fact blocks and never count as caps. The URDF is the
 single source of everything it defines, caps.yaml holds everything else.
 
 Adapters declare `requires: frozenset[str]` via `@BringupMeta.attach(requires=frozenset({...}))` on the `Bringup` subclass; the broker gates binding on `adapter.requires ⊆ robot.caps.available`. A cap must have a documented vocabulary entry before any adapter cites it in `requires`.
@@ -80,6 +80,7 @@ Adapters declare `requires: frozenset[str]` via `@BringupMeta.attach(requires=fr
 | `gripper` | **dict** (named instances) | end effector with one actuated joint (`joint`, `controller`, `positions`, `max_effort`, optional `arm`), commanded by the `direct` gripper adapter |
 | `power` | flat (fact block) | parameters of the power model |
 | `acoustics` | flat (fact block) | parameters of the acoustic emission model |
+| `drives` | per joint (fact block) | servo of every joint ros2_control commands by position (`kp`, `kd`, `effort`, `command: position\|effort`), derived from the rendered URDF, author only what differs |
 
 Reserved for future: `ptu_head`, `dual_arm`. Continuum arms either
 discretize into the serial-chain shape or use a future `kind: continuum`
@@ -197,7 +198,20 @@ acoustics:                    # optional, fact block over config/acoustic_profil
   sigma_base: 0.8
   sigma_dynamic: 1.2
   sigma_no_effort: 2.0
+
+drives:                       # optional, fact block over the rendered URDF, author only what differs
+  FL_calf_joint: {kp: 40.0, kd: 1.0}
 ```
+`drives.<joint>` covers every joint the ros2_control block commands by position. Its
+defaults come from the rendered URDF: revolute and continuous joints kp 100 N m/rad per
+N m of `<limit effort>` and kd kp/20, prismatic joints kp 8 N/m per N raised until
+gravity sags the carried mass under 2 mm and kd critical, `effort` the URDF effort
+(25 when unset). The served URDF carries them as `kp`, `kd` and `effort` params of the
+ros2_control joint, MuJoCo and Isaac servo position joints with them at physics rate.
+`command: effort` swaps the joint's position command interface for effort, which the
+simulators apply raw, clamped to `effort`, after holding the spawn pose until the first
+finite effort command. The robot's controllers must then command effort on that joint,
+rendering raises otherwise. flatsim always commands by position.
 
 `velocity_limits` and `acceleration_limits` flow into nav2 controller configs
 via `Nav2KinematicsDerivedYAML` substitution; controller YAMLs reference them
