@@ -372,9 +372,10 @@ class RobotView(PathView):
                     raise ValueError(f"component {placement.type}/{placement.variant}: 'power.static_power_w' must be a number; got {type(draw).__name__}")
                 static_w += float(draw)
 
-        # 4. Fallback for mass from model_params
+        # 4. Fallback for mass from model_params, then add mounted component mass
         if mass_kg == 0.0 and "mass" in self.model_params:
             mass_kg = float(self.model_params.get("mass", {}).get("base_kg", 0.0))
+        mass_kg += self._mounted_mass_kg(resolved)
 
         return {
             'static_power_w': static_w,
@@ -388,6 +389,52 @@ class RobotView(PathView):
             'wheel_radius_m': wheel_r,
             'num_wheels': num_wheels,
         }
+
+    def _mounted_mass_kg(
+        self,
+        resolved: assembly_mod.ResolvedAssembly | None,
+        *,
+        include_payload: bool = True,
+        only_payload: bool = False,
+    ) -> float:
+        """Sum declared component mass.kg across resolved placements."""
+        if resolved is None:
+            return 0.0
+        total = 0.0
+        for placement in resolved.placements:
+            is_payload = placement.type == 'payload'
+            if only_payload and not is_payload:
+                continue
+            if not include_payload and is_payload:
+                continue
+            component = _CATALOG.get(placement.type, placement.variant)
+            kg = component.mass.get('kg', 0.0)
+            if not isinstance(kg, (int, float)):
+                raise ValueError(f"component {placement.type}/{placement.variant}: 'mass.kg' must be a number; got {type(kg).__name__}")
+            total += float(kg)
+        return total
+
+    def mass_breakdown_kg(self, parts: dict[str, list[assembly_mod.RequestPart]]) -> dict[str, float] | None:
+        """Mutually exclusive mass split in kg: base + components + payload = total, or None if undeclared."""
+        base_raw = self.model_params.get('mass', {}).get('base_kg')
+        resolved = self._resolved(parts)
+        components = self._mounted_mass_kg(resolved, include_payload=False)
+        payload = self._mounted_mass_kg(resolved, only_payload=True)
+        if base_raw is None:
+            profile = self.power_profile(parts)
+            if profile is None or profile['robot_mass_kg'] <= 0.0:
+                return None
+            total = float(profile['robot_mass_kg'])
+            base = max(0.0, total - components - payload)
+        else:
+            base = float(base_raw)
+            total = base + components + payload
+        return {'base': base, 'components': components, 'payload': payload, 'total': total}
+
+    def declared_mass_kg(self, parts: dict[str, list[assembly_mod.RequestPart]]) -> float | None:
+        """Total declared robot mass in kg (base plus mounted components), or None if undeclared."""
+        breakdown = self.mass_breakdown_kg(parts)
+        return None if breakdown is None else breakdown['total']
 
     @property
     def model(self) -> ModelWrapper:
