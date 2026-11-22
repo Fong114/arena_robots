@@ -38,6 +38,14 @@ dingo:
   num_beams: 720
   range: 30.0
   update_rate: 10
+f1tenth:
+  angle:
+    increment: 0.004359297
+    max: 2.3562
+    min: -2.3562
+  num_beams: 1081
+  range: 20.0
+  update_rate: 40
 go1:
   angle:
     increment: 0.009817477

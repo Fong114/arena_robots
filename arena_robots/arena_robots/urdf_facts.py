@@ -28,8 +28,10 @@ DIFF_DRIVE = "diff_drive_controller/DiffDriveController"
 MECANUM_DRIVE = "mecanum_drive_controller/MecanumDriveController"
 SWERVE_DRIVE = "arena_swerve_controller/SwerveController"
 OMNI_DRIVE = "arena_omni_drive_controller/OmniDriveController"
-DRIVE_CONTROLLER_TYPES = frozenset({DIFF_DRIVE, MECANUM_DRIVE, SWERVE_DRIVE, OMNI_DRIVE})
-DRIVE_TOPICS = {DIFF_DRIVE: ("cmd_vel", "odom"), MECANUM_DRIVE: ("reference", "odometry"), SWERVE_DRIVE: ("cmd_vel", "odometry"), OMNI_DRIVE: ("cmd_vel", "odometry")}
+ACKERMANN_DRIVE = "ackermann_steering_controller/AckermannSteeringController"
+DRIVE_CONTROLLER_TYPES = frozenset({DIFF_DRIVE, MECANUM_DRIVE, SWERVE_DRIVE, OMNI_DRIVE, ACKERMANN_DRIVE})
+HOLONOMIC_DRIVES = frozenset({MECANUM_DRIVE, SWERVE_DRIVE, OMNI_DRIVE})
+DRIVE_TOPICS = {DIFF_DRIVE: ("cmd_vel", "odom"), MECANUM_DRIVE: ("reference", "odometry"), SWERVE_DRIVE: ("cmd_vel", "odometry"), OMNI_DRIVE: ("cmd_vel", "odometry"), ACKERMANN_DRIVE: ("reference", "odometry")}
 DriveGeometry = dict[str, float | list[float]]
 _MECANUM_JOINTS = ("front_left_wheel_command_joint_name", "front_right_wheel_command_joint_name", "rear_left_wheel_command_joint_name", "rear_right_wheel_command_joint_name")
 
@@ -213,6 +215,8 @@ def wheel_joints(controller_type: str, params: Mapping[str, Any]) -> list[str]:
         return [str(name) for key in ("left_wheel_names", "right_wheel_names") for name in params[key]]
     if controller_type == MECANUM_DRIVE:
         return [str(params[key]) for key in _MECANUM_JOINTS]
+    if controller_type == ACKERMANN_DRIVE:
+        return [str(name) for name in params["traction_joints_names"]]
     return [str(name) for name in params["wheel_joint_names"]]
 
 
@@ -266,6 +270,14 @@ def drive_geometry(urdf: str, controller_type: str, params: Mapping[str, Any]) -
     if missing:
         raise ValueError(f"wheel joints {missing} are not below the base frame {base_link}")
     radius = _rounded(_wheel_radius(root, names))
+    if controller_type == ACKERMANN_DRIVE:
+        steering = _steering_joints(params, frames, base_link)
+        return {
+            "wheelbase": _rounded(abs(_mean_x(frames, steering) - _mean_x(frames, names))),
+            "traction_track_width": _track(frames, names),
+            "steering_track_width": _track(frames, steering),
+            "traction_wheels_radius": radius,
+        }
     if controller_type == DIFF_DRIVE:
         sides = [[float(frames[str(name)][1, 3]) for name in params[key]] for key in ("left_wheel_names", "right_wheel_names")]
         return {"wheel_radius": radius, "wheel_separation": _rounded(abs(sum(sides[0]) / len(sides[0]) - sum(sides[1]) / len(sides[1])))}
@@ -292,6 +304,41 @@ def drive_geometry(urdf: str, controller_type: str, params: Mapping[str, Any]) -
             angles.append(_rounded((math.atan2(float(along[1]), float(along[0])) - math.pi / 2) % _FULL_TURN))
         geometry["wheel_angles"] = angles
     return geometry
+
+
+def _steering_joints(params: Mapping[str, Any], frames: Mapping[str, np.ndarray], base_link: str) -> list[str]:
+    steering = [str(name) for name in params["steering_joints_names"]]
+    if any(name not in frames for name in steering):
+        raise ValueError(f"steering joints {steering} are not below the base frame {base_link}")
+    return steering
+
+
+def _mean_x(frames: Mapping[str, np.ndarray], names: Sequence[str]) -> float:
+    return sum(float(frames[name][0, 3]) for name in names) / len(names)
+
+
+def _track(frames: Mapping[str, np.ndarray], names: Sequence[str]) -> float:
+    ys = [float(frames[name][1, 3]) for name in names]
+    return _rounded(max(ys) - min(ys))
+
+
+def min_turning_radius(urdf: str, controller_type: str, params: Mapping[str, Any]) -> float | None:
+    """Turning radius of the bicycle model at the traction axle: wheelbase over the tangent of the inner wheel's steering limit, plus half the steering track, None for a drive that turns in place."""
+    if controller_type != ACKERMANN_DRIVE:
+        return None
+    root = ET.fromstring(urdf)
+    base_link = str(params.get("base_frame_id") or _root_link(root))
+    frames = _joint_frames(root, base_link)
+    traction = wheel_joints(controller_type, params)
+    if any(name not in frames for name in traction):
+        raise ValueError(f"wheel joints {traction} are not below the base frame {base_link}")
+    steering = _steering_joints(params, frames, base_link)
+    limits = joint_limits(urdf)
+    bounds = [max(abs(limit.lower), abs(limit.upper)) for name in steering if (limit := limits.get(name)) is not None and limit.lower is not None and limit.upper is not None]
+    if not bounds:
+        raise ValueError(f"steering joints {steering} have no position limits")
+    inner = max(bounds)
+    return _rounded(abs(_mean_x(frames, steering) - _mean_x(frames, traction)) / math.tan(inner) + _track(frames, steering) / 2.0)
 
 
 def _root_link(root: ET.Element) -> str:

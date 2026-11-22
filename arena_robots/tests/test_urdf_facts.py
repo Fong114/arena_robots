@@ -177,7 +177,7 @@ def test_a_legged_robot_has_no_drive_controller(robot: str) -> None:
     assert drive_controller(yaml.safe_load((ROBOTS_DIR / robot / "control.yaml").read_text())) is None
 
 
-DERIVED_KEYS = frozenset({"wheel_radius", "wheel_separation", "wheel_positions_x", "wheel_positions_y", "wheel_angles", "kinematics.wheels_radius", "kinematics.sum_of_robot_center_projection_on_X_Y_axis"})
+DERIVED_KEYS = frozenset({"wheel_radius", "wheel_separation", "wheel_positions_x", "wheel_positions_y", "wheel_angles", "kinematics.wheels_radius", "kinematics.sum_of_robot_center_projection_on_X_Y_axis", "wheelbase", "traction_track_width", "steering_track_width", "traction_wheels_radius"})
 WHEELED = sorted(path.name.removesuffix("_default.urdf") for path in GOLDEN_DIR.glob("*_default.urdf") if path.name not in ("a1_default.urdf", "go1_default.urdf"))
 
 

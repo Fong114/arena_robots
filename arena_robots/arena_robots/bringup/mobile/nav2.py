@@ -66,7 +66,7 @@ class Nav2Bringup(Bringup):
         agent_name = agent or str(self.caps.mobile.sub("rosnav_rl").get("agent", ""))
         if local_planner == "rosnav_rl" and not agent_name:
             raise ValueError(f"nav2 bringup for '{self.robot.name}' with local_planner=rosnav_rl missing required 'agent': set caps.yaml mobile 'rosnav_rl.agent' or pass robot.mobile.agent:=<name>")
-        if inter_planner == DEFAULT_INTER_PLANNER and self.robot.caps.mobile.min_turning_radius > 0.0:
+        if inter_planner == DEFAULT_INTER_PLANNER and self.caps.mobile.min_turning_radius > 0.0:
             inter_planner = NO_SPIN_INTER_PLANNER
         launch_file = PathJoinSubstitution(
             [

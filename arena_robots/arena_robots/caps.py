@@ -51,7 +51,7 @@ base_link/tip_link) line up with the sensor frames on the same robot."""
 
 SOURCE_KEY = 'source'
 CAPS_FILE = 'caps.yaml'
-_DERIVED_MOBILE = {'footprint': 'urdf', 'radius': 'urdf', 'is_holonomic': 'derived'}
+_DERIVED_MOBILE = {'footprint': 'urdf', 'radius': 'urdf', 'is_holonomic': 'derived', 'min_turning_radius': 'urdf'}
 
 
 def _circumradius(footprint: list[list[float]]) -> float:
@@ -1224,7 +1224,19 @@ class RobotCaps:
             controller = self.view.drive_controller()
         except FileNotFoundError:
             return None
-        return None if controller is None else controller[1] != urdf_facts.DIFF_DRIVE
+        return None if controller is None else controller[1] in urdf_facts.HOLONOMIC_DRIVES
+
+    def turning_radius(self) -> float | None:
+        """The smallest radius the base turns on, from its drive controller and the rendered URDF's steering limits, None for a base that turns in place or has no drive controller."""
+        if self.view is None:
+            return None
+        from arena_robots import urdf_facts
+
+        try:
+            controller = self.view.drive_controller()
+        except FileNotFoundError:
+            return None
+        return None if controller is None else urdf_facts.min_turning_radius(self.rendered_urdf(), controller[1], controller[2])
 
     def drive_geometry(self) -> DriveGeometry:
         """The drive controller's geometry parameters measured in the instance's URDF, empty without a drive controller."""
@@ -1256,6 +1268,9 @@ class RobotCaps:
             holonomic = self.holonomic()
             if holonomic is not None:
                 out['is_holonomic'] = holonomic
+            turning = self.turning_radius()
+            if turning is not None:
+                out['min_turning_radius'] = turning
             self._cached[key] = out
         return copy.deepcopy(self._cached[key])
 
