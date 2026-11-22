@@ -27,9 +27,7 @@ def test_jackal_declared_mass_and_power_profile_add_mounted_payload_crate() -> N
     assert loaded_split["base"] == pytest.approx(18.431)
     assert loaded_split["components"] == pytest.approx(unloaded_split["components"])
     assert loaded_split["payload"] == pytest.approx(19.3)
-    assert loaded_split["total"] == pytest.approx(
-        loaded_split["base"] + loaded_split["components"] + loaded_split["payload"]
-    )
+    assert loaded_split["total"] == pytest.approx(loaded_split["base"] + loaded_split["components"] + loaded_split["payload"])
 
     base_profile = view.power_profile({})
     loaded_profile = view.power_profile(loaded_parts)
