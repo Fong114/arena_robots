@@ -18,6 +18,13 @@ from arena_robots.Robot import RobotView
 ROBOTS_DIR = Path(__file__).resolve().parents[2] / "robots"
 
 
+def _model_param(model: str):
+    preset = ROBOTS_DIR / model / "preset.yaml"
+    if not preset.is_file():
+        return model
+    return pytest.param(model, marks=pytest.mark.requires_installed(yaml.safe_load(preset.read_text())["robot"], "arm/ur"))
+
+
 def test_catalog_lists_every_robot_directory_with_its_caps():
     catalog = mcp.robots_catalog()
     assert [entry["model"] for entry in catalog] == sorted(path.parent.name for path in [*ROBOTS_DIR.glob("*/model_params.yaml"), *ROBOTS_DIR.glob("*/preset.yaml")])
@@ -26,10 +33,14 @@ def test_catalog_lists_every_robot_directory_with_its_caps():
     assert jackal["caps"] == ["mobile"]
     assert "laserscan" in jackal["sensor_types"]
     assert jackal["summary"].startswith("mobile (non-holonomic, radius 0.3338")
-    kairos = next(entry for entry in catalog if entry["model"] == "rbkairos_plus")
+    assert "preset" not in jackal
+
+
+@pytest.mark.requires_installed("rbkairos", "arm/ur")
+def test_catalog_lists_a_preset_with_its_base_robot_and_parts():
+    kairos = next(entry for entry in mcp.robots_catalog() if entry["model"] == "rbkairos_plus")
     assert "arm x1" in kairos["summary"]
     assert kairos["preset"] == {"robot": "rbkairos", "parts": {"arm": ["ur5e"]}, "caps": {}}
-    assert "preset" not in jackal
 
 
 def test_jackal_definition_carries_limits_sensors_and_only_the_goto_endpoint():
@@ -53,6 +64,7 @@ def test_jackal_definition_carries_limits_sensors_and_only_the_goto_endpoint():
     assert "jackal_default" in definition["assembly"]["variants"]["lidar"]
 
 
+@pytest.mark.requires_installed("rbkairos", "arm/ur")
 def test_arm_robot_definition_lists_named_poses_gestures_and_arm_endpoints():
     definition = mcp.robots_definition("rbkairos_plus")
     assert definition["model"] == "rbkairos_plus"
@@ -66,7 +78,7 @@ def test_arm_robot_definition_lists_named_poses_gestures_and_arm_endpoints():
     assert any(sensor["type"] == "image" for sensor in definition["sensors"])
 
 
-@pytest.mark.parametrize("model", sorted(path.parent.name for path in [*ROBOTS_DIR.glob("*/model_params.yaml"), *ROBOTS_DIR.glob("*/preset.yaml")]))
+@pytest.mark.parametrize("model", [_model_param(model) for model in sorted(path.parent.name for path in [*ROBOTS_DIR.glob("*/model_params.yaml"), *ROBOTS_DIR.glob("*/preset.yaml")])])
 def test_every_model_resolves_to_a_json_definition(model):
     definition = mcp.robots_definition(model)
     assert definition["model"] == model and "mobile" in definition["caps"]
@@ -293,6 +305,7 @@ def test_overrides_list_the_jackal_mobile_paths_with_their_effective_values_as_j
     assert any(entry["kind"] == "unset" and entry["value"] is None for entry in paths)
 
 
+@pytest.mark.requires_installed("arm/ur")
 def test_overrides_with_parts_mark_the_placed_part_and_its_bracket_path():
     paths = mcp.robots_overrides("jackal", parts={"top": "arm/ur5e[stall_time=2.0]"})
     by_path = {entry["path"]: entry for entry in paths}

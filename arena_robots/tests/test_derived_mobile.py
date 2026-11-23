@@ -16,8 +16,8 @@ EXTENT_TOLERANCE = 5e-3
 
 OUTLINES = [
     pytest.param("jackal", False, (-0.2553, 0.2553, -0.215, 0.215), 0.3338, id="diff"),
-    pytest.param("rbkairos", True, (-0.457, 0.457, -0.465, 0.465), 0.584, id="mecanum"),
-    pytest.param("mpo700", True, (-0.476, 0.476, -0.324, 0.324), 0.523, id="swerve"),
+    pytest.param("rbkairos", True, (-0.457, 0.457, -0.465, 0.465), 0.584, id="mecanum", marks=pytest.mark.requires_installed("rbkairos")),
+    pytest.param("mpo700", True, (-0.476, 0.476, -0.324, 0.324), 0.523, id="swerve", marks=pytest.mark.requires_installed("mpo700")),
     pytest.param("rskomnidirectional", True, (-0.095, 0.063, -0.085, 0.085), 0.097, id="omni"),
     pytest.param("go1", True, (-0.188, 0.279, -0.047, 0.047), 0.279, id="legged"),
 ]
@@ -103,6 +103,7 @@ def test_a_placed_lift_takes_the_urdf_joint_range(xacro):
     assert caps.provenance("lift.lift0.limits") == "urdf"
 
 
+@pytest.mark.requires_installed("arm/ur", "arm/fr3", "gripper/robotiq_2f_85", "gripper/franka_hand")
 def test_a_placed_gripper_takes_the_urdf_effort_unless_the_component_authors_it(xacro):
     robotiq = InstanceRequest(parts={"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]}).caps_of(_view("jackal"))
     assert robotiq.gripper["top_tool"].max_effort == 50.0
@@ -112,6 +113,7 @@ def test_a_placed_gripper_takes_the_urdf_effort_unless_the_component_authors_it(
     assert franka.provenance("gripper.top_tool.max_effort") == "component"
 
 
+@pytest.mark.requires_installed("arm/ur", "gripper/robotiq_2f_85")
 def test_an_override_scales_the_urdf_default_effort(xacro):
     request = InstanceRequest(parts={"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]}, caps={"gripper.top_tool.max_effort": {"scale": 0.5}})
     caps = request.caps_of(_view("jackal"))

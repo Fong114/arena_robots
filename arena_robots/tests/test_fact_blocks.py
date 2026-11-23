@@ -186,6 +186,7 @@ def test_provenance_of_an_override_path():
     assert _jackal_caps().provenance("mobile.radius") == "urdf"
 
 
+@pytest.mark.requires_installed("arm/ur")
 def test_provenance_of_a_component_path():
     assert _jackal_with_ur5e().provenance("arm.top.stall_time") == "component"
 

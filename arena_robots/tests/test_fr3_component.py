@@ -31,6 +31,7 @@ def _placed() -> tuple[object, object]:
 
 
 class TestFr3Caps:
+    @pytest.mark.requires_installed("rbkairos", "arm/fr3")
     def test_arm_caps_resolve_chain_tip_and_poses(self) -> None:
         rc = RobotIdentifier("rbkairos").resolve_sync().effective_caps({"arm": [RequestPart(variant="fr3", mount="arm_mount")]})
         assert rc.arm is not None and set(rc.arm) == {"arm_mount"}

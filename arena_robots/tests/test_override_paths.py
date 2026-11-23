@@ -50,6 +50,7 @@ class TestOverridePaths:
         found = _by_path("jackal[mobile.velocity_limits.linear=[-0.5,1.0]]")
         assert found["mobile.velocity_limits.linear"].value == [-0.5, 1.0]
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_placed_part_paths_carry_the_mount_and_the_bracket_relative_path(self):
         found = _by_path("jackal[top=arm/ur5e]")
         arm = {path: item for path, item in found.items() if path.startswith("arm.")}
@@ -59,6 +60,7 @@ class TestOverridePaths:
         assert arm["arm.top.stall_time"].relative == "stall_time"
         assert found["mobile.radius"].part is None
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_part_overrides_inside_brackets_change_the_effective_value(self):
         found = _by_path("jackal[top=arm/ur5e[stall_time=2.0]]")
         assert found["arm.top.stall_time"].value == 2.0 and found["arm.top.stall_time"].kind == "value"
@@ -82,6 +84,7 @@ class TestOverridePaths:
         with pytest.raises(FileNotFoundError):
             entry_paths("no_such_robot")
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_every_path_is_listed_once(self):
         found = [item.path for item in entry_paths("jackal[top=arm/ur5e]")]
         assert len(set(found)) == len(found)
@@ -112,22 +115,27 @@ class TestComplete:
         assert complete("tiago[arm.") == ["tiago[arm.arm."]
         assert "tiago[lift.torso.joint=" in complete("tiago[lift.torso.j")
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_placed_part_paths_are_not_offered_at_robot_level(self):
         assert complete("jackal[top=arm/ur5e,arm.") == []
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_inside_part_brackets_completes_cap_instance_relative_paths(self):
         found = complete("jackal[top=arm/ur5e[st")
         assert "jackal[top=arm/ur5e[stall_time=" in found
         assert all(candidate.startswith("jackal[top=arm/ur5e[st") for candidate in found)
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_inside_part_brackets_after_a_finished_override(self):
         found = complete("jackal[top=arm/ur5e[stall_time=2.0,con")
         assert "jackal[top=arm/ur5e[stall_time=2.0,controller=" in found
         assert all(candidate.startswith("jackal[top=arm/ur5e[stall_time=2.0,con") for candidate in found)
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_type_shorthand_part_completes_like_a_mount_directive(self):
         assert "jackal[arm=ur5e[stall_time=" in complete("jackal[arm=ur5e[stall_t")
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_after_a_finished_part_robot_level_keys_complete_again(self):
         assert complete("jackal[top=arm/ur5e[stall_time=2.0],mob") == ["jackal[top=arm/ur5e[stall_time=2.0],mobile."]
 
@@ -151,5 +159,6 @@ class TestComplete:
     def test_nothing_to_complete_returns_empty(self, entry: str):
         assert complete(entry) == []
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_repeated_completion_is_stable(self):
         assert complete("jackal[top=arm/ur5e[st") == complete("jackal[top=arm/ur5e[st")

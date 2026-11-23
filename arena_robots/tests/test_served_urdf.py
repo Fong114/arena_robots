@@ -346,6 +346,7 @@ def test_serve_strips_sensors_per_optim(optim, require_installed):
         assert {"gpu_lidar", "ray"} & types
 
 
+@pytest.mark.requires_installed("arm/ur")
 def test_canonical_injects_the_assembly_control_joints(require_installed):
     pytest.importorskip("xacro")
     require_installed("jackal")

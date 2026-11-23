@@ -24,7 +24,8 @@ class TestShippedPresets:
         assert preset is not None
         assert (preset.robot, preset.parts, preset.caps) == (base, {"arm": ["ur5e"]}, {})
 
-    @pytest.mark.parametrize(("name", "base", "mount"), [(name, base, mount) for name, (base, mount) in PRESETS.items()])
+    @pytest.mark.requires_installed("arm/ur")
+    @pytest.mark.parametrize(("name", "base", "mount"), [pytest.param(name, base, mount, marks=pytest.mark.requires_installed(base)) for name, (base, mount) in PRESETS.items()])
     def test_the_expanded_instance_places_the_ur5e_on_the_arm_mount(self, name: str, base: str, mount: str) -> None:
         (config,) = Config.parse(name)
         view = RobotIdentifier(config.robot).resolve_sync()

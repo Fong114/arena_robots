@@ -77,6 +77,7 @@ class TestBuildMoveitParamsInstanceAgreement:
         assert default_params is not None
         assert default_params == explicit_params
 
+    @pytest.mark.requires_installed("rbvogui", "arm/ur")
     def test_unknown_instance_raises_key_error(self):
         from arena_robots.moveit_factory import build_moveit_params
 

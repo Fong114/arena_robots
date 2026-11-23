@@ -142,6 +142,7 @@ class TestWildcards:
     def test_star_instance_validates(self, tmp_path: Path):
         _caps(tmp_path, {"arm.*.stall_time": 2.0}, arm=ARM).validate_overrides()
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_star_on_a_placed_part_reaches_every_part_of_that_type(self):
         view = RobotIdentifier("jackal").resolve_sync()
         assert view.assembly is not None

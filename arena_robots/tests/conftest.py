@@ -19,6 +19,10 @@ def _ros_available() -> bool:
     return True
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "requires_installed(*names): skip unless every submodule of each named robot or component is checked out")
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     if _ros_available():
         return
@@ -82,3 +86,10 @@ def require_installed() -> Callable[[str], None]:
             pytest.skip(f"{name} is not installed, run `arena feature robots add {name}`")
 
     return require
+
+
+@pytest.fixture(autouse=True)
+def _requires_installed(request: pytest.FixtureRequest, require_installed: Callable[[str], None]) -> None:
+    for marker in request.node.iter_markers("requires_installed"):
+        for name in marker.args:
+            require_installed(name)

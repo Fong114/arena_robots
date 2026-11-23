@@ -30,12 +30,14 @@ def _arm(caps: RobotCaps) -> ArmSpec:
 
 
 class TestJointLimits:
+    @pytest.mark.requires_installed("arm/ur")
     def test_joints_are_the_component_file_keyed_by_rendered_joint_name(self):
         joints = _arm(_jackal_ur5e()).joint_limits
         assert sorted(joints) == sorted(_JOINTS)
         assert joints["top_shoulder_pan_joint"]["max_velocity"] == pytest.approx(math.pi)
         assert joints["top_wrist_1_joint"]["max_acceleration"] == pytest.approx(15.0)
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_wildcard_override_halves_every_max_velocity_and_nothing_else(self):
         plain = _arm(_jackal_ur5e()).joint_limits
         halved = _arm(_jackal_ur5e(**_HALF)).joint_limits
@@ -45,11 +47,13 @@ class TestJointLimits:
             assert halved[joint]["max_acceleration"] == plain[joint]["max_acceleration"]
             assert halved[joint]["max_effort"] == plain[joint]["max_effort"]
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_one_joint_takes_a_value_of_its_own(self):
         joints = _arm(_jackal_ur5e(**{"joint_limits.top_elbow_joint.max_velocity": 1.0})).joint_limits
         assert joints["top_elbow_joint"]["max_velocity"] == 1.0
         assert joints["top_shoulder_pan_joint"]["max_velocity"] == pytest.approx(math.pi)
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_an_unknown_joint_raises(self):
         with pytest.raises(ValueError, match="unknown field 'no_such_joint'"):
             _arm(_jackal_ur5e(**{"joint_limits.no_such_joint.max_velocity": 1.0}))
@@ -65,6 +69,7 @@ class TestJointLimits:
 
 
 class TestJointPaths:
+    @pytest.mark.requires_installed("arm/ur")
     def test_every_joint_key_is_an_override_path_inside_the_part_brackets(self):
         found = {item.path: item for item in override_paths(_jackal_ur5e())}
         item = found["arm.top.joint_limits.top_elbow_joint.max_velocity"]
@@ -73,11 +78,13 @@ class TestJointPaths:
         assert item.provenance == "urdf"
         assert item.overridable
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_an_overridden_joint_key_has_the_override_provenance(self):
         found = {item.path: item for item in override_paths(_jackal_ur5e(**_HALF))}
         assert found["arm.top.joint_limits.top_elbow_joint.max_velocity"].provenance == "override"
         assert found["arm.top.joint_limits.top_elbow_joint.max_acceleration"].provenance == "component"
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_arm_arguments_are_listed_with_the_arg_kind(self):
         found = {item.path: item for item in override_paths(_jackal_ur5e())}
         item = found["arm.top.safety_limits"]

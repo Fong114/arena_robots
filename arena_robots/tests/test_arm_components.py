@@ -131,6 +131,7 @@ class TestSrdfFragment:
         # 8 intra-arm + 2 mount-adjacency (chassis_link vs arm base_link/base_link_inertia)
         assert len(root.findall("disable_collisions")) == 10
 
+    @pytest.mark.requires_installed("arm/ur")
     @pytest.mark.parametrize("pose", ["stow", "ready"])
     def test_group_states_are_the_named_poses_of_the_arm(self, pose: str) -> None:
         rc = RobotIdentifier("jackal").resolve_sync().effective_caps({"arm": [RequestPart(variant="ur5e", mount="top")]})
@@ -155,6 +156,7 @@ class TestJointLimits:
         for entry in limits.values():
             assert entry == {"has_acceleration_limits": True, "max_acceleration": 15.0}
 
+    @pytest.mark.requires_installed("arm/ur")
     @pytest.mark.parametrize("variant", UR_VARIANTS)
     def test_each_variant_has_six_joints_with_urdf_limits_and_the_family_acceleration(self, variant: str) -> None:
         limits = self._limits(variant)
@@ -164,11 +166,13 @@ class TestJointLimits:
             assert entry["has_effort_limits"] is True
             assert entry["max_acceleration"] == 15.0
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_ur5e_moves_every_joint_at_its_vendor_180_degrees_per_second(self) -> None:
         limits = self._limits("ur5e")
         for joint in ARM_JOINTS:
             assert limits[joint]["max_velocity"] == pytest.approx(math.pi)
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_ur10e_differs_from_ur5e(self) -> None:
         """ur10e shoulders are slower (120deg/s)."""
         ur5e, ur10e = self._limits("ur5e"), self._limits("ur10e")
@@ -176,10 +180,12 @@ class TestJointLimits:
         assert ur10e["shoulder_pan_joint"]["max_velocity"] == pytest.approx(math.radians(120))
         assert ur10e["wrist_1_joint"]["max_velocity"] == pytest.approx(math.radians(180))
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_cb_ur5_follows_ur_description_not_ur5e(self) -> None:
         """CB-series ur5 takes ur_description's 180deg/s wrists (the URDF/controller value)."""
         assert self._limits("ur5")["wrist_1_joint"]["max_velocity"] == pytest.approx(math.pi)
 
+    @pytest.mark.requires_installed("arm/ur")
     def test_a_continuous_wrist_has_no_position_limits(self) -> None:
         assert self._limits("ur3")["wrist_3_joint"]["has_position_limits"] is False
         assert self._limits("ur5e")["wrist_3_joint"]["has_position_limits"] is True
@@ -200,11 +206,12 @@ class TestPresetArmCaps:
     @pytest.mark.parametrize(
         ("preset", "mount", "prefix", "base_link"),
         [
-            ("rbvogui_plus", "arm0", "robot_", "robot_chassis_link"),
-            ("rbkairos_plus", "arm_mount", "robot_", "robot_top_cover"),
-            ("ridgeback_plus", "arm_mount", "", "chassis_link"),
+            pytest.param("rbvogui_plus", "arm0", "robot_", "robot_chassis_link", marks=pytest.mark.requires_installed("rbvogui")),
+            pytest.param("rbkairos_plus", "arm_mount", "robot_", "robot_top_cover", marks=pytest.mark.requires_installed("rbkairos")),
+            pytest.param("ridgeback_plus", "arm_mount", "", "chassis_link", marks=pytest.mark.requires_installed("ridgeback")),
         ],
     )
+    @pytest.mark.requires_installed("arm/ur")
     def test_the_expanded_instance_carries_the_replaced_robots_arm_facts(self, preset: str, mount: str, prefix: str, base_link: str) -> None:
         from arena_robots.request import InstanceRequest
         from arena_robots.Robot import RobotIdentifier
@@ -262,6 +269,7 @@ class TestEffectiveCapsHonorsChassisPrefix:
         assert arm["named_poses"]["stow"]["joints"]["arm_shoulder_pan_joint"] == 0.0
 
 
+@pytest.mark.requires_installed("arm/ur")
 class TestChainFromTheUrdf:
     @pytest.mark.parametrize("variant", UR_VARIANTS)
     def test_the_chain_is_the_six_arm_joints_between_the_srdf_links(self, variant: str) -> None:

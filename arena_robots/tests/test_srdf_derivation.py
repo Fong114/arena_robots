@@ -195,6 +195,7 @@ class TestInstalledRobots:
         assert caps.provenance("arm.arm.named_poses.stow.joints.arm_1_joint") == "derived"
         assert caps.provenance("arm.arm.named_poses.wave_up.joints.arm_1_joint") == "file"
 
+    @pytest.mark.requires_installed("arm/fr3", "gripper/franka_hand")
     def test_the_fr3_and_its_hand_take_their_facts_from_their_srdf(self) -> None:
         parts = {"arm": [RequestPart(variant="fr3", mount="top")], "gripper": [RequestPart(variant="franka_hand", mount="top_tool")]}
         caps = RobotIdentifier("jackal").resolve_sync().effective_caps(parts)
@@ -204,6 +205,7 @@ class TestInstalledRobots:
         assert [arm.named_poses["ready"][joint] for joint in joints] == [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
         assert caps.gripper["top_tool"].positions == {"open": 0.04, "close": 0.0}
 
+    @pytest.mark.requires_installed("arm/ur", "gripper/robotiq_2f_85")
     def test_the_robotiq_gripper_takes_its_positions_from_its_srdf(self) -> None:
         parts = {"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]}
         caps = RobotIdentifier("jackal").resolve_sync().effective_caps(parts)

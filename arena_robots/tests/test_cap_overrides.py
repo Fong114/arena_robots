@@ -302,6 +302,7 @@ class TestPartBrackets:
         with pytest.raises(AssemblyError, match="'none' takes no cap overrides"):
             build_request(view.assembly, {"front": ["none[range=1.0]"]})
 
+    @pytest.mark.requires_installed("arm/fr3", "gripper/franka_hand")
     def test_placed_part_overrides_reach_its_instance(self):
         view = RobotIdentifier("jackal").resolve_sync()
         assert view.assembly is not None
