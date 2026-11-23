@@ -1264,6 +1264,13 @@ class RobotCaps:
         assert self.view is not None
         return served_urdf.canonical(self.view, self.parts, self.frames or None)
 
+    def mass_split(self) -> dict[str, float]:
+        """The instance's URDF mass in kg as ``base``, ``components`` and ``payload``, with their ``total``."""
+        from arena_robots import served_urdf
+
+        assert self.view is not None
+        return served_urdf.mass_split(self.view, self.parts, self.frames or None)
+
     def served_urdf(self, **kwargs: typing.Any) -> ServedURDF:
         """The URDF file a simulator loads for this instance."""
         from arena_robots import served_urdf

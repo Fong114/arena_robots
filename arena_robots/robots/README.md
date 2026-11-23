@@ -290,7 +290,7 @@ stays in the files, every consumer reads the block:
 
 | Block | Read from | Holds |
 | --- | --- | --- |
-| `body` | `model_params.yaml` and the rendered URDF | `base_frame`, `cmd_vel_topic` and `odom_topic` (from `control:`), `mass` (the summed inertial mass of the rendered URDF, placed parts included) |
+| `body` | `model_params.yaml` and the rendered URDF | `base_frame`, `cmd_vel_topic` and `odom_topic` (from `control:`), `mass` (the summed inertial mass of the rendered URDF, placed parts included, which `RobotCaps.mass_split()` splits into the chassis `base`, the placed `components` and the placed `payload`) |
 | `power` | the `power` section of `caps.yaml` | the section (the power model takes the mass from `body.mass`, the torque clamp from `acoustics`) |
 | `acoustics` | the `acoustics` section of `caps.yaml` | the section as authored |
 

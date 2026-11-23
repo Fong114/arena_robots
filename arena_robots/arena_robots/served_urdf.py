@@ -339,6 +339,29 @@ def canonical(view: RobotView, parts: dict[str, list[RequestPart]], frames: dict
     return _canonical(_Request(_request_key(view, parts, frames), view, parts, frames))
 
 
+def mass_split(view: RobotView, parts: dict[str, list[RequestPart]], frames: dict[str, str] | None = None) -> dict[str, float]:
+    """Inertial mass in kg of the chassis, the placed components and the placed payload, summing to the instance's URDF mass."""
+    return dict(_mass_split(_Request(_request_key(view, parts, frames), view, parts, frames)))
+
+
+@functools.lru_cache(maxsize=256)
+def _mass_split(request: _Request) -> tuple[tuple[str, float], ...]:
+    from arena_robots import urdf_patches
+    from arena_robots.assembly import apply_frame_overrides
+
+    resolved = request.view._resolved(request.parts)
+    if resolved is not None:
+        resolved = apply_frame_overrides(resolved, request.frames or {})
+    placements = resolved.placements if resolved is not None else []
+    owner = urdf_patches.owners(request.view, resolved)
+    split = {"base": 0.0, "components": 0.0, "payload": 0.0}
+    for link in ET.fromstring(_canonical(request)).findall("link"):
+        index = owner(str(link.get("name")))
+        key = "base" if index is None else "payload" if placements[index].type == "payload" else "components"
+        split[key] += sum(float(mass.get("value", 0.0)) for mass in link.findall("inertial/mass"))
+    return (*split.items(), ("total", sum(split.values())))
+
+
 def serve(
     view: RobotView,
     parts: dict[str, list[RequestPart]],

@@ -279,6 +279,15 @@ def _owner_index(name: str, prefixes: Sequence[str], chassis_links: frozenset[st
     return best
 
 
+def owners(view: RobotView, resolved: ResolvedAssembly | None) -> Callable[[str], int | None]:
+    """The index into `resolved.placements` of the placement a rendered link belongs to, None for the chassis."""
+    placements = resolved.placements if resolved is not None else []
+    prefix = view.assembly.prefix if view.assembly is not None else ''
+    prefixes = [f"{prefix}{placement.mount.frame or placement.mount.name}_" for placement in placements]
+    chassis_links = frozenset(f"{prefix}{placement.mount.parent}" for placement in placements if placement.mount.chained_parent is None)
+    return lambda name: _owner_index(name, prefixes, chassis_links)
+
+
 def apply(root: ET.Element, view: RobotView, resolved: ResolvedAssembly | None) -> None:
     """Applies the patch files of the placed components, then the robot's own, to the rendered `root`."""
     from arena_robots.catalog import Catalog
@@ -286,7 +295,7 @@ def apply(root: ET.Element, view: RobotView, resolved: ResolvedAssembly | None) 
     placements = resolved.placements if resolved is not None else []
     prefix = view.assembly.prefix if view.assembly is not None else ''
     prefixes = [f"{prefix}{placement.mount.frame or placement.mount.name}_" for placement in placements]
-    chassis_links = frozenset(f"{prefix}{placement.mount.parent}" for placement in placements if placement.mount.chained_parent is None)
+    owner_of = owners(view, resolved)
     catalog = Catalog()
     components = get_package_share_path('arena_robots') / 'components'
     for index, placement in enumerate(placements):
@@ -294,6 +303,6 @@ def apply(root: ET.Element, view: RobotView, resolved: ResolvedAssembly | None) 
         if owner is None:
             continue
         path = components / placement.type / owner / FILE_NAME
-        apply_patches(root, load(path, placement.variant), path=path, prefix=prefixes[index], owns=lambda name, index=index: _owner_index(name, prefixes, chassis_links) == index)
+        apply_patches(root, load(path, placement.variant), path=path, prefix=prefixes[index], owns=lambda name, index=index: owner_of(name) == index)
     path = view.path / FILE_NAME
-    apply_patches(root, load(path), path=path, prefix='', owns=lambda name: _owner_index(name, prefixes, chassis_links) is None)
+    apply_patches(root, load(path), path=path, prefix='', owns=lambda name: owner_of(name) is None)
