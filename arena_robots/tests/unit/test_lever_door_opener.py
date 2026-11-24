@@ -1,11 +1,10 @@
 import json
 from pathlib import Path
 
+from arena_robots.lever_door_opener import LeverDoorOpener, Phase
 from geometry_msgs.msg import Vector3, Wrench
 from ros_gz_interfaces.msg import Contact, Contacts, JointWrench
 from std_srvs.srv import Trigger
-
-from arena_robots.lever_door_opener import LeverDoorOpener, Phase
 
 
 def test_lever_door_opener_initialization():
@@ -14,7 +13,7 @@ def test_lever_door_opener_initialization():
         assert node._phase == Phase.IDLE
         assert node.MAX_HANDLE_FORCE_N == 22.0
         assert node.MAX_CONTACT_SPEED_MPS == 0.05
-        assert node._lever_xyz == (7.92, 1.70, 1.01)
+        assert node._lever_xyz == (7.89, 1.78, 1.01)
     finally:
         node.destroy_node()
 

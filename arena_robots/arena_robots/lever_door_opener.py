@@ -50,8 +50,8 @@ class LeverDoorOpener(Node):
         self._door_center_y = declare(self, Param[float]("door_center_y", 2.0, "Center Y position of door opening.")).value
 
         self._lever_xyz = (
-            declare(self, Param[float]("lever_x", 7.92, "Lever handle target X position.")).value,
-            declare(self, Param[float]("lever_y", 1.70, "Lever handle target Y position.")).value,
+            declare(self, Param[float]("lever_x", 7.89, "Lever handle target X position.")).value,
+            declare(self, Param[float]("lever_y", 1.78, "Lever handle target Y position.")).value,
             declare(self, Param[float]("lever_z", 1.01, "Lever handle target Z position.")).value,
         )
         self._approach_clearance = declare(self, Param[float]("approach_clearance", 0.05, "Clearance above handle.")).value
@@ -186,7 +186,7 @@ class LeverDoorOpener(Node):
             elif now - self._phase_start > 5.0:
                 self._abort(f"Could not press lever: descent={descent * 100:.1f}cm")
             else:
-                self._send_servo_vel_raw(0.0, -0.1, -press_speed)
+                self._send_servo_vel_raw(0.0, 0.0, -press_speed)
 
         elif self._phase == Phase.PUSH_DOOR:
             assert self._push_start_ee is not None
