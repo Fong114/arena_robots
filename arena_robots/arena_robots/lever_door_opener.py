@@ -158,17 +158,26 @@ class LeverDoorOpener(Node):
 
         # Phase execution state machine
         if self._phase == Phase.APPROACH_ABOVE:
-            dx, dy = 7.45 - base_x, self._door_center_y - base_y
-            self._send_base_vel(max(-0.4, min(0.4, 2.0 * dx)), max(-0.4, min(0.4, 2.0 * dy)), wz_lock)
-
-            target = (self._lever_xyz[0], self._lever_xyz[1], self._lever_xyz[2] + self._approach_clearance)
-            dist = self._move_towards(target, ee, speed=6.0)
-            if dist < 0.04 or (now - self._phase_start > 2.0 and dist < 0.08):
-                self._stop_all()
-                self._transition(Phase.DESCEND_AND_PRESS, f"Above lever (dist={dist:.3f}m). Descending...")
+            base_arrived = abs(base_x - 7.45) < 0.03 and abs(base_y - self._door_center_y) < 0.03
+            if not base_arrived:
+                base_vx = max(-0.20, min(0.20, 0.8 * (7.45 - base_x)))
+                base_vy = max(-0.15, min(0.15, 0.8 * (self._door_center_y - base_y)))
+                self._send_base_vel(base_vx, base_vy, wz_lock)
+                self._stop_arm()
+            else:
+                self._stop_base()
+                target = (self._lever_xyz[0], self._lever_xyz[1], self._lever_xyz[2] + self._approach_clearance)
+                dist = self._move_towards(target, ee, speed=3.5)
+                if dist < 0.035 or (now - self._phase_start > 4.0 and dist < 0.06):
+                    self._stop_all()
+                    self._transition(Phase.DESCEND_AND_PRESS, f"Above lever (dist={dist:.3f}m). Descending...")
 
         elif self._phase == Phase.DESCEND_AND_PRESS:
             self._stop_base()
+            press_speed = 1.5 if self._contact_force < 18.0 else 0.8
+            if self._contact_force >= self.MAX_HANDLE_FORCE_N:
+                press_speed = 0.0
+
             descent = self._lever_xyz[2] - ee[2]
             if descent >= 0.065 or (now - self._phase_start > 5.0 and descent >= 0.040):
                 self._stop_arm()
@@ -177,23 +186,33 @@ class LeverDoorOpener(Node):
             elif now - self._phase_start > 5.0:
                 self._abort(f"Could not press lever: descent={descent * 100:.1f}cm")
             else:
-                self._send_servo_vel_raw(0.0, -0.1, -0.45)
+                self._send_servo_vel_raw(0.0, -0.1, -press_speed)
 
         elif self._phase == Phase.PUSH_DOOR:
             assert self._push_start_ee is not None
             pushed = abs(ee[0] - self._push_start_ee[0])
-            if pushed >= self._push_distance or (now - self._phase_start > 4.5 and pushed >= 0.20):
+            if pushed >= self._push_distance:
                 self._stop_all()
                 self._transition(Phase.RETRACT_ARM, "Door pushed open. Retracting arm...")
             elif now - self._phase_start > 4.5:
-                self._abort(f"Door failed to open (pushed only {pushed * 100:.1f}cm). Stopped.")
+                if pushed >= 0.25:
+                    self._stop_all()
+                    self._transition(Phase.RETRACT_ARM, f"Door open ({pushed * 100:.1f}cm). Retracting arm...")
+                else:
+                    self._abort(f"Door failed to open (pushed only {pushed * 100:.1f}cm). Stopped.")
             else:
                 base_vy = max(-0.10, min(0.10, 0.6 * (self._door_center_y - base_y)))
-                self._send_base_vel(0.15, base_vy, wz_lock)
-                self._send_servo_vel_raw(1.5, 0.0, -0.3)
+                self._send_base_vel(0.12, base_vy, wz_lock)
+
+                vy_arm_ff = -base_vy / 0.02
+                vy_arm_fb = -15.0 * (ee[1] - self._lever_xyz[1])
+                vy_arm = max(-6.0, min(6.0, vy_arm_ff + vy_arm_fb))
+                vz_arm = max(-2.0, min(2.0, -10.0 * (ee[2] - (self._lever_xyz[2] - 0.07))))
+
+                self._send_servo_vel_raw(4.0, vy_arm, vz_arm)
 
         elif self._phase == Phase.RETRACT_ARM:
-            if now - self._phase_start > 1.2:
+            if now - self._phase_start > 1.8:
                 self._stop_arm()
                 self._transition(Phase.DRIVE_THROUGH, "Driving through open door...")
             else:
