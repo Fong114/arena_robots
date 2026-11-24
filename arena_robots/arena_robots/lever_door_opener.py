@@ -33,55 +33,42 @@ class Phase(Enum):
 class LeverDoorOpener(Node):
     """Opener node: arm presses lever and pushes door, then mobile base drives through."""
 
-    MAX_HANDLE_FORCE_N = 22.0
-    MAX_CONTACT_SPEED_MPS = 0.05
+    MAX_HANDLE_FORCE_N: float = 22.0
+    MAX_CONTACT_SPEED_MPS: float = 0.05
+
+    def _float_param(self, name: str, default: float) -> float:
+        val = self.declare_parameter(name, default).value
+        return float(val) if isinstance(val, (int, float, str)) else default
+
+    def _str_param(self, name: str, default: str) -> str:
+        val = self.declare_parameter(name, default).value
+        return str(val) if val is not None else default
 
     def __init__(self) -> None:
         super().__init__("lever_door_opener")
 
-        robot_ns = str(
-            self.declare_parameter(
-                "robot_namespace", "/arena/env_0/arena_env_node/ridgeback_plus"
-            ).value
-        ).rstrip("/")
-        env_prefix = str(self.declare_parameter("env_frame_prefix", "env_0").value).strip("/")
-        robot_prefix = str(
-            self.declare_parameter("robot_frame_prefix", "env_0/ridgeback_plus").value
-        ).strip("/")
-        self._ref_frame = str(
-            self.declare_parameter("reference_frame", f"{env_prefix}/map").value
-        ).strip("/")
-        self._ee_frame = str(
-            self.declare_parameter("ee_frame", f"{robot_prefix}/arm_tool0").value
-        ).strip("/")
-        self._base_frame = str(
-            self.declare_parameter("base_frame", f"{robot_prefix}/base_link").value
-        ).strip("/")
-        self._door_center_y = float(self.declare_parameter("door_center_y", 2.0).value)
+        robot_ns = self._str_param("robot_namespace", "/arena/env_0/arena_env_node/ridgeback_plus").rstrip("/")
+        env_prefix = self._str_param("env_frame_prefix", "env_0").strip("/")
+        robot_prefix = self._str_param("robot_frame_prefix", "env_0/ridgeback_plus").strip("/")
+        self._ref_frame = self._str_param("reference_frame", f"{env_prefix}/map").strip("/")
+        self._ee_frame = self._str_param("ee_frame", f"{robot_prefix}/arm_tool0").strip("/")
+        self._base_frame = self._str_param("base_frame", f"{robot_prefix}/base_link").strip("/")
+        self._door_center_y = self._float_param("door_center_y", 2.0)
 
-        self._lever_xyz = tuple(
-            float(self.declare_parameter(k, v).value)
-            for k, v in (("lever_x", 7.92), ("lever_y", 1.70), ("lever_z", 1.01))
+        self._lever_xyz = (
+            self._float_param("lever_x", 7.92),
+            self._float_param("lever_y", 1.70),
+            self._float_param("lever_z", 1.01),
         )
-        self._approach_clearance = float(self.declare_parameter("approach_clearance", 0.05).value)
-        self._push_distance = float(self.declare_parameter("push_distance", 0.65).value)
-        self._drive_duration = float(self.declare_parameter("drive_duration", 3.0).value)
-        self._metrics_path = str(
-            self.declare_parameter(
-                "metrics_file", "/opt/arena_ws/data/lever_door_metrics.json"
-            ).value
-        )
+        self._approach_clearance = self._float_param("approach_clearance", 0.05)
+        self._push_distance = self._float_param("push_distance", 0.65)
+        self._drive_duration = self._float_param("drive_duration", 3.0)
+        self._metrics_path = self._str_param("metrics_file", "/opt/arena_ws/data/lever_door_metrics.json")
 
-        self._servo_pub = self.create_publisher(
-            TwistStamped, f"{robot_ns}/servo_node/delta_twist_cmds", 10
-        )
-        self._cmd_vel_pub = self.create_publisher(
-            TwistStamped, f"{robot_ns}/platform_velocity_controller/cmd_vel", 10
-        )
+        self._servo_pub = self.create_publisher(TwistStamped, f"{robot_ns}/servo_node/delta_twist_cmds", 10)
+        self._cmd_vel_pub = self.create_publisher(TwistStamped, f"{robot_ns}/platform_velocity_controller/cmd_vel", 10)
         self.create_subscription(Contacts, f"{robot_ns}/arm/contact", self._on_contact, 10)
-        self._switch_type_cli = self.create_client(
-            ServoCommandType, f"{robot_ns}/servo_node/switch_command_type"
-        )
+        self._switch_type_cli = self.create_client(ServoCommandType, f"{robot_ns}/servo_node/switch_command_type")
 
         self._tf = Buffer()
         self._tf_listener = TransformListener(self._tf, self)
@@ -108,11 +95,7 @@ class LeverDoorOpener(Node):
             self._switch_type_cli.call_async(req)
 
     def _on_contact(self, msg: Contacts) -> None:
-        force = sum(
-            math.sqrt(w.body_1_wrench.force.x**2 + w.body_1_wrench.force.y**2 + w.body_1_wrench.force.z**2)
-            for c in msg.contacts
-            for w in c.wrenches
-        )
+        force = sum(math.sqrt(w.body_1_wrench.force.x**2 + w.body_1_wrench.force.y**2 + w.body_1_wrench.force.z**2) for c in msg.contacts for w in c.wrenches)
         self._contact_force = force
         if self._phase in (Phase.IDLE, Phase.APPROACH_ABOVE, Phase.DESCEND_AND_PRESS) and force > self._peak_force:
             self._peak_force = force
@@ -148,9 +131,7 @@ class LeverDoorOpener(Node):
 
         now = time.monotonic()
         try:
-            ee_tf = self._tf.lookup_transform(
-                self._ref_frame, self._ee_frame, Time(), timeout=Duration(seconds=0.05)
-            )
+            ee_tf = self._tf.lookup_transform(self._ref_frame, self._ee_frame, Time(), timeout=Duration(seconds=0.05))
         except TransformException:
             if now - self._phase_start > 5.0 and self._phase != Phase.DRIVE_THROUGH:
                 self._abort("TF lookup timeout")
@@ -164,15 +145,11 @@ class LeverDoorOpener(Node):
 
         base_x, base_y, base_yaw = 7.45, 2.00, 0.0
         try:
-            base_tf = self._tf.lookup_transform(
-                self._ref_frame, self._base_frame, Time(), timeout=Duration(seconds=0.02)
-            )
+            base_tf = self._tf.lookup_transform(self._ref_frame, self._base_frame, Time(), timeout=Duration(seconds=0.02))
             base_x = base_tf.transform.translation.x
             base_y = base_tf.transform.translation.y
             q = base_tf.transform.rotation
-            base_yaw = math.atan2(
-                2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-            )
+            base_yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
         except TransformException:
             pass
         wz_lock = max(-0.4, min(0.4, -2.5 * base_yaw))
@@ -209,7 +186,7 @@ class LeverDoorOpener(Node):
                 self._phase = Phase.PUSH_DOOR
                 self._phase_start = now
                 self._push_start_ee = ee
-                self.get_logger().info(f"Lever pressed ({descent*100:.1f}cm). Pushing door open...")
+                self.get_logger().info(f"Lever pressed ({descent * 100:.1f}cm). Pushing door open...")
             elif now - self._phase_start > 5.0:
                 if descent >= 0.040:
                     self._stop_arm()
@@ -217,7 +194,7 @@ class LeverDoorOpener(Node):
                     self._phase_start = now
                     self._push_start_ee = ee
                 else:
-                    self._abort(f"Could not press lever: descent={descent*100:.1f}cm")
+                    self._abort(f"Could not press lever: descent={descent * 100:.1f}cm")
             else:
                 self._send_servo_vel_raw(vx=0.0, vy=-0.1, vz=-0.45)
 
@@ -236,7 +213,7 @@ class LeverDoorOpener(Node):
                     self._phase = Phase.RETRACT_ARM
                     self._phase_start = now
                 else:
-                    self._abort(f"Door failed to open (pushed only {pushed*100:.1f}cm). Stopped.")
+                    self._abort(f"Door failed to open (pushed only {pushed * 100:.1f}cm). Stopped.")
             else:
                 base_vy = max(-0.10, min(0.10, 0.6 * (self._door_center_y - base_y)))
                 self._send_base_vel(vx=0.15, vy=base_vy, wz=wz_lock)
@@ -316,21 +293,13 @@ class LeverDoorOpener(Node):
         self._phase = Phase.ABORTED
 
     def _report_and_save_metrics(self) -> None:
-        speed_ok = (
-            (self._contact_speed <= self.MAX_CONTACT_SPEED_MPS)
-            if self._contact_speed is not None
-            else True
-        )
+        speed_ok = (self._contact_speed <= self.MAX_CONTACT_SPEED_MPS) if self._contact_speed is not None else True
         force_ok = self._peak_force <= self.MAX_HANDLE_FORCE_N
         is_success = force_ok and speed_ok
 
         self.get_logger().info("=== Lever Door Opening Finished ===")
-        self.get_logger().info(
-            f"Peak Handle Force: {self._peak_force:.2f} N (Limit: {self.MAX_HANDLE_FORCE_N} N) -> {'PASS' if force_ok else 'FAIL'}"
-        )
-        self.get_logger().info(
-            f"Contact Speed: {self._contact_speed or 0.0:.4f} m/s (Limit: {self.MAX_CONTACT_SPEED_MPS} m/s) -> {'PASS' if speed_ok else 'PASS (no contact)'}"
-        )
+        self.get_logger().info(f"Peak Handle Force: {self._peak_force:.2f} N (Limit: {self.MAX_HANDLE_FORCE_N} N) -> {'PASS' if force_ok else 'FAIL'}")
+        self.get_logger().info(f"Contact Speed: {self._contact_speed or 0.0:.4f} m/s (Limit: {self.MAX_CONTACT_SPEED_MPS} m/s) -> {'PASS' if speed_ok else 'PASS (no contact)'}")
         self.get_logger().info(f"Overall Verdict: {'SUCCESS' if is_success else 'FAIL'}")
 
         metrics = {
