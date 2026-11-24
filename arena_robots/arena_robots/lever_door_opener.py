@@ -9,6 +9,7 @@ from enum import Enum, auto
 from pathlib import Path
 
 import rclpy
+from arena_rclpy_mixins.params import Param, declare
 from geometry_msgs.msg import TwistStamped
 from moveit_msgs.srv import ServoCommandType
 from rclpy.duration import Duration
@@ -36,34 +37,72 @@ class LeverDoorOpener(Node):
     MAX_HANDLE_FORCE_N: float = 22.0
     MAX_CONTACT_SPEED_MPS: float = 0.05
 
-    def _float_param(self, name: str, default: float) -> float:
-        val = self.declare_parameter(name, default).value
-        return float(val) if isinstance(val, (int, float, str)) else default
-
-    def _str_param(self, name: str, default: str) -> str:
-        val = self.declare_parameter(name, default).value
-        return str(val) if val is not None else default
-
     def __init__(self) -> None:
         super().__init__("lever_door_opener")
 
-        robot_ns = self._str_param("robot_namespace", "/arena/env_0/arena_env_node/ridgeback_plus").rstrip("/")
-        env_prefix = self._str_param("env_frame_prefix", "env_0").strip("/")
-        robot_prefix = self._str_param("robot_frame_prefix", "env_0/ridgeback_plus").strip("/")
-        self._ref_frame = self._str_param("reference_frame", f"{env_prefix}/map").strip("/")
-        self._ee_frame = self._str_param("ee_frame", f"{robot_prefix}/arm_tool0").strip("/")
-        self._base_frame = self._str_param("base_frame", f"{robot_prefix}/base_link").strip("/")
-        self._door_center_y = self._float_param("door_center_y", 2.0)
+        robot_ns = declare(
+            self,
+            Param[str](
+                "robot_namespace",
+                "/arena/env_0/arena_env_node/ridgeback_plus",
+                "ROS namespace of the robot.",
+            ),
+        ).value.rstrip("/")
+        env_prefix = declare(self, Param[str]("env_frame_prefix", "env_0", "Environment TF prefix.")).value.strip("/")
+        robot_prefix = declare(
+            self,
+            Param[str]("robot_frame_prefix", "env_0/ridgeback_plus", "Robot TF frame prefix."),
+        ).value.strip("/")
+        self._ref_frame = declare(
+            self,
+            Param[str]("reference_frame", f"{env_prefix}/map", "Reference TF frame."),
+        ).value.strip("/")
+        self._ee_frame = declare(
+            self,
+            Param[str]("ee_frame", f"{robot_prefix}/arm_tool0", "End-effector TF frame."),
+        ).value.strip("/")
+        self._base_frame = declare(
+            self,
+            Param[str]("base_frame", f"{robot_prefix}/base_link", "Robot base TF frame."),
+        ).value.strip("/")
+        self._door_center_y = declare(
+            self,
+            Param[float]("door_center_y", 2.0, "Center Y position of the door opening."),
+        ).value
 
         self._lever_xyz = (
-            self._float_param("lever_x", 7.92),
-            self._float_param("lever_y", 1.70),
-            self._float_param("lever_z", 1.01),
+            declare(self, Param[float]("lever_x", 7.92, "Lever handle target X position.")).value,
+            declare(self, Param[float]("lever_y", 1.70, "Lever handle target Y position.")).value,
+            declare(self, Param[float]("lever_z", 1.01, "Lever handle target Z position.")).value,
         )
-        self._approach_clearance = self._float_param("approach_clearance", 0.05)
-        self._push_distance = self._float_param("push_distance", 0.65)
-        self._drive_duration = self._float_param("drive_duration", 3.0)
-        self._metrics_path = self._str_param("metrics_file", "/opt/arena_ws/data/lever_door_metrics.json")
+        self._approach_clearance = declare(
+            self,
+            Param[float](
+                "approach_clearance",
+                0.05,
+                "Vertical clearance above handle before slow descent.",
+            ),
+        ).value
+        self._push_distance = declare(
+            self,
+            Param[float]("push_distance", 0.65, "Distance robot pushes door forward."),
+        ).value
+        self._drive_duration = declare(
+            self,
+            Param[float](
+                "drive_duration",
+                3.0,
+                "Time in seconds base drives through opening.",
+            ),
+        ).value
+        self._metrics_path = declare(
+            self,
+            Param[str](
+                "metrics_file",
+                "/opt/arena_ws/data/lever_door_metrics.json",
+                "File path to save JSON metrics.",
+            ),
+        ).value
 
         self._servo_pub = self.create_publisher(TwistStamped, f"{robot_ns}/servo_node/delta_twist_cmds", 10)
         self._cmd_vel_pub = self.create_publisher(TwistStamped, f"{robot_ns}/platform_velocity_controller/cmd_vel", 10)
