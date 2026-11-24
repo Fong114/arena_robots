@@ -40,89 +40,44 @@ class LeverDoorOpener(Node):
     def __init__(self) -> None:
         super().__init__("lever_door_opener")
 
-        robot_ns = declare(
-            self,
-            Param[str](
-                "robot_namespace",
-                "/arena/env_0/arena_env_node/ridgeback_plus",
-                "ROS namespace of the robot.",
-            ),
-        ).value.rstrip("/")
+        robot_ns = declare(self, Param[str]("robot_namespace", "/arena/env_0/arena_env_node/ridgeback_plus", "ROS namespace of the robot.")).value.rstrip("/")
         env_prefix = declare(self, Param[str]("env_frame_prefix", "env_0", "Environment TF prefix.")).value.strip("/")
-        robot_prefix = declare(
-            self,
-            Param[str]("robot_frame_prefix", "env_0/ridgeback_plus", "Robot TF frame prefix."),
-        ).value.strip("/")
-        self._ref_frame = declare(
-            self,
-            Param[str]("reference_frame", f"{env_prefix}/map", "Reference TF frame."),
-        ).value.strip("/")
-        self._ee_frame = declare(
-            self,
-            Param[str]("ee_frame", f"{robot_prefix}/arm_tool0", "End-effector TF frame."),
-        ).value.strip("/")
-        self._base_frame = declare(
-            self,
-            Param[str]("base_frame", f"{robot_prefix}/base_link", "Robot base TF frame."),
-        ).value.strip("/")
-        self._door_center_y = declare(
-            self,
-            Param[float]("door_center_y", 2.0, "Center Y position of the door opening."),
-        ).value
+        robot_prefix = declare(self, Param[str]("robot_frame_prefix", "env_0/ridgeback_plus", "Robot TF frame prefix.")).value.strip("/")
+
+        self._ref_frame = declare(self, Param[str]("reference_frame", f"{env_prefix}/map", "Reference TF frame.")).value.strip("/")
+        self._ee_frame = declare(self, Param[str]("ee_frame", f"{robot_prefix}/arm_tool0", "End-effector TF frame.")).value.strip("/")
+        self._base_frame = declare(self, Param[str]("base_frame", f"{robot_prefix}/base_link", "Robot base TF frame.")).value.strip("/")
+        self._door_center_y = declare(self, Param[float]("door_center_y", 2.0, "Center Y position of door opening.")).value
 
         self._lever_xyz = (
             declare(self, Param[float]("lever_x", 7.92, "Lever handle target X position.")).value,
             declare(self, Param[float]("lever_y", 1.70, "Lever handle target Y position.")).value,
             declare(self, Param[float]("lever_z", 1.01, "Lever handle target Z position.")).value,
         )
-        self._approach_clearance = declare(
-            self,
-            Param[float](
-                "approach_clearance",
-                0.05,
-                "Vertical clearance above handle before slow descent.",
-            ),
-        ).value
-        self._push_distance = declare(
-            self,
-            Param[float]("push_distance", 0.65, "Distance robot pushes door forward."),
-        ).value
-        self._drive_duration = declare(
-            self,
-            Param[float](
-                "drive_duration",
-                3.0,
-                "Time in seconds base drives through opening.",
-            ),
-        ).value
-        self._metrics_path = declare(
-            self,
-            Param[str](
-                "metrics_file",
-                "/opt/arena_ws/data/lever_door_metrics.json",
-                "File path to save JSON metrics.",
-            ),
-        ).value
+        self._approach_clearance = declare(self, Param[float]("approach_clearance", 0.05, "Clearance above handle.")).value
+        self._push_distance = declare(self, Param[float]("push_distance", 0.65, "Distance to push door open.")).value
+        self._drive_duration = declare(self, Param[float]("drive_duration", 3.0, "Time base drives through opening.")).value
+        self._metrics_path = declare(self, Param[str]("metrics_file", "/opt/arena_ws/data/lever_door_metrics.json", "Metrics JSON output path.")).value
 
         self._servo_pub = self.create_publisher(TwistStamped, f"{robot_ns}/servo_node/delta_twist_cmds", 10)
         self._cmd_vel_pub = self.create_publisher(TwistStamped, f"{robot_ns}/platform_velocity_controller/cmd_vel", 10)
-        self.create_subscription(Contacts, f"{robot_ns}/arm/contact", self._on_contact, 10)
         self._switch_type_cli = self.create_client(ServoCommandType, f"{robot_ns}/servo_node/switch_command_type")
+
+        self.create_subscription(Contacts, f"{robot_ns}/arm/contact", self._on_contact, 10)
+        self.create_service(Trigger, "~/open", self._on_open)
+        self.create_service(Trigger, "~/stop", self._on_stop)
 
         self._tf = Buffer()
         self._tf_listener = TransformListener(self._tf, self)
-        self.create_service(Trigger, "~/open", self._on_open)
-        self.create_service(Trigger, "~/stop", self._on_stop)
         self._timer = self.create_timer(0.02, self._tick)
 
         self._phase = Phase.IDLE
         self._phase_start: float = 0.0
-        self._contact_force = 0.0
-        self._peak_force = 0.0
+        self._contact_force: float = 0.0
+        self._peak_force: float = 0.0
         self._contact_speed: float | None = None
         self._last_ee_pos: tuple[float, float, float] | None = None
         self._last_ee_time: float = 0.0
-        self._lever_contact_z: float | None = None
         self._push_start_ee: tuple[float, float, float] | None = None
 
         self.get_logger().info("LeverDoorOpener ready. Trigger ~/open to start.")
@@ -134,21 +89,24 @@ class LeverDoorOpener(Node):
             self._switch_type_cli.call_async(req)
 
     def _on_contact(self, msg: Contacts) -> None:
-        force = sum(math.sqrt(w.body_1_wrench.force.x**2 + w.body_1_wrench.force.y**2 + w.body_1_wrench.force.z**2) for c in msg.contacts for w in c.wrenches)
-        self._contact_force = force
-        if self._phase in (Phase.IDLE, Phase.APPROACH_ABOVE, Phase.DESCEND_AND_PRESS) and force > self._peak_force:
-            self._peak_force = force
+        self._contact_force = sum(math.hypot(w.body_1_wrench.force.x, w.body_1_wrench.force.y, w.body_1_wrench.force.z) for c in msg.contacts for w in c.wrenches)
+        if self._phase in (Phase.IDLE, Phase.APPROACH_ABOVE, Phase.DESCEND_AND_PRESS):
+            self._peak_force = max(self._peak_force, self._contact_force)
+
+    def _transition(self, phase: Phase, msg: str = "") -> None:
+        self._phase = phase
+        self._phase_start = time.monotonic()
+        if msg:
+            self.get_logger().info(msg)
 
     def _on_open(self, req: Trigger.Request, resp: Trigger.Response) -> Trigger.Response:
         del req
         if self._phase in (Phase.IDLE, Phase.DONE, Phase.ABORTED):
             self._stop_base()
             self._activate_servo_twist()
-            self._phase = Phase.APPROACH_ABOVE
-            self._phase_start = time.monotonic()
+            self._transition(Phase.APPROACH_ABOVE, "Arm opening sequence started")
             self._peak_force = 0.0
             self._contact_speed = None
-            self._lever_contact_z = None
             resp.success = True
             resp.message = "Arm opening sequence started"
         else:
@@ -171,149 +129,104 @@ class LeverDoorOpener(Node):
         now = time.monotonic()
         try:
             ee_tf = self._tf.lookup_transform(self._ref_frame, self._ee_frame, Time(), timeout=Duration(seconds=0.05))
+            ee = (ee_tf.transform.translation.x, ee_tf.transform.translation.y, ee_tf.transform.translation.z)
         except TransformException:
             if now - self._phase_start > 5.0 and self._phase != Phase.DRIVE_THROUGH:
                 self._abort("TF lookup timeout")
             return
 
-        ee = (
-            ee_tf.transform.translation.x,
-            ee_tf.transform.translation.y,
-            ee_tf.transform.translation.z,
-        )
-
         base_x, base_y, base_yaw = 7.45, 2.00, 0.0
         try:
             base_tf = self._tf.lookup_transform(self._ref_frame, self._base_frame, Time(), timeout=Duration(seconds=0.02))
-            base_x = base_tf.transform.translation.x
-            base_y = base_tf.transform.translation.y
+            base_x, base_y = base_tf.transform.translation.x, base_tf.transform.translation.y
             q = base_tf.transform.rotation
             base_yaw = math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
         except TransformException:
             pass
         wz_lock = max(-0.4, min(0.4, -2.5 * base_yaw))
 
+        # Speed estimation for ADA 309.4 metric
         speed = 0.0
         if self._last_ee_pos and self._last_ee_time > 0:
             dt = max(now - self._last_ee_time, 1e-4)
-            speed = math.sqrt(sum((ee[i] - self._last_ee_pos[i]) ** 2 for i in range(3))) / dt
+            speed = math.dist(ee, self._last_ee_pos) / dt
         self._last_ee_pos, self._last_ee_time = ee, now
 
         if self._contact_force > 0.5 and self._contact_speed is None:
             self._contact_speed = speed
             self.get_logger().info(f"Contact detected at speed: {speed:.4f} m/s")
 
+        # Phase execution state machine
         if self._phase == Phase.APPROACH_ABOVE:
             dx, dy = 7.45 - base_x, self._door_center_y - base_y
-            self._send_base_vel(vx=max(-0.4, min(0.4, 2.0 * dx)), vy=max(-0.4, min(0.4, 2.0 * dy)), wz=wz_lock)
+            self._send_base_vel(max(-0.4, min(0.4, 2.0 * dx)), max(-0.4, min(0.4, 2.0 * dy)), wz_lock)
 
             target = (self._lever_xyz[0], self._lever_xyz[1], self._lever_xyz[2] + self._approach_clearance)
             dist = self._move_towards(target, ee, speed=6.0)
-
             if dist < 0.04 or (now - self._phase_start > 2.0 and dist < 0.08):
                 self._stop_all()
-                self._phase = Phase.DESCEND_AND_PRESS
-                self._phase_start = now
-                self.get_logger().info(f"Above lever (dist={dist:.3f}m). Descending straight down...")
+                self._transition(Phase.DESCEND_AND_PRESS, f"Above lever (dist={dist:.3f}m). Descending...")
 
         elif self._phase == Phase.DESCEND_AND_PRESS:
             self._stop_base()
             descent = self._lever_xyz[2] - ee[2]
-
-            if descent >= 0.065:
+            if descent >= 0.065 or (now - self._phase_start > 5.0 and descent >= 0.040):
                 self._stop_arm()
-                self._phase = Phase.PUSH_DOOR
-                self._phase_start = now
                 self._push_start_ee = ee
-                self.get_logger().info(f"Lever pressed ({descent * 100:.1f}cm). Pushing door open...")
+                self._transition(Phase.PUSH_DOOR, f"Lever pressed ({descent * 100:.1f}cm). Pushing door open...")
             elif now - self._phase_start > 5.0:
-                if descent >= 0.040:
-                    self._stop_arm()
-                    self._phase = Phase.PUSH_DOOR
-                    self._phase_start = now
-                    self._push_start_ee = ee
-                else:
-                    self._abort(f"Could not press lever: descent={descent * 100:.1f}cm")
+                self._abort(f"Could not press lever: descent={descent * 100:.1f}cm")
             else:
-                self._send_servo_vel_raw(vx=0.0, vy=-0.1, vz=-0.45)
+                self._send_servo_vel_raw(0.0, -0.1, -0.45)
 
         elif self._phase == Phase.PUSH_DOOR:
             assert self._push_start_ee is not None
             pushed = abs(ee[0] - self._push_start_ee[0])
-
-            if pushed >= self._push_distance:
+            if pushed >= self._push_distance or (now - self._phase_start > 4.5 and pushed >= 0.20):
                 self._stop_all()
-                self._phase = Phase.RETRACT_ARM
-                self._phase_start = now
-                self.get_logger().info("Door pushed open. Retracting arm...")
+                self._transition(Phase.RETRACT_ARM, "Door pushed open. Retracting arm...")
             elif now - self._phase_start > 4.5:
-                if pushed >= 0.20:
-                    self._stop_all()
-                    self._phase = Phase.RETRACT_ARM
-                    self._phase_start = now
-                else:
-                    self._abort(f"Door failed to open (pushed only {pushed * 100:.1f}cm). Stopped.")
+                self._abort(f"Door failed to open (pushed only {pushed * 100:.1f}cm). Stopped.")
             else:
                 base_vy = max(-0.10, min(0.10, 0.6 * (self._door_center_y - base_y)))
-                self._send_base_vel(vx=0.15, vy=base_vy, wz=wz_lock)
-                self._send_servo_vel_raw(vx=1.5, vy=0.0, vz=-0.3)
+                self._send_base_vel(0.15, base_vy, wz_lock)
+                self._send_servo_vel_raw(1.5, 0.0, -0.3)
 
         elif self._phase == Phase.RETRACT_ARM:
             if now - self._phase_start > 1.2:
                 self._stop_arm()
-                self._phase = Phase.DRIVE_THROUGH
-                self._phase_start = now
-                self.get_logger().info("Driving through open door...")
+                self._transition(Phase.DRIVE_THROUGH, "Driving through open door...")
             else:
-                self._send_servo_vel((-1.0, 0.0, 1.0), speed=2.0)
+                self._send_servo_vel_raw(-2.0, 0.0, 2.0)
 
         elif self._phase == Phase.DRIVE_THROUGH:
             if now - self._phase_start > self._drive_duration:
                 self._stop_all()
-                self._phase = Phase.DONE
+                self._transition(Phase.DONE)
                 self._report_and_save_metrics()
             else:
                 base_vy = max(-0.15, min(0.15, 0.8 * (self._door_center_y - base_y)))
-                self._send_base_vel(vx=0.35, vy=base_vy, wz=wz_lock)
+                self._send_base_vel(0.35, base_vy, wz_lock)
 
-    def _move_towards(
-        self,
-        target: tuple[float, float, float],
-        curr: tuple[float, float, float],
-        speed: float,
-    ) -> float:
+    def _move_towards(self, target: tuple[float, float, float], curr: tuple[float, float, float], speed: float) -> float:
         delta = (target[0] - curr[0], target[1] - curr[1], target[2] - curr[2])
-        dist = math.sqrt(sum(d * d for d in delta))
+        dist = math.hypot(*delta)
         if dist > 1e-4:
-            unit_dir = (delta[0] / dist, delta[1] / dist, delta[2] / dist)
-            self._send_servo_vel(unit_dir, speed=speed)
+            self._send_servo_vel_raw((delta[0] / dist) * speed, (delta[1] / dist) * speed, (delta[2] / dist) * speed)
         return dist
-
-    def _send_servo_vel(self, dir_ref: tuple[float, float, float], speed: float) -> None:
-        dist = math.sqrt(sum(d * d for d in dir_ref))
-        if dist > 1e-4:
-            self._send_servo_vel_raw(
-                (dir_ref[0] / dist) * speed,
-                (dir_ref[1] / dist) * speed,
-                (dir_ref[2] / dist) * speed,
-            )
 
     def _send_servo_vel_raw(self, vx: float, vy: float, vz: float) -> None:
         msg = TwistStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self._ref_frame
-        msg.twist.linear.x = vx
-        msg.twist.linear.y = vy
-        msg.twist.linear.z = vz
+        msg.twist.linear.x, msg.twist.linear.y, msg.twist.linear.z = vx, vy, vz
         self._servo_pub.publish(msg)
 
     def _send_base_vel(self, vx: float, vy: float = 0.0, wz: float = 0.0) -> None:
         msg = TwistStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = "base_link"
-        msg.twist.linear.x = vx
-        msg.twist.linear.y = vy
-        msg.twist.angular.z = wz
+        msg.twist.linear.x, msg.twist.linear.y, msg.twist.angular.z = vx, vy, wz
         self._cmd_vel_pub.publish(msg)
 
     def _stop_arm(self) -> None:
