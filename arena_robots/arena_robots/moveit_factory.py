@@ -81,6 +81,40 @@ def _prefix_srdf_links(srdf_xml: str, tf_prefix: str) -> str:
     return ET.tostring(root, encoding="unicode")
 
 
+def _disable_rigid_and_adjacent(srdf_xml: str, urdf_xml: str) -> str:
+    """Add a ``disable_collisions`` pair for each joint's parent and child link and for every two links of one rigid body."""
+    urdf = ET.fromstring(urdf_xml)
+    colliding = {link.get("name", "") for link in urdf.findall("link") if link.find("collision") is not None}
+    rigid: dict[str, str] = {}
+
+    def body(link: str) -> str:
+        while rigid.get(link, link) != link:
+            link = rigid[link]
+        return link
+
+    adjacent: set[frozenset[str]] = set()
+    for joint in urdf.findall("joint"):
+        parent_el, child_el = joint.find("parent"), joint.find("child")
+        if parent_el is None or child_el is None:
+            continue
+        parent, child = parent_el.get("link", ""), child_el.get("link", "")
+        adjacent.add(frozenset((parent, child)))
+        if joint.get("type") == "fixed":
+            rigid[body(child)] = body(parent)
+    bodies: dict[str, list[str]] = {}
+    for link in sorted(colliding):
+        bodies.setdefault(body(link), []).append(link)
+    pairs = {pair for pair in adjacent if pair <= colliding}
+    for links in bodies.values():
+        pairs.update(frozenset((a, b)) for i, a in enumerate(links) for b in links[i + 1 :])
+
+    srdf = ET.fromstring(srdf_xml)
+    pairs -= {frozenset((dc.get("link1", ""), dc.get("link2", ""))) for dc in srdf.iter("disable_collisions")}
+    for link1, link2 in sorted(tuple(sorted(pair)) for pair in pairs):
+        ET.SubElement(srdf, "disable_collisions", {"link1": link1, "link2": link2, "reason": "Adjacent"})
+    return ET.tostring(srdf, encoding="unicode")
+
+
 def _select_arm[T](robot_name: str, arms: dict[str, T], instance: str | None) -> tuple[str, T]:
     """Pick one ``(key, entry)`` pair out of ``arms`` (``RobotCaps.arm``-shaped).
     ``None`` selects the sole entry, or raises ``ValueError`` (listing available
@@ -293,6 +327,10 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, l
 
     if not pkg:
         params.setdefault("ompl", {}).setdefault(group, {})["longest_valid_segment_fraction"] = _SEGMENT_FRACTION
+
+    rd, rds = params.get("robot_description"), params.get("robot_description_semantic")
+    if resolved is not None and isinstance(rd, str) and isinstance(rds, str):
+        params["robot_description_semantic"] = _disable_rigid_and_adjacent(rds, rd)
 
     planning = params.get("robot_description_planning") or {}
     for limits in (planning.get("joint_limits") or {}).values():

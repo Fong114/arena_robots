@@ -219,6 +219,8 @@ planning group unless the package's kinematics file already names it, and maps t
 `controller` (FollowJointTrajectory over the `chain` joints) as the only MoveIt controller.
 `tiago` declares its own `srdf/arm.srdf.xacro` and `srdf/joint_limits.yaml` this way; the `fr3`
 component does the same under `components/arm/fr3`.
+An SRDF composed from placement fragments also disables every joint's parent and child link
+and every two links of one rigid body, both read off the rendered URDF.
 
 The pipelines of a block without `package` are OMPL (the default) and Pilz, which `motion: linear`
 reaches use. `moveit.cartesian_limits` sets the Pilz limits per arm over the defaults

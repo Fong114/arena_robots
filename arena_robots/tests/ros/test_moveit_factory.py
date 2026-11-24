@@ -26,6 +26,36 @@ class _SrdfLinksExist:
         assert not (srdf_links - urdf_links), f"SRDF references links absent from URDF: {sorted(srdf_links - urdf_links)}"
 
 
+_LINK = '<link name="{}"><collision><geometry><sphere radius="0.1"/></geometry></collision></link>'
+_JOINT = '<joint name="{0}_{1}" type="{2}"><parent link="{0}"/><child link="{1}"/></joint>'
+
+
+class TestDerivedDisableCollisions:
+    """base - frame (no collision) - cover - arm are fixed, wheel and finger turn, tip is fixed to finger."""
+
+    @pytest.fixture(scope="class")
+    def pairs(self) -> set[frozenset]:
+        from arena_robots.moveit_factory import _disable_rigid_and_adjacent
+
+        links = "".join(_LINK.format(n) for n in ("base", "cover", "arm", "wheel", "finger", "tip")) + '<link name="frame"/>'
+        edges = [("base", "frame", "fixed"), ("frame", "cover", "fixed"), ("cover", "arm", "fixed"), ("base", "wheel", "continuous"), ("arm", "finger", "revolute"), ("finger", "tip", "fixed")]
+        control = '<ros2_control name="c" type="system"><joint name="base_wheel"/></ros2_control>'
+        urdf = f"<robot name='r'>{links}{''.join(_JOINT.format(*e) for e in edges)}{control}</robot>"
+        srdf = "<robot name='r'><disable_collisions link1='arm' link2='base' reason='User'/></robot>"
+        out = [frozenset((d.get("link1", ""), d.get("link2", ""))) for d in ET.fromstring(_disable_rigid_and_adjacent(srdf, urdf)).iter("disable_collisions")]
+        assert len(out) == len(set(out))
+        return set(out)
+
+    def test_fixed_chain_is_disabled_across_links_without_collision(self, pairs: set[frozenset]) -> None:
+        assert {frozenset(p) for p in (("base", "cover"), ("base", "arm"), ("cover", "arm"), ("finger", "tip"))} <= pairs
+
+    def test_joint_neighbors_are_disabled(self, pairs: set[frozenset]) -> None:
+        assert {frozenset(("base", "wheel")), frozenset(("arm", "finger"))} <= pairs
+
+    def test_bodies_that_move_against_each_other_stay_checked(self, pairs: set[frozenset]) -> None:
+        assert not pairs & {frozenset(p) for p in (("wheel", "finger"), ("base", "finger"), ("base", "tip"), ("wheel", "arm"))}
+
+
 class TestSelectArm:
     """`_select_arm` is the pure selection rule shared by `build_moveit_params`;
     it returns the `(key, entry)` pair so callers can render per-placement
@@ -126,8 +156,11 @@ class TestBuildMoveitParamsAllocationMatchesPlus:
         return mine, plus
 
     def test_srdf_semantic_matches(self, params_pair: tuple[dict, dict]) -> None:
+        from arena_robots.moveit_factory import _disable_rigid_and_adjacent
+
         mine, plus = params_pair
-        assert _canon_srdf(mine["robot_description_semantic"]) == _canon_srdf(plus["robot_description_semantic"])
+        derived_plus = _disable_rigid_and_adjacent(plus["robot_description_semantic"], plus["robot_description"])
+        assert _canon_srdf(mine["robot_description_semantic"]) == _canon_srdf(derived_plus)
 
     def test_joint_limits_match(self, params_pair: tuple[dict, dict]) -> None:
         mine, plus = params_pair
