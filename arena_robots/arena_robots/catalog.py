@@ -29,13 +29,11 @@ decides what a placement's sensor declarations *say*, not how they get instantia
       type: <controller plugin type>
       ros__parameters: {...}   # templated verbatim
     caps:              # OPTIONAL; absent -> {}
-      ...              # full caps/arm.yaml raw shape, templated verbatim (caps.py ArmSpec)
+      ...              # full `arm:` section raw shape of caps.yaml, templated verbatim (caps.py ArmSpec)
     frames:            # OPTIONAL; absent -> {} (mount-on-part chaining)
       <name>: <template>   # e.g. {top: "${prefix}${mount}_ewellix_lift_top_link"}
     power:             # OPTIONAL; absent -> {}
       static_power_w: <W drawn while idle>
-    mass:              # OPTIONAL; absent -> {} (no contribution)
-      kg: <kg added on top of the robot's model_params.yaml mass.base_kg>
 
 Every string value in a ``sensor.gz`` entry is a template rendered per-placement through
 ``arena_rclpy_mixins.yaml_replace.YAMLReplacer``. The substitution context is::
@@ -108,7 +106,7 @@ class ComponentSpec:
     empty for components with no controller. Render per-placement via
     :func:`render_effective_control`."""
     caps: dict[str, object] = attrs.field(factory=dict)
-    """Un-rendered ``caps`` block, the full ``caps/arm.yaml`` raw shape; empty for
+    """Un-rendered ``caps`` block, the full ``arm:`` section raw shape of caps.yaml; empty for
     components with no caps contribution. Rendered by ``RobotCaps``/``effective_caps``
     (caps.py), not this module."""
     frames: dict[str, str] = attrs.field(factory=dict)
@@ -118,8 +116,6 @@ class ComponentSpec:
     placement by :func:`resolve_mount_parent`."""
     power: dict[str, object] = attrs.field(factory=dict)
     """Static power parameters of this component."""
-    mass: dict[str, object] = attrs.field(factory=dict)
-    """Mass contribution of this component, added on top of the robot's base mass."""
     variants: list[str] = attrs.field(factory=list)
     """Variant names this component serves when no dedicated ``<variant>/`` dir exists
     (family component, e.g. one ``arm/ur`` serving the whole UR family, parameterized
@@ -167,10 +163,6 @@ class ComponentSpec:
         if not isinstance(power, dict):
             raise ValueError(f"component.yaml at {path}: 'power' must be a mapping; got {type(power).__name__}")
 
-        mass = data.get('mass', {})
-        if not isinstance(mass, dict):
-            raise ValueError(f"component.yaml at {path}: 'mass' must be a mapping; got {type(mass).__name__}")
-
         return cls(
             xacro_include=str(xacro['include']),
             xacro_macro=str(xacro['macro']),
@@ -182,7 +174,6 @@ class ComponentSpec:
             caps=dict(caps),
             frames={str(k): str(v) for k, v in frames.items()},
             power=dict(power),
-            mass=dict(mass),
             variants=[str(v) for v in variants],
         )
 
@@ -207,6 +198,31 @@ class Catalog:
             else:
                 self._cache[key] = self._resolve_family(type_, variant)
         return self._cache[key]
+
+    def variants(self, kind: str) -> list[str]:
+        """Every variant of a component kind: dedicated directories and family ``variants:``."""
+        kind_dir = self._root / kind
+        if not kind_dir.is_dir():
+            return []
+        variants: list[str] = []
+        for directory in sorted(kind_dir.iterdir()):
+            manifest = directory / 'component.yaml'
+            if manifest.is_file():
+                variants.extend(ComponentSpec.from_yaml(manifest).variants or [directory.name])
+        return sorted(variants)
+
+    def owner(self, kind: str, variant: str) -> str | None:
+        """The component directory that serves ``variant``: its own directory or the family listing it."""
+        kind_dir = self._root / kind
+        if (kind_dir / variant / 'component.yaml').is_file():
+            return variant
+        if not kind_dir.is_dir():
+            return None
+        for directory in sorted(kind_dir.iterdir()):
+            manifest = directory / 'component.yaml'
+            if manifest.is_file() and variant in ComponentSpec.from_yaml(manifest).variants:
+                return directory.name
+        return None
 
     def _resolve_family(self, type_: str, variant: str) -> ComponentSpec:
         """Resolve a variant with no dedicated ``<variant>/`` dir against a family
@@ -369,8 +385,10 @@ def render_wrapper_xacro(view: RobotView, resolved: ResolvedAssembly, *, catalog
     :func:`render_control_joints`'s control-joint patch, computed independently from
     ``resolved`` (not by parsing this wrapper's xacro output).
     """
+    from arena_robots import urdf_facts
+
     catalog = catalog if catalog is not None else Catalog()
-    chassis_path = view.path / 'urdf' / f'{view.name}.urdf.xacro'
+    chassis_path = urdf_facts.source(view)
     args = _chassis_args(chassis_path)
 
     body_lines: list[str] = []
@@ -395,6 +413,7 @@ def render_wrapper_xacro(view: RobotView, resolved: ResolvedAssembly, *, catalog
             'namespace': '$(arg namespace)',
             'gazebo_classic': '$(arg gazebo_classic)',
             'gazebo_ignition': '$(arg gazebo_ignition)',
+            **{key: value for key, value in component.args.items() if f'${{{key}}}' in component.attach.values()},
             **placement.params,
             **placement.overrides,
         }
@@ -441,8 +460,30 @@ def render_control_joints(resolved: ResolvedAssembly, catalog: Catalog, *, prefi
             **placement.params,
             **placement.overrides,
         }
-        out.extend(YAMLReplacer(context).replace(copy.deepcopy(component.ros2_control_joints)))
+        joints = YAMLReplacer(context).replace(copy.deepcopy(component.ros2_control_joints))
+        if any(joint.get('initial_value') == STOW for joint in joints):
+            stow = _stow_values(component, context)
+            for joint in joints:
+                if joint.get('initial_value') == STOW:
+                    joint['initial_value'] = stow[joint['name']]
+        out.extend(joints)
     return out
+
+
+STOW = 'stow'
+
+
+def _stow_values(component: ComponentSpec, context: dict[str, typing.Any]) -> dict[str, float]:
+    """The joint values of the ``stow`` group state of the placement's SRDF group, empty when its SRDF has none."""
+    from arena_robots.caps import srdf_document, srdf_group_states
+
+    moveit = component.caps.get('moveit')
+    if not isinstance(moveit, dict) or 'planning_group' not in moveit:
+        return {}
+    root = srdf_document(moveit, {key: context[key] for key in ('prefix', 'mount')})
+    if root is None:
+        return {}
+    return srdf_group_states(root, YAMLReplacer(context).replace(moveit['planning_group'])).get(STOW, {})
 
 
 def render_effective_control(resolved: ResolvedAssembly, base_control: dict, catalog: Catalog, *, prefix: str = 'robot_') -> tuple[dict, list[str]]:

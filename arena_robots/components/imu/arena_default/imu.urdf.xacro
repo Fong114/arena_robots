@@ -4,7 +4,7 @@
        see lidar/arena_default/lidar.urdf.xacro for why a shim is needed instead of
        invoking the shared macro directly. Body copied verbatim from arena_default_imu;
        config/urdf/sensors/default.xacro stays untouched since husky/dingo/WLP311D/
-       WLP311E/ridgeback_plus/boxer still call it directly. -->
+       WLP311E/boxer still call it directly. -->
   <xacro:arg name="sim_path" default=""/>
 
   <xacro:macro name="arena_default_imu_mount" params="parent_link *origin frame:=imu_link

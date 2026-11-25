@@ -1,14 +1,14 @@
-"""Viewing volume of a robot's ranging sensors, read from its rendered URDF."""
+"""Viewing volume of a robot's ranging sensors, read from its canonical URDF."""
 
 from __future__ import annotations
 
 import math
-import tempfile
 import typing
 import xml.etree.ElementTree as ET
-from pathlib import Path
 
 import attrs
+
+from arena_robots import served_urdf
 
 if typing.TYPE_CHECKING:
     from arena_robots.assembly import RequestPart
@@ -109,23 +109,6 @@ def parse_sensor_geometry(urdf_xml: str) -> dict[str, SensorGeometry]:
     return out
 
 
-def render_urdf(robot: RobotView, parts: dict[str, list[RequestPart]]) -> str:
-    """The robot's URDF for a parts request, rendered the way the simulators render it."""
-    import xacro
-
-    from arena_robots.catalog import render_wrapper_xacro
-
-    resolved = robot._resolved(parts)
-    if resolved is None:
-        return xacro.process_file(str(robot.path / "urdf" / f"{robot.name}.urdf.xacro")).toxml()  # pyright: ignore[reportAttributeAccessIssue]
-    with tempfile.NamedTemporaryFile("w", suffix=".urdf.xacro", delete=False) as wrapper:
-        wrapper.write(render_wrapper_xacro(robot, resolved))
-    try:
-        return xacro.process_file(wrapper.name).toxml()  # pyright: ignore[reportAttributeAccessIssue]
-    finally:
-        Path(wrapper.name).unlink()
-
-
 def sensor_geometry(robot: RobotView, parts: dict[str, list[RequestPart]]) -> dict[str, SensorGeometry]:
     """Geometry of the robot's ranging sensors for a parts request, keyed by backing `<sensor name>`."""
-    return parse_sensor_geometry(render_urdf(robot, parts))
+    return parse_sensor_geometry(served_urdf.canonical(robot, parts))

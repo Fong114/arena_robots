@@ -13,7 +13,7 @@ def _make_mock_robot(caps_available: frozenset[str], name: str = "test_robot") -
     mock_caps.available = caps_available
     mock_robot = MagicMock()
     mock_robot.name = name
-    mock_robot.caps = mock_caps
+    mock_robot.effective_caps.return_value = mock_caps
     return mock_robot
 
 

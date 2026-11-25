@@ -130,8 +130,8 @@
     </collision>
     <inertial>
       <mass value="0.1"/>
-      <origin xyz="0 0 0"/>
-      <inertia ixx="0.001" ixy="0.0" ixz="0.0" iyy="0.001" iyz="0.0" izz="0.001"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <inertia ixx="4e-06" ixy="0" ixz="0" iyy="4e-06" iyz="0" izz="4e-06"/>
     </inertial>
   </link>
   <joint name="rear_caster_joint" type="fixed">
@@ -171,9 +171,9 @@
     <inertial>
       <!-- Center of mass -->
       <origin rpy="0 0 0" xyz="0 0 0"/>
-      <mass value="10.0"/>
+      <mass value="11.677"/>
       <!-- Moments of inertia: ( chassis without wheels ) -->
-      <inertia ixx="0.2216" ixy="0" ixz="0" iyy="0.2458" iyz="0" izz="0.4474"/>
+      <inertia ixx="0.25876232" ixy="0" ixz="0" iyy="0.28702066" iyz="0" izz="0.52242898"/>
     </inertial>
   </link>
   <link name="imu_link">

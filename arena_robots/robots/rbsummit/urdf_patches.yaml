@@ -1,0 +1,5 @@
+patches:
+  - link: robot_gps_mast_base_link
+    inertia: from_collision
+    reason: the vendor GPS mast inertia tensor has 5.6 times the trace of its box collision
+    source: the closed-form tensor of the link's box collision

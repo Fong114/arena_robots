@@ -43,11 +43,11 @@ from arena_robots.task_server_handlers import NativeGoals, TaskHandler, _executo
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from arena_rclpy_mixins.Time import TimeNode
     from rclpy.action import CancelResponse
     from rclpy.action.client import ClientGoalHandle
     from rclpy.action.server import ServerGoalHandle
     from rclpy.client import Client
-    from rclpy.node import Node
     from tf2_ros import Buffer
 
     from arena_robots.bringup.arm.moveit import MoveItArmBringup
@@ -232,7 +232,7 @@ def _translate_moveit_status(code: int) -> tuple[int, str]:
 
 
 class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, ReachPose.Result]):
-    def __init__(self, bringup: MoveItArmBringup, *, tf_buffer: Buffer, node: Node) -> None:
+    def __init__(self, bringup: MoveItArmBringup, *, tf_buffer: Buffer, node: TimeNode) -> None:
         self._bringup = bringup
         self._tf_buffer = tf_buffer
         self._node = node
@@ -425,7 +425,7 @@ class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, Rea
         if mg_goal is None:
             goal_handle.abort()
             result.status = ReachPose.Result.STATUS_UNKNOWN_NAMED
-            result.reason = f"named pose {arena_goal.named_target!r} not in caps/arm.yaml.named_poses"
+            result.reason = f"named pose {arena_goal.named_target!r} not in caps.yaml arm named_poses"
             return result
 
         while not (native_client.server_is_ready() and self._exec_clients[mount].server_is_ready()):

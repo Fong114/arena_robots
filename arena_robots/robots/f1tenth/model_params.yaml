@@ -1,0 +1,6 @@
+robot_model: f1tenth
+base_frame: base_link
+z_offset: 0.0
+control:
+  mode: ros2_control
+  config: package://arena_robots/robots/f1tenth/control.yaml

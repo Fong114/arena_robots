@@ -1,0 +1,5 @@
+patches:
+  - link: chassis_link
+    collision: {box: [0.5106, 0.43, 0.0154], xyz: [0, 0, 0.142]}
+    reason: the chassis collision box leaves out the fenders, which reach x 0.2553 and y 0.215 in the visual mesh, the slab sits above the wheel tops
+    source: https://www.mybotshop.de/Datasheet/Datasheet_Clearpath_Jackal.pdf

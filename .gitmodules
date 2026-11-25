@@ -27,7 +27,7 @@
 	path = arena_robots/robots/rbkairos/meshes
 	url = https://github.com/arena-robots/rbkairos.git
 	update = none
-	robot = rbkairos rbkairos_plus
+	robot = rbkairos
 [submodule "arena_robots/robots/rbrobout/meshes"]
 	path = arena_robots/robots/rbrobout/meshes
 	url = https://github.com/arena-robots/rbrobout.git
@@ -47,7 +47,7 @@
 	path = arena_robots/robots/rbvogui/meshes
 	url = https://github.com/arena-robots/rbvogui.git
 	update = none
-	robot = rbvogui rbvogui_plus
+	robot = rbvogui
 [submodule "arena_robots/robots/ridgeback/meshes"]
 	path = arena_robots/robots/ridgeback/meshes
 	url = https://github.com/arena-robots/ridgeback.git
@@ -73,32 +73,28 @@
 	url = https://github.com/UniversalRobots/Universal_Robots_ROS2_Description.git
 	branch = humble
 	update = none
-	robot = rbkairos_plus rbvogui_plus ridgeback_plus
 	component = arm/ur
 [submodule "deps/robotnik_description"]
 	path = deps/robotnik_description
 	url = https://github.com/RobotnikAutomation/robotnik_description.git
 	branch = jazzy-devel
 	update = none
-	robot = rbvogui_plus
 [submodule "deps/robotnik_sensors"]
 	path = deps/robotnik_sensors
 	url = https://github.com/RobotnikAutomation/robotnik_sensors.git
 	branch = jazzy-devel
 	update = none
-	robot = rbvogui_plus
 [submodule "deps/clearpath_common"]
 	path = deps/clearpath_common
 	url = https://github.com/clearpathrobotics/clearpath_common.git
 	branch = humble
 	update = none
-	robot = ridgeback_plus
 [submodule "deps/arena_swerve_controller"]
 	path = deps/arena_swerve_controller
 	url = https://github.com/arena-robots/arena_swerve_controller.git
 	branch = jazzy
 	update = none
-	robot = rbvogui rbvogui_plus mpo700
+	robot = rbvogui mpo700
 [submodule "deps/arena_omni_drive_controller"]
 	path = deps/arena_omni_drive_controller
 	url = https://github.com/arena-robots/arena_omni_drive_controller.git

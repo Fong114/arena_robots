@@ -88,9 +88,9 @@ ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSI
   <!-- Inertial link stores the robot's inertial information -->
   <link name="inertial_link">
     <inertial>
-      <mass value="46.034"/>
+      <mass value="39.452"/>
       <origin xyz="-0.00065 -0.085 0.062"/>
-      <inertia ixx="0.6022" ixy="-0.02364" ixz="-0.1197" iyy="1.7386" iyz="-0.001544" izz="2.0296"/>
+      <inertia ixx="0.51609668" ixy="-0.020259923" ixz="-0.10258514" iyy="1.4900128" iyz="-0.0013232369" izz="1.7394052"/>
     </inertial>
   </link>
   <joint name="inertial_joint" type="fixed">

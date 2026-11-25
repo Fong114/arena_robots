@@ -20,6 +20,11 @@ ROSNAV_RL_SIDECAR = Path(__file__).resolve().parents[2] / "config" / "nav2" / "c
 def _make_mock_robot(name: str = "test_robot") -> object:
     mock_robot = MagicMock()
     mock_robot.name = name
+    caps = mock_robot.effective_caps.return_value
+    caps.mobile.min_turning_radius = 0.0
+    caps.laser_block.return_value = {"angle": {"min": -3.14159, "max": 3.14159, "increment": 0.0098}, "num_beams": 640, "range": 12.0, "update_rate": 10.0}
+    caps.mobile.raw = {}
+    caps.rendered_urdf.return_value = '<robot name="test_robot"><link name="base_link"/></robot>'
     return mock_robot
 
 
@@ -103,6 +108,21 @@ class TestNav2LaunchActions:
         args = dict(actions[0].launch_arguments)
         assert args["inter_planner"] == "smac"
 
+    @pytest.mark.parametrize(("robot", "inter_planner"), [("jackal", "default"), ("f1tenth", "default_no_spin")])
+    def test_default_inter_planner_spins_only_for_a_robot_that_turns_in_place(self, robot: str, inter_planner: str) -> None:
+        from arena_robots.bringup.mobile.nav2 import Nav2Bringup
+        from arena_robots.Robot import RobotIdentifier
+
+        bringup = Nav2Bringup(robot=RobotIdentifier(robot).resolve_sync(), namespace="/robot1")
+        assert dict(bringup._launch_actions()[0].launch_arguments)["inter_planner"] == inter_planner
+
+    def test_explicit_inter_planner_is_kept_for_a_car_like_robot(self) -> None:
+        from arena_robots.bringup.mobile.nav2 import Nav2Bringup
+        from arena_robots.Robot import RobotIdentifier
+
+        bringup = Nav2Bringup(robot=RobotIdentifier("f1tenth").resolve_sync(), namespace="/robot1")
+        assert dict(bringup._launch_actions(inter_planner="navigate_w_replanning_time")[0].launch_arguments)["inter_planner"] == "navigate_w_replanning_time"
+
     def test_extra_kwargs_ignored(self):
         b = self._make_bringup()
         actions = b._launch_actions(unknown_kwarg="ignored")
@@ -126,7 +146,7 @@ class TestNav2RosnavRlAgent:
         from arena_robots.bringup.mobile.nav2 import Nav2Bringup
         from arena_robots.Robot import RobotView
 
-        rd = temp_robot_dir(model_params={"base_frame": "base_link"}, mobile_cap=mobile_cap, name="myrobot")
+        rd = temp_robot_dir(model_params={"base_frame": "base_link"}, mobile_cap=mobile_cap, name="myrobot", urdf=True)
         return Nav2Bringup(robot=RobotView(rd), namespace="/robot1")
 
     def test_agent_kwarg_forwarded(self, temp_robot_dir: Callable[..., Path]) -> None:

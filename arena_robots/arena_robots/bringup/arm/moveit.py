@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import ClassVar
 
 from arena_rclpy_mixins.shared import Namespace
@@ -37,7 +36,7 @@ class MoveItArmBringup(Bringup):
 
     def arms(self) -> dict[str, ArmSpec]:
         """This robot's resolved arm instances, keyed by mount name."""
-        arms = self.robot.effective_caps(self.parts).arm
+        arms = self.caps.arm
         if arms is None:
             raise ValueError(f"{self.robot.name}: arm cap required but absent")
         if not arms:
@@ -76,7 +75,7 @@ class MoveItArmBringup(Bringup):
                         "namespace": str(self.arm_namespace(mount)),
                         "frame": frame,
                         "use_sim_time": str(use_sim_time).lower(),
-                        "parts_json": json.dumps({t: [{"variant": p.variant, "mount": p.mount} for p in ps] for t, ps in self.parts.items()}),
+                        "request_json": self.request.dumps(),
                         "instance": "" if single else mount,
                     }.items(),
                 ),

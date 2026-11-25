@@ -49,7 +49,7 @@ def _sensor_topic(model: str, ns: str, sensor_type: str) -> str:
 
 LIDAR = _sensor_topic("jackal", JACKAL, "laserscan")
 IMU = _sensor_topic("jackal", JACKAL, "imu")
-CAMERA = _sensor_topic("rbkairos_plus", KAIROS, "image")
+CAMERA = _sensor_topic("rbkairos", KAIROS, "image")
 
 
 class Peer:
@@ -69,7 +69,7 @@ class Peer:
         self._tasks = {name: {"phase": "", "met": [], "failed": [], "dropped": []} for name in ("jackal", "kairos")}
         self._goals: dict[str, object] = {}
         self._next = 0
-        self.node.create_publisher(EnvRegistry, "/arena/state/envs", latched).publish(EnvRegistry(envs=[EnvRecord(env_id=ENV, fqn=TG, ready=True)]))
+        self.node.create_publisher(EnvRegistry, "/arena/state/envs", latched).publish(EnvRegistry(envs=[EnvRecord(env_id=ENV, fqn=TG, ready=True, reference=[2.0, 3.0])]))
         self.node.create_publisher(RobotFleet, f"{TG}/state/robots", latched).publish(self._fleet())
         trail = Path()
         trail.header.frame_id = "map"
@@ -120,14 +120,15 @@ class Peer:
             params=[KeyValue(key="lidar@front", value="jackal_default"), KeyValue(key="imu@imu", value="jackal_default")],
         )
         kairos = RobotState(
-            descriptor=RobotDescriptor(name="kairos", model="rbkairos_plus", ns=KAIROS, frame=f"env_{ENV}/kairos", base_frame=f"env_{ENV}/kairos/robot_base_footprint"),
-            caps=[RobotCap(cap="arm", adapter="moveit", instance="arm"), RobotCap(cap="mobile", adapter="none")],
+            descriptor=RobotDescriptor(name="kairos", model="rbkairos", ns=KAIROS, frame=f"env_{ENV}/kairos", base_frame=f"env_{ENV}/kairos/robot_base_footprint"),
+            caps=[RobotCap(cap="arm", adapter="moveit", instance="arm_mount"), RobotCap(cap="mobile", adapter="none")],
+            params=[KeyValue(key="arm@arm_mount", value="ur5e")],
         )
         return RobotFleet(robots=[jackal, kairos])
 
     def _tick(self) -> None:
         pose = PoseStamped()
-        pose.header.frame_id = "map"
+        pose.header.frame_id = "env_7/map"
         pose.pose.position.x, pose.pose.position.y = 1.5, -0.5
         pose.pose.orientation.z, pose.pose.orientation.w = math.sin(0.25), math.cos(0.25)
         self._task_pose.publish(pose)
@@ -529,7 +530,7 @@ def test_stop_cancels_the_drive_job_and_publishes_zero(run):
 
 def test_pose_reads_task_pose_odometry_and_trail(run):
     pose = run(mcp.robots_pose(ENV, "jackal"))
-    assert pose["task_pose"]["x"] == 1.5 and pose["task_pose"]["frame"] == "map"
+    assert (pose["task_pose"]["x"], pose["task_pose"]["y"], pose["task_pose"]["frame"]) == (3.5, 2.5, "map")
     assert pose["task_pose"]["yaw"] == pytest.approx(0.5)
     assert pose["odom"]["twist"] == {"vx": 0.3, "vy": 0.0, "wz": 0.1}
     assert pose["odom"]["child_frame"] == "base_link"

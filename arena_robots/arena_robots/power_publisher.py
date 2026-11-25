@@ -14,6 +14,8 @@ from rclpy.parameter import Parameter
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 
+from arena_robots.acoustic_profile import default_profile
+
 
 class PowerPublisher(Node):
     """Instantaneous power and integrated energy from joint effort and velocity."""
@@ -25,7 +27,7 @@ class PowerPublisher(Node):
         self._efficiency: float = declare(self, Param[float]("drivetrain_efficiency", 1.0, "Drivetrain efficiency dividing the mechanical power.", constraint=Range(lo=0.0, lo_open=True))).value
         self._heating_coeff: float = declare(self, Param[float]("heating_coefficient_ch", 0.0, "Thermal power per squared joint torque in W/Nm^2.", constraint=Range(lo=0.0))).value
         self._battery_capacity_wh: float = declare(self, Param[float]("battery_capacity_wh", 0.0, "Battery capacity in Wh (0 = unknown).", constraint=Range(lo=0.0))).value
-        self._max_torque_nm: float = declare(self, Param[float]("max_joint_torque_nm", 15.0, "Joint torque clamp in Nm (0 = no clamp).", constraint=Range(lo=0.0))).value
+        self._max_torque_nm: float = declare(self, Param[float]("max_joint_torque_nm", default_profile()["max_joint_torque_nm"], "Joint torque clamp in Nm (0 = no clamp).", constraint=Range(lo=0.0))).value
         self._filter_tau_s: float = declare(self, Param[float]("filter_tau_s", 0.125, "Time constant of the power low-pass filter in s (0 = unfiltered).", constraint=Range(lo=0.0))).value
 
         # Physical drivetrain & rolling resistance parameters

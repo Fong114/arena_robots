@@ -20,7 +20,7 @@ def _make_robot(external_cfg: dict, name: str = "ext_robot") -> object:
     mock_caps.mobile = mobile_spec
     mock_robot = MagicMock()
     mock_robot.name = name
-    mock_robot.caps = mock_caps
+    mock_robot.effective_caps.return_value = mock_caps
     return mock_robot
 
 

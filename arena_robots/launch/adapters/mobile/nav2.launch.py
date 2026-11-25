@@ -30,32 +30,29 @@ def generate_launch_description():
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
-    robot = LaunchArgument('robot', description='Robot model name.')
+    LaunchArgument('robot', description='Robot model name.')
     arena_env_node = LaunchArgument('arena_env_node', default_value='', description='Name of the env node whose map and services the robot uses.')
     env_namespace = LaunchArgument('env_namespace', default_value='', description='ROS namespace of the env the robot belongs to.')
     namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
     frame = LaunchArgument('frame', description='Frame prefix of the robot.')
+    base_frame = LaunchArgument('base_frame', description='Base link frame of the robot.')
     use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
     global_planner = LaunchArgument('global_planner', description='Nav2 global planner kind.')
     local_planner = LaunchArgument('local_planner', description='Nav2 controller kind.')
     inter_planner = LaunchArgument('inter_planner', description='Nav2 inter planner kind.')
     train_mode = LaunchArgument('train_mode', default_value='false', description='Whether the robot is driven by a DRL agent in training (true or false).')
     planner_only = LaunchArgument('planner_only', default_value='false', description='Run only the global planner.')
-    sensors_json = LaunchArgument('sensors_json', default_value='', description='JSON list of the robot sensor specs used to derive the costmap observation sources.')
+    sensors_json = LaunchArgument('sensors_json', description='JSON list of the robot sensor specs used to derive the costmap observation sources.')
     params_overlay = LaunchArgument('params_overlay', default_value='', description='Nav2 params overlay, a path or an overlay name (empty = none).')
     agent = LaunchArgument('agent', default_value='', description='Name of the DRL agent directory the controller loads weights from.')
     mapping = LaunchArgument('mapping', default_value='static', description='Map source: static = the env map server, slam = built from the lidar while driving.')
+    mobile_caps = LaunchArgument('mobile_caps', description='Path of the effective mobile cap file the nav2 parameters derive from.')
     scan_topic = LaunchArgument('scan_topic', default_value='', description='Laserscan topic of the SLAM mapper (empty = none).')
 
     def nav2_cfg(*parts):
         return PathJoinSubstitution([robots_root, 'config', 'nav2', *parts])
 
-    mobile_path = PathJoinSubstitution([
-        robots_root, 'robots', robot.substitution, 'caps', 'mobile.yaml'
-    ])
-    model_params_path = PathJoinSubstitution([
-        robots_root, 'robots', robot.substitution, 'model_params.yaml'
-    ])
+    mobile_path = mobile_caps.substitution
     interplanner_cfg = nav2_cfg('interplanners', inter_planner.substitution, 'interplanner_config.yaml')
     interplanner_yaml = YAMLFileSubstitution(interplanner_cfg)
     overlay = YAMLFileSubstitution(params_overlay.substitution, default={})
@@ -69,7 +66,7 @@ def generate_launch_description():
         Nav2SubBlockYAML(mobile_path),
         Nav2CollisionDerivedYAML(mobile_path),
         Nav2KinematicsDerivedYAML(mobile_path),
-        SensorsDerivedYAML(model_params_path, mobile_path, sensors_json.substitution, frame.substitution),
+        SensorsDerivedYAML(mobile_path, sensors_json.substitution, frame.substitution),
         YAMLFileSubstitution(nav2_cfg('defaults', 'controller_config.yaml')),
         YAMLFileSubstitution(nav2_cfg('controllers', local_planner.substitution, 'controller_config.yaml')),
         YAMLFileSubstitution(nav2_cfg('defaults', 'planner_config.yaml')),
@@ -80,34 +77,32 @@ def generate_launch_description():
         YAMLFileSubstitution.from_dict(
             {
                 'frame': frame.substitution,
-                'base_frame': YAMLRetrieveSubstitution(YAMLFileSubstitution(model_params_path), 'base_frame'),
+                'base_frame': base_frame.substitution,
                 **arena_env_node.dict,
                 **env_namespace.dict,
                 'namespace': namespace.substitution,
                 # In train_mode the RL environment publishes cmd_vel directly.
                 # Redirect the collision_monitor output to a dead topic so it
                 # never overwrites the RL agent's velocity commands.
-                'map_topic': PythonExpression(
-                    ['"', namespace.substitution, '/map" if "', mapping.substitution, '" == "slam" else "', arena_env_node.substitution, '/map"']
-                ),
+                'map_topic': PythonExpression(['"', namespace.substitution, '/map" if "', mapping.substitution, '" == "slam" else "', arena_env_node.substitution, '/map"']),
                 'scan_topic': scan_topic.substitution,
-                'cmd_vel_out_topic': PythonExpression(
-                    ['"cmd_vel_sink" if "', train_mode.substitution, '" == "true" else "cmd_vel"']
-                ),
+                'cmd_vel_out_topic': PythonExpression(['"cmd_vel_sink" if "', train_mode.substitution, '" == "true" else "cmd_vel"']),
                 'default_nav_to_pose_bt_xml': retrieve('bt_navigator/ros__parameters/default_nav_to_pose_bt_xml'),
                 'default_nav_through_poses_bt_xml': retrieve('bt_navigator/ros__parameters/default_nav_through_poses_bt_xml'),
                 'plugin_lib_names': retrieve('bt_navigator/ros__parameters/plugin_lib_names'),
             },
-            substitute=True
+            substitute=True,
         ),
     )
 
     substituted_parameters = YAMLReplaceSubstitution(
-        obj=YAMLFileSubstitution(YAMLMergeSubstitution(
-            YAMLFileSubstitution(nav2_cfg('nav2.yaml')),
-            YAMLDropSubstitution(overlay, 'substitutions'),
-        )),
-        substitutions=YAMLFileSubstitution(substitutions)
+        obj=YAMLFileSubstitution(
+            YAMLMergeSubstitution(
+                YAMLFileSubstitution(nav2_cfg('nav2.yaml')),
+                YAMLDropSubstitution(overlay, 'substitutions'),
+            )
+        ),
+        substitutions=YAMLFileSubstitution(substitutions),
     )
 
     slam_params = ParameterFile(
@@ -127,21 +122,12 @@ def generate_launch_description():
             param_rewrites={
                 'use_sim_time': use_sim_time.substitution,
             },
-            convert_types=True
+            convert_types=True,
         ),
         allow_substs=True,
     )
 
-    full_lifecycle_nodes = [
-        'controller_server',
-        'smoother_server',
-        'planner_server',
-        'behavior_server',
-        'bt_navigator',
-        'waypoint_follower',
-        'velocity_smoother',
-        'collision_monitor'
-    ]
+    full_lifecycle_nodes = ['controller_server', 'smoother_server', 'planner_server', 'behavior_server', 'bt_navigator', 'waypoint_follower', 'velocity_smoother', 'collision_monitor']
 
     def launch_setup(context, *args, **kwargs):
         tgn = arena_env_node.substitution.perform(context)
@@ -158,10 +144,7 @@ def generate_launch_description():
         if tgn and not slam:
             remappings.append(('map', PathJoinSubstitution([tgn, 'map'])))
 
-        planner_server_node = Node(
-            package='nav2_planner', executable='planner_server', name='planner_server',
-            output='screen', parameters=[nav2_configured_params]
-        )
+        planner_server_node = Node(package='nav2_planner', executable='planner_server', name='planner_server', output='screen', parameters=[nav2_configured_params])
 
         if is_planner_only:
             lifecycle_nodes = ['planner_server']
@@ -172,68 +155,60 @@ def generate_launch_description():
             #                cmd_vel_smoothed -> collision_monitor -> cmd_vel (-> twist_stamper)
             nav2_nodes = [
                 Node(
-                    package='nav2_controller', executable='controller_server', name='controller_server',
-                    output='screen', parameters=[nav2_configured_params],
+                    package='nav2_controller',
+                    executable='controller_server',
+                    name='controller_server',
+                    output='screen',
+                    parameters=[nav2_configured_params],
                     remappings=[('cmd_vel', 'cmd_vel_nav')],
                 ),
-                Node(
-                    package='nav2_smoother', executable='smoother_server', name='smoother_server',
-                    output='screen', parameters=[nav2_configured_params]
-                ),
+                Node(package='nav2_smoother', executable='smoother_server', name='smoother_server', output='screen', parameters=[nav2_configured_params]),
                 planner_server_node,
                 Node(
-                    package='nav2_behaviors', executable='behavior_server', name='behavior_server',
-                    output='screen', parameters=[nav2_configured_params],
+                    package='nav2_behaviors',
+                    executable='behavior_server',
+                    name='behavior_server',
+                    output='screen',
+                    parameters=[nav2_configured_params],
                     remappings=[('cmd_vel', 'cmd_vel_smoothed')],
                 ),
+                Node(package='nav2_bt_navigator', executable='bt_navigator', name='bt_navigator', output='screen', parameters=[nav2_configured_params]),
+                Node(package='nav2_waypoint_follower', executable='waypoint_follower', name='waypoint_follower', output='screen', parameters=[nav2_configured_params]),
                 Node(
-                    package='nav2_bt_navigator', executable='bt_navigator', name='bt_navigator',
-                    output='screen', parameters=[nav2_configured_params]
-                ),
-                Node(
-                    package='nav2_waypoint_follower', executable='waypoint_follower', name='waypoint_follower',
-                    output='screen', parameters=[nav2_configured_params]
-                ),
-                Node(
-                    package='nav2_velocity_smoother', executable='velocity_smoother', name='velocity_smoother',
-                    output='screen', parameters=[nav2_configured_params],
+                    package='nav2_velocity_smoother',
+                    executable='velocity_smoother',
+                    name='velocity_smoother',
+                    output='screen',
+                    parameters=[nav2_configured_params],
                     remappings=[('cmd_vel', 'cmd_vel_nav'), ('smoothed_cmd_vel', 'cmd_vel_smoothed')],
                 ),
-                Node(
-                    package='nav2_collision_monitor', executable='collision_monitor', name='collision_monitor',
-                    output='screen', parameters=[nav2_configured_params]
-                ),
+                Node(package='nav2_collision_monitor', executable='collision_monitor', name='collision_monitor', output='screen', parameters=[nav2_configured_params]),
             ]
 
         if slam:
             lifecycle_nodes = ['slam_toolbox', *lifecycle_nodes]
 
-        bringup_cmd_group = GroupAction([
-            *(SetRemap(src=r[0], dst=r[1]) for r in remappings),
-            *nav2_nodes,
-            Node(
-                package='nav2_lifecycle_manager', executable='lifecycle_manager', name='lifecycle_manager_navigation',
-                output='screen',
-                parameters=[
-                    {'autostart': True},
-                    {'node_names': lifecycle_nodes},
-                    nav2_configured_params
-                ]
-            ),
-        ])
+        bringup_cmd_group = GroupAction(
+            [
+                *(SetRemap(src=r[0], dst=r[1]) for r in remappings),
+                *nav2_nodes,
+                Node(package='nav2_lifecycle_manager', executable='lifecycle_manager', name='lifecycle_manager_navigation', output='screen', parameters=[{'autostart': True}, {'node_names': lifecycle_nodes}, nav2_configured_params]),
+            ]
+        )
         result: list = [bringup_cmd_group]
         if slam:
             result.append(
                 Node(
-                    package='slam_toolbox', executable='async_slam_toolbox_node', name='slam_toolbox',
-                    output='screen', parameters=[slam_params],
+                    package='slam_toolbox',
+                    executable='async_slam_toolbox_node',
+                    name='slam_toolbox',
+                    output='screen',
+                    parameters=[slam_params],
                     remappings=[(f'/{topic}', PathJoinSubstitution([namespace.substitution, topic])) for topic in ('map', 'map_metadata')],
                 )
             )
 
-        controller_launch = nav2_cfg(
-            'controllers', local_planner.substitution, 'controller.launch.py'
-        ).perform(context)
+        controller_launch = nav2_cfg('controllers', local_planner.substitution, 'controller.launch.py').perform(context)
         if os.path.isfile(controller_launch):
             result.append(
                 IncludeLaunchDescription(
@@ -242,7 +217,7 @@ def generate_launch_description():
                         'namespace': namespace.substitution,
                         'env_namespace': env_namespace.substitution,
                         'frame': frame.substitution,
-                        'base_frame': YAMLRetrieveSubstitution(YAMLFileSubstitution(model_params_path), 'base_frame'),
+                        'base_frame': base_frame.substitution,
                         'use_sim_time': use_sim_time.substitution,
                         'agent': agent.substitution,
                     }.items(),

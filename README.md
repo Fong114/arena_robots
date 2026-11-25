@@ -44,8 +44,8 @@ points for everything downstream:
   robot name to its directory via `SimplePathResolver` pointed at
   `get_package_share_path('arena_robots') / 'robots'`, and `.load()` returns
   a `RobotView` that lazy-reads `model_params.yaml` / `control.yaml` /
-  `mappings.yaml` / `caps/*.yaml` and exposes a `ModelWrapper` covering URDF
-  and USD. Cap advertisement is derived from the `caps/` tree, see the
+  `caps.yaml` and exposes a `ModelWrapper` covering URDF
+  and USD. Cap advertisement is derived from the sections of `caps.yaml`, see the
   [robot-authoring guide](arena_robots/robots/README.md).
 - **`RobotSetupIdentifier`** ([SetupFile.py](arena_robots/arena_robots/SetupFile.py)):
   resolves a setup name to `config/setup/<name>.yaml` and returns a

@@ -41,7 +41,7 @@
     </visual>
   </link>
   <joint name="robot_base_footprint_joint" type="fixed">
-    <origin rpy="0 0 0" xyz="0 0 0.11"/>
+    <origin rpy="0 0 0" xyz="0 0 0.1175"/>
     <!-- ${wheel_radius} property must be defined inside wheel description -->
     <parent link="robot_base_footprint"/>
     <child link="robot_base_link"/>
@@ -49,9 +49,9 @@
   <!-- BASE_LINK -->
   <link name="robot_base_link">
     <inertial>
-      <mass value="25.0"/>
+      <mass value="37.8"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.1016666666666668" ixy="0" ixz="0" iyy="1.0708333333333333" iyz="0" izz="0.5708333333333334"/>
+      <inertia ixx="1.66572" ixy="0" ixz="0" iyy="1.6190999999999998" iyz="0" izz="0.8631000000000001"/>
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -96,13 +96,13 @@
     <collision>
       <origin rpy="1.5707963267948966 0 0" xyz="0 0 0"/>
       <geometry>
-        <cylinder length="0.15" radius="0.11"/>
+        <cylinder length="0.15" radius="0.1175"/>
       </geometry>
     </collision>
     <inertial>
       <mass value="6.5"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="0.031849999999999996" ixy="0" ixz="0" iyy="0.039325" iyz="0" izz="0.031849999999999996"/>
+      <inertia ixx="0.03462265625" ixy="0" ixz="0" iyy="0.044870312499999995" iyz="0" izz="0.03462265625"/>
     </inertial>
   </link>
   <gazebo reference="robot_front_right_wheel">
@@ -132,13 +132,13 @@
     <collision>
       <origin rpy="1.5707963267948966 0 0" xyz="0 0 0"/>
       <geometry>
-        <cylinder length="0.15" radius="0.11"/>
+        <cylinder length="0.15" radius="0.1175"/>
       </geometry>
     </collision>
     <inertial>
       <mass value="6.5"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="0.031849999999999996" ixy="0" ixz="0" iyy="0.039325" iyz="0" izz="0.031849999999999996"/>
+      <inertia ixx="0.03462265625" ixy="0" ixz="0" iyy="0.044870312499999995" iyz="0" izz="0.03462265625"/>
     </inertial>
   </link>
   <gazebo reference="robot_front_left_wheel">
@@ -168,13 +168,13 @@
     <collision>
       <origin rpy="1.5707963267948966 0 0" xyz="0 0 0"/>
       <geometry>
-        <cylinder length="0.15" radius="0.11"/>
+        <cylinder length="0.15" radius="0.1175"/>
       </geometry>
     </collision>
     <inertial>
       <mass value="6.5"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="0.031849999999999996" ixy="0" ixz="0" iyy="0.039325" iyz="0" izz="0.031849999999999996"/>
+      <inertia ixx="0.03462265625" ixy="0" ixz="0" iyy="0.044870312499999995" iyz="0" izz="0.03462265625"/>
     </inertial>
   </link>
   <gazebo reference="robot_back_left_wheel">
@@ -204,13 +204,13 @@
     <collision>
       <origin rpy="1.5707963267948966 0 0" xyz="0 0 0"/>
       <geometry>
-        <cylinder length="0.15" radius="0.11"/>
+        <cylinder length="0.15" radius="0.1175"/>
       </geometry>
     </collision>
     <inertial>
       <mass value="6.5"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="0.031849999999999996" ixy="0" ixz="0" iyy="0.039325" iyz="0" izz="0.031849999999999996"/>
+      <inertia ixx="0.03462265625" ixy="0" ixz="0" iyy="0.044870312499999995" iyz="0" izz="0.03462265625"/>
     </inertial>
   </link>
   <gazebo reference="robot_back_right_wheel">
@@ -256,9 +256,9 @@
   </joint>
   <link name="robot_gps_mast_base_link">
     <inertial>
-      <origin rpy="0 0 0" xyz="0.0 0 0.0"/>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
       <mass value="1.0"/>
-      <inertia ixx="0.020841666666666665" ixy="0" ixz="0" iyy="0.020841666666666665" iyz="0" izz="1.6666666666666667e-05"/>
+      <inertia ixx="0.00354166666667" ixy="0" ixz="0" iyy="0.00354166666667" iyz="0" izz="0.000416666666667"/>
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -575,8 +575,8 @@
     <inertial>
       <!-- The following are not reliable values, and should not be used for modeling -->
       <mass value="0.072"/>
-      <origin xyz="0 0 0"/>
-      <inertia ixx="0.003881243" ixy="0.0" ixz="0.0" iyy="0.000498940" iyz="0.0" izz="0.003879257"/>
+      <origin rpy="0 0 0" xyz="0 -0.0175 0"/>
+      <inertia ixx="5.235e-05" ixy="0" ixz="0" iyy="7.515015e-06" iyz="0" izz="5.2365015e-05"/>
     </inertial>
   </link>
   <!-- camera depth joints and links -->

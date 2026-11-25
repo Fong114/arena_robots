@@ -1,22 +1,20 @@
 """ROS node that exposes per-TaskKind action servers for a robot's configured bringups."""
 
-import json
-
 import rclpy
 import tf2_ros
 from arena_rclpy_mixins.params import Param, declare
 from arena_rclpy_mixins.spin import spin_node
+from arena_rclpy_mixins.Time import TimeNode
 from rclpy.action import ActionServer
-from rclpy.node import Node
 from rclpy.parameter import Parameter
 
-from arena_robots.assembly import RequestPart
 from arena_robots.bringup import BRINGUPS, check_caps
+from arena_robots.request import InstanceRequest
 from arena_robots.Robot import RobotIdentifier
 from arena_robots.task_kinds import action_type, endpoint
 
 
-class TaskServerNode(Node):
+class TaskServerNode(TimeNode):
     def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
         super().__init__("task_server", parameter_overrides=parameter_overrides)
 
@@ -24,8 +22,8 @@ class TaskServerNode(Node):
         bringup_caps = declare(self, Param[list[str]]("bringup_caps", [], "Capability of each configured bringup, parallel to bringup_kinds.", type_=Parameter.Type.STRING_ARRAY)).value
         bringup_kinds = declare(self, Param[list[str]]("bringup_kinds", [], "Bringup kind of each configured bringup, parallel to bringup_caps.", type_=Parameter.Type.STRING_ARRAY)).value
         frame = declare(self, Param[str]("frame", "", "Frame prefix of the robot.")).value
-        parts_json = declare(self, Param[str]("parts_json", "{}", "JSON object mapping part type to the list of requested robot parts.")).value
-        parts = {t: [RequestPart(variant=i["variant"], mount=i.get("mount")) for i in items] for t, items in json.loads(parts_json).items()}
+        request_json = declare(self, Param[str]("request_json", "{}", "JSON instance request (parts, frames, cap overrides) of the robot.")).value
+        request = InstanceRequest.loads(request_json)
 
         if not robot_name:
             raise RuntimeError("Parameter 'robot_name' is required")
@@ -51,7 +49,7 @@ class TaskServerNode(Node):
                 continue
 
             try:
-                bringup = bringup_cls(robot, namespace, frame=frame, parts=parts)
+                bringup = bringup_cls(robot, namespace, frame=frame, request=request)
                 check_caps(bringup)
             except Exception as exc:
                 self.get_logger().error(f"bringup ({cap!r}, {kind!r}) init failed: {exc}; skipping")

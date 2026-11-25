@@ -12,28 +12,43 @@ pytest.importorskip("arena_mcp")
 
 from arena_mcp.core import ToolError, cli
 from arena_robots import mcp
+from arena_robots.caps import simulator_names
 from arena_robots.Robot import RobotView
 
 ROBOTS_DIR = Path(__file__).resolve().parents[2] / "robots"
 
 
+def _model_param(model: str):
+    preset = ROBOTS_DIR / model / "preset.yaml"
+    if not preset.is_file():
+        return model
+    return pytest.param(model, marks=pytest.mark.requires_installed(yaml.safe_load(preset.read_text())["robot"], "arm/ur"))
+
+
 def test_catalog_lists_every_robot_directory_with_its_caps():
     catalog = mcp.robots_catalog()
-    assert [entry["model"] for entry in catalog] == sorted(path.parent.name for path in ROBOTS_DIR.glob("*/model_params.yaml"))
+    assert [entry["model"] for entry in catalog] == sorted(path.parent.name for path in [*ROBOTS_DIR.glob("*/model_params.yaml"), *ROBOTS_DIR.glob("*/preset.yaml")])
     jackal = next(entry for entry in catalog if entry["model"] == "jackal")
     assert "error" not in jackal
     assert jackal["caps"] == ["mobile"]
     assert "laserscan" in jackal["sensor_types"]
-    assert jackal["summary"].startswith("mobile (non-holonomic, radius 0.267 m)")
-    kairos = next(entry for entry in catalog if entry["model"] == "rbkairos_plus")
+    assert jackal["summary"].startswith("mobile (non-holonomic, radius 0.3338")
+    assert "preset" not in jackal
+
+
+@pytest.mark.requires_installed("rbkairos", "arm/ur")
+def test_catalog_lists_a_preset_with_its_base_robot_and_parts():
+    kairos = next(entry for entry in mcp.robots_catalog() if entry["model"] == "rbkairos_plus")
     assert "arm x1" in kairos["summary"]
+    assert kairos["preset"] == {"robot": "rbkairos", "parts": {"arm": ["ur5e"]}, "caps": {}}
 
 
 def test_jackal_definition_carries_limits_sensors_and_only_the_goto_endpoint():
     definition = mcp.robots_definition("jackal")
-    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps" / "mobile.yaml").read_text())
-    assert definition["mobile"]["radius"] == authored["radius"]
-    assert definition["mobile"]["footprint"] == authored["footprint"]
+    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps.yaml").read_text())["mobile"]
+    assert definition["mobile"]["radius"] == pytest.approx(0.3338, abs=2e-3)
+    assert max(abs(x) for x, _ in definition["mobile"]["footprint"]) == pytest.approx(0.2553, abs=5e-3)
+    assert "sensor_frame" not in definition["mobile"]
     limits = definition["mobile"]["velocity_limits"]
     assert [limits["linear"]["min"], limits["linear"]["max"]] == authored["velocity_limits"]["linear"]
     assert definition["mobile"]["planar"]["acceleration"]["lateral"] is None
@@ -49,19 +64,21 @@ def test_jackal_definition_carries_limits_sensors_and_only_the_goto_endpoint():
     assert "jackal_default" in definition["assembly"]["variants"]["lidar"]
 
 
+@pytest.mark.requires_installed("rbkairos", "arm/ur")
 def test_arm_robot_definition_lists_named_poses_gestures_and_arm_endpoints():
     definition = mcp.robots_definition("rbkairos_plus")
-    authored = yaml.safe_load((ROBOTS_DIR / "rbkairos_plus" / "caps" / "arm.yaml").read_text())
-    arm = definition["arm"]["arm"]
-    assert arm["named_poses"] == sorted(authored["arm"]["named_poses"])
-    assert arm["raw"]["controller"] == authored["arm"]["controller"]
+    assert definition["model"] == "rbkairos_plus"
+    assert definition["preset"]["robot"] == "rbkairos"
+    arm = definition["arm"]["arm_mount"]
+    assert arm["named_poses"] == ["ready", "stow", "wave_l", "wave_r", "wave_up"]
+    assert arm["raw"]["controller"] == "arm_controller"
     assert arm["gestures"], "the shared gesture library is empty"
     assert all(gesture["playable"] == (not gesture["missing_poses"]) for gesture in arm["gestures"].values() if "error" not in gesture)
     assert set(definition["actions"]["endpoints"]) == {"goto_pose", "reach_pose", "play_gesture"}
     assert any(sensor["type"] == "image" for sensor in definition["sensors"])
 
 
-@pytest.mark.parametrize("model", sorted(path.parent.name for path in ROBOTS_DIR.glob("*/model_params.yaml")))
+@pytest.mark.parametrize("model", [_model_param(model) for model in sorted(path.parent.name for path in [*ROBOTS_DIR.glob("*/model_params.yaml"), *ROBOTS_DIR.glob("*/preset.yaml")])])
 def test_every_model_resolves_to_a_json_definition(model):
     definition = mcp.robots_definition(model)
     assert definition["model"] == model and definition["caps"]
@@ -202,3 +219,123 @@ def test_actuator_instance_errors_name_the_choices():
     assert "torso" in (unknown.value.hint or "")
     with pytest.raises(ToolError, match="no gripper cap"):
         mcp._actuator_spec(_entry("jackal", []), "gripper", "")
+
+
+def test_definition_with_a_set_override_returns_the_overridden_limits_and_leaves_the_model_alone():
+    definition = mcp.robots_definition("jackal", caps={"mobile.velocity_limits.linear": [-0.5, 1.0]})
+    limits = definition["mobile"]["velocity_limits"]
+    assert [limits["linear"]["min"], limits["linear"]["max"]] == [-0.5, 1.0]
+    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps.yaml").read_text())["mobile"]
+    assert definition["mobile"]["radius"] == pytest.approx(0.3338, abs=2e-3)
+    plain = mcp.robots_definition("jackal")["mobile"]["velocity_limits"]
+    assert [plain["linear"]["min"], plain["linear"]["max"]] == authored["velocity_limits"]["linear"]
+
+
+def test_definition_with_a_scale_override_multiplies_the_authored_limits():
+    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps.yaml").read_text())["mobile"]["velocity_limits"]["linear"]
+    limits = mcp.robots_definition("jackal", caps={"mobile.velocity_limits.linear": {"scale": 0.5}})["mobile"]["velocity_limits"]
+    assert [limits["linear"]["min"], limits["linear"]["max"]] == [authored[0] * 0.5, authored[1] * 0.5]
+
+
+def test_definition_with_parts_resolves_the_instance_sensors():
+    definition = mcp.robots_definition("jackal", parts={"lidar": "jackal_default"})
+    assert any(sensor["type"] == "laserscan" for sensor in definition["sensors"])
+
+
+def test_definition_without_instance_arguments_equals_an_empty_instance_request():
+    assert mcp.robots_definition("jackal") == mcp.robots_definition("jackal", parts={}, frames={}, caps={})
+
+
+def test_definition_rejects_an_unknown_override_path_with_a_hint():
+    with pytest.raises(ToolError, match="unknown field 'velocty_limits'") as error:
+        mcp.robots_definition("jackal", caps={"mobile.velocty_limits.linear": [0.0, 1.0]})
+    assert error.value.hint
+
+
+def test_definition_rejects_frames_for_a_mount_the_model_lacks():
+    with pytest.raises(ToolError, match="unknown mount"):
+        mcp.robots_definition("jackal", frames={"no_such_mount": "x"})
+
+
+def test_definition_findings_report_an_unknown_override_path():
+    view = mcp._view("jackal")
+    request = mcp._request(view, None, None, {"mobile.velocty_limits.linear": [0.0, 1.0]})
+    findings = mcp._definition_findings(view, request)
+    assert any(finding["check"] == "caps.overrides" and "velocty_limits" in finding["message"] for finding in findings)
+
+
+def test_definition_findings_are_empty_for_a_valid_override():
+    view = mcp._view("jackal")
+    assert mcp._definition_findings(view, mcp._request(view, None, None, {"mobile.velocity_limits.linear": [-0.5, 1.0]})) == []
+
+
+def test_request_rejects_an_adapter_key_as_a_cap_override():
+    with pytest.raises(ValueError, match="cap overrides must be"):
+        mcp._request(mcp._view("jackal"), None, None, {"mobile.adapter": "direct"})
+
+
+def test_check_with_an_instance_needs_a_model():
+    with pytest.raises(ToolError, match="pass model"):
+        mcp.robots_check(caps={"mobile.radius": 0.3})
+
+
+def test_definition_findings_report_an_override_of_the_wrong_type():
+    findings = mcp._definition_findings(mcp._view("jackal"), mcp._request(mcp._view("jackal"), None, None, {"mobile.velocity_limits.linear": "fast"}))
+    assert any(finding["check"] == "caps.overrides" and finding["severity"] == "error" for finding in findings)
+
+
+def test_actuator_spec_honors_a_lift_override_from_the_fleet_params():
+    entry = _entry("tiago", ["lift"], {"cap:lift.torso.limits": "[0.0, 0.2]"})
+    _, spec = mcp._actuator_spec(entry, "lift", "")
+    assert spec.raw["limits"] == [0.0, 0.2]
+    assert mcp._actuator_spec(_entry("tiago", ["lift"]), "lift", "")[1].raw["limits"] == [0.0, 0.35]
+
+
+def test_actuator_spec_honors_a_gripper_override_from_the_fleet_params():
+    entry = _entry("tiago", ["gripper"], {"cap:gripper.gripper.positions.open": "0.03"})
+    assert mcp._actuator_spec(entry, "gripper", "")[1].positions == {"open": 0.03, "close": 0.0}
+
+
+def test_overrides_list_the_jackal_mobile_paths_with_their_effective_values_as_json():
+    paths = mcp.robots_overrides("jackal")
+    json.dumps(paths, allow_nan=False)
+    authored = yaml.safe_load((ROBOTS_DIR / "jackal" / "caps.yaml").read_text())["mobile"]
+    by_path = {entry["path"]: entry for entry in paths}
+    assert by_path["mobile.velocity_limits.linear"] == {"path": "mobile.velocity_limits.linear", "kind": "list", "value": authored["velocity_limits"]["linear"], "provenance": "file", "part": None, "relative": None, "simulators": sorted(simulator_names()), "overridable": True}
+    assert any(entry["kind"] == "unset" and entry["value"] is None for entry in paths)
+
+
+@pytest.mark.requires_installed("arm/ur")
+def test_overrides_with_parts_mark_the_placed_part_and_its_bracket_path():
+    paths = mcp.robots_overrides("jackal", parts={"top": "arm/ur5e[stall_time=2.0]"})
+    by_path = {entry["path"]: entry for entry in paths}
+    assert by_path["arm.top.stall_time"]["part"] == "top"
+    assert by_path["arm.top.stall_time"]["relative"] == "stall_time"
+    assert by_path["arm.top.stall_time"]["value"] == 2.0
+
+
+def test_overrides_with_caps_show_the_overridden_value():
+    by_path = {entry["path"]: entry for entry in mcp.robots_overrides("jackal", caps={"mobile.velocity_limits.linear": [-0.5, 1.0]})}
+    assert by_path["mobile.velocity_limits.linear"]["value"] == [-0.5, 1.0]
+
+
+def test_overrides_rejects_an_unknown_override_path_with_a_hint():
+    with pytest.raises(ToolError, match="unknown field 'velocty_limits'") as error:
+        mcp.robots_overrides("jackal", caps={"mobile.velocty_limits.linear": [0.0, 1.0]})
+    assert error.value.hint
+
+
+def test_overrides_of_an_unknown_model_names_the_known_models():
+    with pytest.raises(ToolError) as error:
+        mcp.robots_overrides("no_such_robot")
+    assert "jackal" in error.value.hint
+
+
+def test_definition_findings_carry_no_mass_check_for_a_robot_whose_files_disagreed():
+    findings = mcp._definition_findings(mcp._view("turtlebot"))
+    assert [finding for finding in findings if finding["check"] == "caps.mass"] == []
+
+
+def test_definition_findings_are_silent_on_the_mass_when_both_files_agree():
+    findings = mcp._definition_findings(mcp._view("jackal"))
+    assert [finding for finding in findings if finding["check"] == "caps.mass"] == []

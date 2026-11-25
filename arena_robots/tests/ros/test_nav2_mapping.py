@@ -14,6 +14,8 @@ ENV_NODE = "/arena/env_0/arena_env_node"
 
 
 def _entities(mapping: str, scan_topic: str = f"{NAMESPACE}/lidar") -> tuple[list, object]:
+    from arena_robots.bringup.mobile.nav2 import Nav2Bringup
+    from arena_robots.Robot import RobotIdentifier
     from launch import LaunchContext
     from launch.actions import OpaqueFunction
 
@@ -37,11 +39,13 @@ def _entities(mapping: str, scan_topic: str = f"{NAMESPACE}/lidar") -> tuple[lis
             "train_mode": "true",
             "arena_env_node": ENV_NODE,
             "env_namespace": "",
-            "sensors_json": "",
+            "sensors_json": "[]",
             "params_overlay": "",
             "agent": "",
             "mapping": mapping,
             "scan_topic": scan_topic,
+            "mobile_caps": Nav2Bringup(RobotIdentifier("jackal").resolve_sync(), NAMESPACE).planner_launch_arguments()["mobile_caps"],
+            "base_frame": "base_link",
         }
     )
     (setup,) = [e for e in ld.entities if isinstance(e, OpaqueFunction)]

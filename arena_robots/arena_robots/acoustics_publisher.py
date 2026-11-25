@@ -16,6 +16,8 @@ from rclpy.parameter import Parameter
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 
+from arena_robots.acoustic_profile import default_profile
+
 
 class AcousticsPublisher(Node):
     """ROS 2 node that computes acoustic ego-noise level from joint states and collisions."""
@@ -42,7 +44,7 @@ class AcousticsPublisher(Node):
         self._beta_2: float = float(cfg.get("beta_2", 5.0))
         self._omega_ref: float = float(cfg.get("omega_ref", 5.0))
         self._tau_ref: float = float(cfg.get("tau_ref", 10.0))
-        self._max_torque_nm: float = float(cfg.get("max_joint_torque_nm", 15.0))
+        self._max_torque_nm: float = float(cfg.get("max_joint_torque_nm", default_profile()["max_joint_torque_nm"]))
         self._omega_deadband: float = float(cfg.get("omega_deadband", 0.05))
         self._omega_active: float = float(cfg.get("omega_active", 0.20))
         self._sigma_base: float = float(cfg.get("sigma_base", 1.0))

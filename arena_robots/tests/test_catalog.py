@@ -351,7 +351,7 @@ class TestRenderWrapperXacroNoControlSynthesis:
     """render_wrapper_xacro synthesizes no ``ros2_control`` tag of its own (regardless of
     whether a placement declares joints): the chassis and every placement's component each
     render their own xacro exactly as written, no gating required. Post-render merging is
-    arena_simulation_setup.utils.models.urdf._inject_ros2_control_joints's job, fed by
+    arena_robots.served_urdf._inject_ros2_control_joints's job, fed by
     :func:`render_control_joints` (tested below)."""
 
     def test_no_joints_no_ros2_control_tag(self, tmp_path: Path):
@@ -504,9 +504,8 @@ RBVOGUI_BASE_CONTROL = {
 
 
 class TestRenderEffectiveControl:
-    """rbvogui[arm=ur5e] control.yaml synthesis must reproduce rbvogui_plus's
-    hand-authored control.yaml diff exactly: one controller_manager entry + one
-    top-level controller section per arm placement."""
+    """rbvogui[arm=ur5e] control.yaml synthesis, what `rbvogui_plus` expands to, adds one
+    controller_manager entry + one top-level controller section per arm placement."""
 
     def test_merges_arm_controller_into_rbvogui_shaped_base(self, tmp_path: Path):
         _write_component(tmp_path, "arm", "ur5e", ARM_COMPONENT)
