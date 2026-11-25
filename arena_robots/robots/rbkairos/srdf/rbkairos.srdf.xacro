@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="rbkairos">
+
+  <disable_collisions link1="robot_base_link" link2="robot_top_cover" reason="Adjacent"/>
+  <disable_collisions link1="robot_base_link" link2="robot_base_logo_left" reason="Adjacent"/>
+  <disable_collisions link1="robot_base_link" link2="robot_base_logo_right" reason="Adjacent"/>
+  <disable_collisions link1="robot_base_link" link2="robot_base_logo_front" reason="Adjacent"/>
+  <disable_collisions link1="robot_base_link" link2="robot_base_logo_rear" reason="Adjacent"/>
+  <disable_collisions link1="robot_base_link" link2="robot_base_docking_contact" reason="Adjacent"/>
+
+  <disable_collisions link1="robot_base_link" link2="robot_front_right_wheel_link" reason="Adjacent"/>
+  <disable_collisions link1="robot_base_link" link2="robot_front_left_wheel_link" reason="Adjacent"/>
+  <disable_collisions link1="robot_base_link" link2="robot_back_left_wheel_link" reason="Adjacent"/>
+  <disable_collisions link1="robot_base_link" link2="robot_back_right_wheel_link" reason="Adjacent"/>
+
+</robot>

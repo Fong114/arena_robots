@@ -55,7 +55,7 @@ class _GoalWindowHandler(_PassthroughHandler):
 
     def __init__(self, bringup: ExternalBringup | RosnavRlBringup | DrlBringup, *, tf_buffer: Buffer, node: TimeNode) -> None:
         super().__init__(bringup, tf_buffer=tf_buffer, node=node)
-        self._base_frame = bringup.frame + bringup.robot.model_params.base_frame
+        self._base_frame = bringup.frame + bringup.caps.body.base_frame
         self._active_token: object | None = None
         self._beat: LockstepBeat | None = None
         if self._PROXY_BEAT:

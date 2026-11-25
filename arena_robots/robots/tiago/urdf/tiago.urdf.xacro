@@ -48,8 +48,8 @@
   <link name="base_link">
     <inertial>
       <origin rpy="0 0 0" xyz="-0.00000106 0.00000109 0.0000387" />
-      <mass value="28.26649" />
-      <inertia ixx="0.465408937" ixy="0.002160024" ixz="-0.001760255" iyy="0.483193291" iyz="-0.000655952" izz="0.550939703" />
+      <mass value="36.46649" />
+      <inertia ixx="0.600422279" ixy="0.00278663865" ixz="-0.0022708982" iyy="0.623365806" iyz="-0.000846241152" izz="0.710765191" />
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0" />

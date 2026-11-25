@@ -9,31 +9,25 @@ the same nodes drive the joints whether the controller_manager is backed by
 Gazebo's gz_ros2_control or the MuJoCo or Isaac topic bridge.
 """
 
-import os
-
-from ament_index_python.packages import get_package_share_directory
 from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchDescription
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterFile
 
 
 def generate_launch_description():
-    robot_share = get_package_share_directory('arena_robots')
-    a1_dir = os.path.join(robot_share, 'robots', 'a1')
-
-    description_path = os.path.join(a1_dir, 'urdf', 'a1.urdf.xacro')
-    joints_map = os.path.join(a1_dir, 'champ', 'joints.yaml')
-    links_map = os.path.join(a1_dir, 'champ', 'links.yaml')
-    gait_config = os.path.join(a1_dir, 'champ', 'gait.yaml')
-
     use_sim_time = LaunchConfiguration('use_sim_time')
 
+    declare_urdf_path = LaunchArgument('urdf_path', description='Served URDF file of the robot instance.')
     declare_namespace = LaunchArgument('namespace', default_value='', description='Robot namespace.')
     declare_base_frame = LaunchArgument('base_frame', default_value='base', description='Base link frame.')
     declare_use_sim_time = LaunchArgument('use_sim_time', default_value='true', description='Use the sim clock.')
+    declare_joints_map = LaunchArgument('joints_map', description='CHAMP joints_map parameter file of the robot instance.')
+    declare_links_map = LaunchArgument('links_map', description='CHAMP links_map parameter file of the robot instance.')
+    declare_gait_config = LaunchArgument('gait_config', description='CHAMP gait parameter file of the robot instance.')
 
-    urdf = {'urdf': Command(['xacro ', description_path])}
+    urdf = {'urdf': Command(['cat ', LaunchConfiguration('urdf_path')])}
 
     # The gait engine: cmd_vel -> foot trajectories -> joint angles. arena owns
     # joint_states (joint_state_broadcaster) and odom TF (pose_to_tf from the sim
@@ -52,9 +46,9 @@ def generate_launch_description():
             {'publish_odom_tf': False},
             {'joint_controller_topic': 'joint_group_position_controller/joint_trajectory'},
             urdf,
-            joints_map,
-            links_map,
-            gait_config,
+            ParameterFile(LaunchConfiguration('joints_map')),
+            ParameterFile(LaunchConfiguration('links_map')),
+            ParameterFile(LaunchConfiguration('gait_config')),
         ],
         remappings=[('cmd_vel/smooth', 'cmd_vel')],
     )
@@ -69,17 +63,21 @@ def generate_launch_description():
             {'use_sim_time': use_sim_time},
             {'orientation_from_imu': False},
             urdf,
-            joints_map,
-            links_map,
-            gait_config,
+            ParameterFile(LaunchConfiguration('joints_map')),
+            ParameterFile(LaunchConfiguration('links_map')),
+            ParameterFile(LaunchConfiguration('gait_config')),
         ],
     )
 
     return LaunchDescription(
         [
+            declare_urdf_path,
             declare_namespace,
             declare_base_frame,
             declare_use_sim_time,
+            declare_joints_map,
+            declare_links_map,
+            declare_gait_config,
             quadruped_controller,
             state_estimator,
         ]

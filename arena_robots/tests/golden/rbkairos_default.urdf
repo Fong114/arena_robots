@@ -61,9 +61,9 @@
   <!-- BASE_LINK -->
   <link name="robot_base_link">
     <inertial>
-      <mass value="125.0"/>
+      <mass value="89.0"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.391" ixy="0.004" ixz="0.0" iyy="6.853" iyz="0.0" izz="6.125"/>
+      <inertia ixx="0.990392" ixy="0.002848" ixz="0.0" iyy="4.879336" iyz="0.0" izz="4.361"/>
     </inertial>
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
@@ -662,8 +662,8 @@
     <inertial>
       <!-- The following are not reliable values, and should not be used for modeling -->
       <mass value="0.072"/>
-      <origin xyz="0 0 0"/>
-      <inertia ixx="0.003881243" ixy="0.0" ixz="0.0" iyy="0.000498940" iyz="0.0" izz="0.003879257"/>
+      <origin rpy="0 0 0" xyz="0 -0.0175 0"/>
+      <inertia ixx="5.235e-05" ixy="0" ixz="0" iyy="7.515015e-06" iyz="0" izz="5.2365015e-05"/>
     </inertial>
   </link>
   <!-- camera depth joints and links -->

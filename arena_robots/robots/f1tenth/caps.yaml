@@ -1,0 +1,34 @@
+mobile:
+  odom_frame: odom
+
+  polygons_dict:
+    StopPolygon:
+      type: polygon
+      points: [[0.455, 0.155], [0.455, -0.155], [-0.125, -0.155], [-0.125, 0.155]]
+      action_type: stop
+      min_points: 4
+      visualize: true
+      polygon_pub_topic: polygon_stop
+      enabled: true
+
+  velocity_limits:
+    linear: [-1.0, 2.0]
+    angular: [-2.5, 2.5]
+
+  planar:
+    velocity: {linear: [-1.0, 3.0], lateral: [0.0, 0.0], angular: [-4.0, 4.0]}
+    acceleration: {linear: 9.51, lateral: .inf, angular: .inf}
+    gain: {linear: 1.0, lateral: 1.0, angular: 1.0}
+    lag: 0.0
+    traction: 9.81
+    timeout: 0.5
+
+  actions:
+    discrete:
+      - {name: move_forward, linear: 1.0, angular: 0.0}
+      - {name: move_backward, linear: -0.5, angular: 0.0}
+      - {name: turn_left, linear: 1.0, angular: 1.0}
+      - {name: turn_right, linear: 1.0, angular: -1.0}
+      - {name: stop, linear: 0.0, angular: 0.0}
+
+  nav2: {local_planner: mppi, global_planner: smac_hybrid}

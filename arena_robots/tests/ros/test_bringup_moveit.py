@@ -1,7 +1,7 @@
 """Tests for arena_robots.bringup.arm.moveit - MoveItArmBringup multi-instance
 contract (N-instance launch loop, consistent sole-arm namespacing).
 
-Uses the static ``caps/arm.yaml`` (dict-keyed, multi-instance) path so these tests
+Uses the static ``arm:`` section of caps.yaml (dict-keyed, multi-instance) path so these tests
 don't depend on the assembly/catalog rendering pipeline or on the installed share
 tree being rebuilt."""
 
@@ -25,9 +25,7 @@ def _write_robot(tmp_path: Path, *, arm_cap: dict) -> Path:
     rd = tmp_path / "robot"
     rd.mkdir()
     (rd / "model_params.yaml").write_text(yaml.dump({}))
-    caps_dir = rd / "caps"
-    caps_dir.mkdir()
-    (caps_dir / "arm.yaml").write_text(yaml.dump(arm_cap))
+    (rd / "caps.yaml").write_text(yaml.dump({"arm": arm_cap}))
     return rd
 
 

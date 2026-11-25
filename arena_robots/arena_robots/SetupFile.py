@@ -10,10 +10,11 @@ import attrs
 import yaml
 from arena_simulation_setup.tree import Identifier, ResolverBase
 
-from arena_robots import ARENA_ROBOTS_DIR
+from arena_robots import ARENA_ROBOTS_DIR, preset
+from arena_robots.inline import parse_inline_override
 
 # Config fields a morphology directive must not shadow.
-_RESERVED_TYPES = frozenset({'robot', 'name', 'count', 'parts', 'frames', 'adapters', 'extra'})
+_RESERVED_TYPES = frozenset({'robot', 'name', 'count', 'parts', 'frames', 'adapters', 'caps', 'extra'})
 # Bare keys routed straight to extra (identity-lane, consumed by Robot.parse).
 _EXTRA_KEYS = frozenset({'pos'})
 
@@ -27,7 +28,13 @@ class Config:
     parts: dict[str, list[str]] = attrs.field(factory=dict)  # lhs (mount or type) -> raw value strings
     frames: dict[str, str] = attrs.field(factory=dict)  # mount -> frame stem override
     adapters: dict[str, str] = attrs.field(factory=dict)  # cap -> adapter kind
+    caps: dict[str, typing.Any] = attrs.field(factory=dict)  # '<cap>.<path>' -> value or operation
     extra: dict[str, typing.Any] = attrs.field(factory=dict)  # extra arbitrary data
+
+    def expanded(self) -> Config:
+        """This configuration with its robot's preset applied, the base robot's name and the preset's parts and caps under its own."""
+        robot, parts, caps = preset.expand(self.robot, self.parts, self.caps)
+        return attrs.evolve(self, robot=robot, parts=parts, caps=caps)
 
     @classmethod
     def parse(cls, data: str | dict[str, typing.Any]) -> Sequence[Config]:
@@ -36,21 +43,24 @@ class Config:
         Dict keys route by grammar, not a registry: ``robot``/``name`` are fields,
         ``count`` expands instances, ``pos`` is an identity extra,
         ``adapters`` (dict value) and ``<cap>.adapter`` set adapter kinds, ``frames``
-        (dict value) sets mount frame-stem overrides, any other dotted key is rejected
-        (the dot is the adapter lane), and remaining bare keys are morphology
+        (dict value) and ``frames.<mount>`` set mount frame-stem overrides, any other dotted
+        key ``<cap>.<path>`` is a cap override, and remaining bare keys are morphology
         directives (``mount=type/variant``, ``mount=variant``, ``type=variant``,
         ``lhs=none``). Directives are grammar-collected here as raw strings only;
         mount-vs-type disambiguation and realization happen later, per-robot, at
-        ``Robot.parse``/``assembly.build_request`` resolution time.
+        ``Robot.parse``/``assembly.build_request`` resolution time. A robot that is a
+        preset (``robots/<name>/preset.yaml``) expands here to its base robot with the
+        preset's parts and cap overrides under the entry's own.
         """
         if isinstance(data, str):
-            return (cls(robot=data, name=data),)
+            return (cls(robot=data, name=data).expanded(),)
 
         count = data.get('count', 1)
         fields: dict[str, typing.Any] = {}
         extra: dict[str, typing.Any] = {}
         adapters: dict[str, str] = {}
         frames: dict[str, str] = {}
+        caps: dict[str, typing.Any] = {}
         parts: dict[str, list[str]] = {}
 
         for k, v in data.items():
@@ -79,9 +89,17 @@ class Config:
                 continue
             if '.' in k:
                 cap, _, tail = k.partition('.')
-                if tail != 'adapter':
-                    raise RuntimeError(f"'{k}': the only dotted key is '<cap>.adapter=<kind>'; tuning belongs on the robot.planner:= / task-config channel")
-                adapters[cap] = str(v)
+                if not cap or not all(tail.split('.')):
+                    raise RuntimeError(f"'{k}': a dotted key is '<cap>.adapter' or a cap override '<cap>.<path>'")
+                if tail == 'adapter':
+                    adapters[cap] = str(v)
+                elif cap == 'frames':
+                    frames[tail] = str(v)
+                else:
+                    try:
+                        caps[k] = parse_inline_override(v) if isinstance(v, str) or (isinstance(v, list) and all(isinstance(x, str) for x in v)) else v
+                    except ValueError as e:
+                        raise RuntimeError(f"'{k}': {e}") from e
                 continue
 
             # remaining bare keys are morphology directives, collected as raw values
@@ -92,9 +110,10 @@ class Config:
         fields['parts'] = parts
         fields['frames'] = frames
         fields['adapters'] = adapters
+        fields['caps'] = caps
         if extra:
             fields['extra'] = extra
-        return tuple(cls(**copy.deepcopy(fields)) for _ in range(count))
+        return tuple(cls(**copy.deepcopy(fields)).expanded() for _ in range(count))
 
 
 class RobotSetupResolver(ResolverBase):

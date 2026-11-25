@@ -59,7 +59,7 @@ class GotoPoseHandlerNav2(TaskHandler[GotoPose.Goal, GotoPose.Feedback, GotoPose
         self._beat = LockstepBeat(node, "nav")
         self._beat_period: float | None = None
         self._nav2_goals = NativeGoals()
-        self._base_frame = bringup.frame + bringup.robot.model_params.base_frame
+        self._base_frame = bringup.frame + bringup.caps.body.base_frame
         self._checker_defaults: dict[str, float] | None = None
         node.create_subscription(Twist, str(bringup.namespace("cmd_vel_nav")), lambda _msg: self._beat.pulse(), 10)
 

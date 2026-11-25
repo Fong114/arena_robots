@@ -94,7 +94,7 @@ class GotoRig:
             goal_topic=f"{namespace}/goal_pose",
             namespace=lambda *parts: "/".join((namespace, *parts)),
             frame="env_0/",
-            robot=SimpleNamespace(model_params=SimpleNamespace(base_frame="base_link")),
+            caps=SimpleNamespace(body=SimpleNamespace(base_frame="base_link")),
         )
         self.node = TimeNode("task_server", namespace=namespace)
         self.peer = Node("task_peer", namespace=namespace)
@@ -221,7 +221,7 @@ def goto_rig() -> Iterator[GotoRig]:
 
 
 @pytest.fixture()
-def temp_robot_dir(tmp_path: Path):
+def temp_robot_dir(tmp_path: Path, request: pytest.FixtureRequest):
     """Return a factory that writes a minimal robot directory tree.
 
     Usage::
@@ -241,6 +241,7 @@ def temp_robot_dir(tmp_path: Path):
         mobile_cap: dict[str, Any] | None = None,
         extra_caps: dict[str, dict[str, Any]] | None = None,
         name: str = "test_robot",
+        urdf: bool = False,
     ) -> Path:
         robot_dir = tmp_path / name
         robot_dir.mkdir(parents=True, exist_ok=True)
@@ -252,12 +253,11 @@ def temp_robot_dir(tmp_path: Path):
             (robot_dir / "control.yaml").write_text(yaml.dump(control))
 
         if mobile_cap is not None or extra_caps is not None:
-            caps_dir = robot_dir / "caps"
-            caps_dir.mkdir(exist_ok=True)
-            if mobile_cap is not None:
-                (caps_dir / "mobile.yaml").write_text(yaml.dump(mobile_cap))
-            for cap_name, cap_data in (extra_caps or {}).items():
-                (caps_dir / f"{cap_name}.yaml").write_text(yaml.dump(cap_data))
+            caps = {"mobile": mobile_cap} if mobile_cap is not None else {}
+            (robot_dir / "caps.yaml").write_text(yaml.dump({**caps, **(extra_caps or {})}))
+
+        if urdf:
+            request.getfixturevalue("write_urdf")(robot_dir)
 
         return robot_dir
 

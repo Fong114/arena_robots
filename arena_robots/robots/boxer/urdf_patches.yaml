@@ -1,0 +1,5 @@
+patches:
+  - link: realsense_front_camera_link
+    inertia: from_collision
+    reason: the vendor camera inertia tensor has 74 times the trace of its 0.025 x 0.09 x 0.025 m box collision
+    source: the closed-form tensor of the link's box collision

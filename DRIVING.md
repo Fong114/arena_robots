@@ -85,10 +85,26 @@ surface for agents. `python3 -m arena_mcp ls robots` lists its tools.
   resolved definition (caps, limits, footprint, arm poses and gestures, default
   sensors, task endpoints and the bringups that serve them, assembly, power
   profile), a validation that runs `arena feature robots check` plus
-  definition checks as structured findings, and a job that runs
+  definition checks as structured findings, both optionally for one instance
+  (`parts`, `frames` and `caps` as in a setup file entry, so the definition
+  carries the overridden cap values and an invalid override is a finding), and a job that runs
   `arena feature robots check --sim` for a wedged, weak or ok verdict per robot.
+  `robots_overrides` lists every cap override path of one instance (same
+  `parts`, `frames` and `caps`) with its effective value and a kind (`value`,
+  `list`, `map`, `unset` for a typed field or adapter block the cap leaves
+  out, or `arg` for an xacro argument of a placed part) and a `provenance`
+  (`override`, `component`, `derived`, `urdf` or `file`). The `body`, `power`,
+  `acoustics` and `drives` fact blocks are listed too, with each arm's `joint_limits`.
+  `overridable` is false for `body.mass`, `body.outline` and `mobile.laser*`,
+  and `simulators` names the simulators that honor the path. A part placed
+  through the assembly carries its mount in `part` and the path to write inside
+  its brackets in `relative`, an xacro argument is written there too
+  (`base_front=lidar/arena_default[max_range=8]`).
+  `robots_definition` also returns `body`, `acoustics`, the `provenance` of
+  every leaf of the effective caps and their `warnings`.
 - Live, in a running env: the fleet from `state/robots` with the task actions
-  each robot serves right now (read from the ROS graph), goto, reach and
+  each robot serves right now (read from the ROS graph) and its active cap
+  overrides (`cap_overrides`), goto, reach and
   gesture goals, velocity commands, task pose and odometry, sensor topics,
   laser scan summaries, camera frames and power.
 
@@ -111,8 +127,6 @@ until its goal is cancelled.
 
 ## Real-robot caveat
 
-`state_publisher.launch.py` (included by `bringup.launch.py`) hardcodes
-`use_sim_time=true` internally. For real-robot deployments, launch your own
-`robot_state_publisher` with `use_sim_time:=false` before (or instead of)
-invoking `bringup.launch.py`, or provide a compatible wrapper that does not
-set `use_sim_time`.
+`bringup.launch.py` starts no `robot_state_publisher`, the simulators launch
+it. For real-robot deployments, launch your own `robot_state_publisher` with
+`use_sim_time:=false` alongside `bringup.launch.py`.

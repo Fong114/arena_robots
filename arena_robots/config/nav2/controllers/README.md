@@ -1,7 +1,7 @@
 # Nav2 controllers
 
 One directory per selectable local planner. Pick it at launch with
-`robot.mobile.local_planner:=<name>` (default comes from the robot's `caps/mobile.yaml`
+`robot.mobile.local_planner:=<name>` (default comes from the robot's `caps.yaml` mobile section
 `nav2:` block).
 
 ## Layout
@@ -40,4 +40,4 @@ Worked example: [hateb/controller.launch.py](hateb/controller.launch.py) starts 
 `cohan_peds_bridge`, which republishes `arena_peds` as `cohan_msgs/TrackedAgents` on the
 per-env frame the HATEB planner expects. [rosnav_rl/controller.launch.py](rosnav_rl/controller.launch.py)
 starts the rosnav_rl `action_server.py` serving `get_command` for the agent named by
-`robot.mobile.agent:=<name>` (or `rosnav_rl.agent` in `caps/mobile.yaml`).
+`robot.mobile.agent:=<name>` (or `rosnav_rl.agent` in the mobile section of `caps.yaml`).

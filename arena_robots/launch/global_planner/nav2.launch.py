@@ -20,13 +20,21 @@ def generate_launch_description() -> LaunchDescription:
     arena_env_node = LaunchArgument('arena_env_node', default_value='', description='Name of the env node whose map and services the robot uses.')
     namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
     frame = LaunchArgument('frame', description='Frame prefix of the robot.')
+    base_frame = LaunchArgument('base_frame', description='Base link frame of the robot.')
     use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
+    mobile_caps = LaunchArgument('mobile_caps', description='Path of the effective mobile cap file the nav2 parameters derive from.')
+    sensors_json = LaunchArgument('sensors_json', description='JSON list of the robot sensor specs used to derive the costmap observation sources.')
     kind = LaunchArgument('kind', description='Nav2 global planner kind.')
 
-    nav2_launch = PathJoinSubstitution([
-        FindPackageShare('arena_robots'),
-        'launch', 'adapters', 'mobile', 'nav2.launch.py',
-    ])
+    nav2_launch = PathJoinSubstitution(
+        [
+            FindPackageShare('arena_robots'),
+            'launch',
+            'adapters',
+            'mobile',
+            'nav2.launch.py',
+        ]
+    )
 
     nav2_include = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(nav2_launch),
@@ -35,12 +43,15 @@ def generate_launch_description() -> LaunchDescription:
             'namespace': namespace.substitution,
             'use_sim_time': use_sim_time.substitution,
             'frame': frame.substitution,
+            'base_frame': base_frame.substitution,
             'global_planner': kind.substitution,
             'local_planner': 'dwb',
             'inter_planner': 'empty',
             'train_mode': 'true',
             'planner_only': 'true',
             'arena_env_node': arena_env_node.substitution,
+            'mobile_caps': mobile_caps.substitution,
+            'sensors_json': sensors_json.substitution,
         }.items(),
     )
 

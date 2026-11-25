@@ -12,16 +12,15 @@ import yaml
 from arena_bringup.substitutions import YAMLFileSubstitution
 
 from arena_robots.caps import MobileSpec, stringify_float_matrix
-from arena_robots.Robot import ModelParams, RobotIdentifier
 from arena_robots.Sensor import SensorSpec, SensorType
-from arena_robots.sensor_geometry import SensorGeometry, sensor_geometry
+from arena_robots.sensor_geometry import SensorGeometry
 
 _TYPE_TO_NAV2: dict[str, str] = {
     SensorType.LASERSCAN.value: "LaserScan",
     SensorType.POINTCLOUD.value: "PointCloud2",
 }
 
-# Fallback raytrace/obstacle range when caps/mobile.yaml carries no `laser:` block.
+# Fallback raytrace/obstacle range when the mobile cap carries no laser block
 _DEFAULT_LIDAR_RANGE = 10.0
 
 _CLEARING_SUFFIX = "_clearing"
@@ -214,8 +213,8 @@ def _load_mobile(path_str: str) -> MobileSpec:
     with open(path_str) as f:
         data = yaml.safe_load(f) or {}
     if not isinstance(data, dict):
-        raise ValueError(f"{path_str}: mobile.yaml must be a mapping at top level")
-    return MobileSpec(path=Path(path_str), raw=data)
+        raise ValueError(f"{path_str}: mobile cap file must be a mapping at top level")
+    return MobileSpec(path=Path(path_str), raw=data, laser_block=lambda: data.get('laser'))
 
 
 class SensorsDerivedYAML(YAMLFileSubstitution):
@@ -225,7 +224,7 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
     Local uses the full lidar range, with planar sensors under the `_planar` keys and
     volumetric ones under the bare keys. Global uses shorter capped ranges and pulls per-source
     overrides (`raytrace_max_range`, `obstacle_max_range`, `observation_persistence`) from
-    the optional `nav2.global_observation` block in caps/mobile.yaml, which also sets the cloud
+    the optional `nav2.global_observation` block in the mobile section of caps.yaml, which also sets the cloud
     sources' `min_obstacle_height` and `max_obstacle_height`. The voxel layer takes both heights
     from the optional `nav2.local_observation` block.
     """
@@ -237,13 +236,11 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
 
     def __init__(
         self,
-        model_params_path: launch.SomeSubstitutionsType,
         mobile_path: launch.SomeSubstitutionsType,
-        sensors_json: launch.SomeSubstitutionsType = '',
+        sensors_json: launch.SomeSubstitutionsType,
         frame_prefix: launch.SomeSubstitutionsType = '',
     ):
         super().__init__(path=[], default={}, substitute=False)
-        self._path = launch.utilities.normalize_to_list_of_substitutions(model_params_path)
         self._mobile_path = launch.utilities.normalize_to_list_of_substitutions(mobile_path)
         self._sensors_json = launch.utilities.normalize_to_list_of_substitutions(sensors_json)
         self._frame_prefix = launch.utilities.normalize_to_list_of_substitutions(frame_prefix)
@@ -253,15 +250,9 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
         mobile = _load_mobile(mobile_str)
         max_range = mobile.laser.range if mobile.laser is not None else _DEFAULT_LIDAR_RANGE
 
-        sensors_json_str = launch.utilities.perform_substitutions(context, self._sensors_json)
-        if sensors_json_str:
-            entries = json.loads(sensors_json_str)
-            sensors = [SensorSpec(name=d['name'], type=d['type'], topic=d['topic'], frame=d.get('frame', ''), sensor=d.get('sensor')) for d in entries]
-            geometry = {d['sensor']: SensorGeometry(**d['geometry']) for d in entries if d.get('geometry')}
-        else:
-            path_str = launch.utilities.perform_substitutions(context, self._path)
-            sensors = ModelParams.from_yaml(path_str).sensors
-            geometry = sensor_geometry(RobotIdentifier(Path(path_str).parent.name).resolve_sync(), {})
+        entries = json.loads(launch.utilities.perform_substitutions(context, self._sensors_json))
+        sensors = [SensorSpec(name=d['name'], type=d['type'], topic=d['topic'], frame=d.get('frame', ''), sensor=d.get('sensor')) for d in entries]
+        geometry = {d['sensor']: SensorGeometry(**d['geometry']) for d in entries if d.get('geometry')}
 
         planar, volumetric = split_planar_sensors(sensors, geometry)
         planar_sources = compile_sensors_to_nav2(planar, max_range=max_range)
@@ -295,6 +286,7 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
         collision_sources = compile_sensors_to_collision_monitor(sensors, geometry)
 
         derived = {
+            **({} if mobile.laser is None else {'slam_range': max_range}),
             'observation_sources_string': ' '.join(local_sources.keys()),
             'observation_sources_string_planar': ' '.join(planar_sources.keys()),
             'observation_sources_string_global': ' '.join(global_sources.keys()),
@@ -312,7 +304,7 @@ class SensorsDerivedYAML(YAMLFileSubstitution):
 
 
 class Nav2SubBlockYAML(YAMLFileSubstitution):
-    """Extract the `nav2:` sub-block from caps/mobile.yaml and emit it at top level
+    """Extract the `nav2:` sub-block from the mobile section of caps.yaml and emit it at top level
     as a temp YAML file. Lets YAMLMergeSubstitution treat adapter-specific config
     (global_observation) as flat merge-time keys while they
     stay nested in the authored file."""
@@ -339,7 +331,7 @@ def motion_model(mobile: MobileSpec) -> str:
 
 class Nav2KinematicsDerivedYAML(YAMLFileSubstitution):
     """Emit controller-agnostic velocity/acceleration keys from the top-level
-    ``velocity_limits``/``acceleration_limits`` in caps/mobile.yaml, the
+    ``velocity_limits``/``acceleration_limits`` in the mobile section of caps.yaml, the
     ``motion_model`` of the base and the ``turning_radius`` of a car-like one.
 
     These are the planner envelope (what nav2 may sample), not the hardware
@@ -378,9 +370,10 @@ class Nav2KinematicsDerivedYAML(YAMLFileSubstitution):
             out['angular_acc'] = acc.angular
             out['linear_decel'] = -acc.linear
             out['angular_decel'] = -acc.angular
-            if acc.lateral is not None:
-                out['lateral_acc'] = acc.lateral
-                out['lateral_decel'] = -acc.lateral
+            lateral_acc = acc.lateral if acc.lateral is not None else (acc.linear if vel is not None and vel.lateral is not None else None)
+            if lateral_acc is not None:
+                out['lateral_acc'] = lateral_acc
+                out['lateral_decel'] = -lateral_acc
 
         tmp = tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.yaml')
         yaml.dump(out if out else {}, tmp)
@@ -389,7 +382,7 @@ class Nav2KinematicsDerivedYAML(YAMLFileSubstitution):
 
 
 class Nav2CollisionDerivedYAML(YAMLFileSubstitution):
-    """Compile top-level `footprint` and `polygons_dict` from caps/mobile.yaml
+    """Compile top-level `footprint` and `polygons_dict` from the mobile section of caps.yaml
     into the stringified form nav2's collision_monitor expects, overriding any
     raw float lists emitted by the preceding YAMLFileSubstitution(mobile_path),
     and emit the costmaps' `inflation_radius`."""

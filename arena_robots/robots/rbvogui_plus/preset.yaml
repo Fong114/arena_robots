@@ -1,0 +1,3 @@
+robot: rbvogui
+parts:
+  arm: ur5e

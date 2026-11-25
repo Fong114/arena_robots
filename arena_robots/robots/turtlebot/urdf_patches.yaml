@@ -1,0 +1,4 @@
+patches:
+  - total_mass: 3.644
+    reason: the TurtleBot 4 weighs 3.945 kg with its lidar and camera (0.301 kg in their placements), the Create 3 and shell link masses sum to 4.153 kg
+    source: https://www.mybotshop.de/Datasheet/Turtlebot4_Datasheet.pdf

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 import os
 from typing import ClassVar
 
-import attrs
 from ament_index_python.packages import get_package_share_directory
 from launch import Action
 from launch.actions import IncludeLaunchDescription
@@ -13,8 +11,8 @@ from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
 from arena_robots.bringup import Bringup, BringupMeta
+from arena_robots.bringup.mobile.rosnav_rl import agent_range_actions
 from arena_robots.Sensor import SensorSpec, SensorType
-from arena_robots.sensor_geometry import sensor_geometry
 from arena_robots.task_kinds import TaskKind
 
 DEFAULT_INTER_PLANNER = "default"
@@ -65,10 +63,10 @@ class Nav2Bringup(Bringup):
         mapping: str = "static",
         **_: object,
     ) -> list[Action]:
-        agent_name = agent or str(self.robot.caps.mobile.sub("rosnav_rl").get("agent", ""))
+        agent_name = agent or str(self.caps.mobile.sub("rosnav_rl").get("agent", ""))
         if local_planner == "rosnav_rl" and not agent_name:
-            raise ValueError(f"nav2 bringup for '{self.robot.name}' with local_planner=rosnav_rl missing required 'agent': set caps/mobile.yaml 'rosnav_rl.agent' or pass robot.mobile.agent:=<name>")
-        if inter_planner == DEFAULT_INTER_PLANNER and self.robot.caps.mobile.min_turning_radius > 0.0:
+            raise ValueError(f"nav2 bringup for '{self.robot.name}' with local_planner=rosnav_rl missing required 'agent': set caps.yaml mobile 'rosnav_rl.agent' or pass robot.mobile.agent:=<name>")
+        if inter_planner == DEFAULT_INTER_PLANNER and self.caps.mobile.min_turning_radius > 0.0:
             inter_planner = NO_SPIN_INTER_PLANNER
         launch_file = PathJoinSubstitution(
             [
@@ -88,6 +86,7 @@ class Nav2Bringup(Bringup):
             "namespace": self.namespace,
             "use_sim_time": str(use_sim_time).lower(),
             "frame": frame,
+            "base_frame": self.caps.body.base_frame,
             "global_planner": global_planner,
             "local_planner": local_planner,
             "inter_planner": inter_planner,
@@ -98,25 +97,14 @@ class Nav2Bringup(Bringup):
             "agent": agent_name,
             "mapping": mapping,
             "scan_topic": scan_topic(sensors or [], str(self.namespace)),
+            **self.planner_launch_arguments(),
         }
-        if sensors is not None:
-            geometry = sensor_geometry(self.robot, self.parts)
-            launch_arguments["sensors_json"] = json.dumps(
-                [
-                    {
-                        "name": s.name,
-                        "type": s.type.value if isinstance(s.type, SensorType) else str(s.type),
-                        "topic": s.topic,
-                        "frame": s.frame,
-                        "sensor": s.sensor,
-                        "geometry": attrs.asdict(geometry[s.sensor]) if s.sensor in geometry else None,
-                    }
-                    for s in sensors
-                ]
-            )
-        return [
+        actions: list[Action] = [
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(launch_file),
                 launch_arguments=launch_arguments.items(),
             )
         ]
+        if local_planner == "rosnav_rl":
+            actions.extend(agent_range_actions(self.robot.name, self.caps.mobile, agent_name))
+        return actions

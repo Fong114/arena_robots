@@ -9,5 +9,3 @@ xacro:
   args: {}
 power:
   static_power_w: 0.0
-mass:
-  kg: 19.3

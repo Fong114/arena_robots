@@ -139,11 +139,11 @@
     </collision>
     <inertial>
       <origin xyz="0.012 0.002 0.067" rpy="${PI/2} 0 ${PI/2}"/>
-      <mass value="165.304"/>
+      <mass value="105.304"/>
       <inertia
-        ixx="4.4744" ixy="0.03098" ixz="0.003647"
-        iyy="7.1624" iyz="0.1228"
-        izz="4.6155"/>
+        ixx="2.8503377" ixy="0.019735263" ixz="0.0023232571"
+        iyy="4.5626807" iyz="0.078227576"
+        izz="2.9402229"/>
     </inertial>
   </link>
 

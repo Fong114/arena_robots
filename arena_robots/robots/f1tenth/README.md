@@ -6,7 +6,7 @@ Geometry vendored from [f1tenth/f1tenth_gym_ros](https://github.com/f1tenth/f1te
 
 Driven by `ackermann_steering_controller` from ros2_controllers. `base_link` sits on the rear axle centre, the reference point of the controller. Wheelbase 0.3302 m, track 0.2413 m, wheel radius 0.0508 m. Each steering joint reaches the wheel angles the controller commands at `s_max`: 0.4887 rad as the inner wheel and 0.3657 rad as the outer wheel, so a saturated command keeps the Ackermann geometry and the bicycle limit is the minimum turning radius.
 
-Nav2 defaults to MPPI with Smac Hybrid-A* (`nav2:` block of `caps/mobile.yaml`) instead of the bringup's NavFn with Regulated Pure Pursuit, which rotates in place.
+Nav2 defaults to MPPI with Smac Hybrid-A* (`nav2:` block of the `mobile` section of `caps.yaml`) instead of the bringup's NavFn with Regulated Pure Pursuit, which rotates in place.
 
 Differences from the [build guide](https://f1tenth.readthedocs.io/en/main/getting_started/build_car/index.html) car on a Traxxas 1/10 4WD chassis:
 

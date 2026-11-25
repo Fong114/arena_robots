@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import enum
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 import attrs
 
+from arena_robots import urdf_facts
 from arena_robots.sensors import output_topics
 
 
@@ -31,7 +32,7 @@ class SensorSpec:
     name: str
     type: SensorType | str
     topic: str
-    frame: str
+    frame: str = ''
     sensor: str | None = None
     """Name of the backing URDF <sensor> element, used for topic injection at load time."""
 
@@ -138,4 +139,29 @@ def bridge_rows(sensors: Sequence[SensorSpec], prefix: str) -> list[tuple[str, s
                 continue
             ros_type, gz_type = BRIDGE_TYPES[kind]
             rows.append((_join(prefix, derived[kind]), ros_topic, ros_type, gz_type))
+    return rows
+
+
+def fill_frames(sensors: Sequence[SensorSpec], urdf: Callable[[], str]) -> list[SensorSpec]:
+    """`sensors` with every empty frame taken from the Gazebo sensor of the URDF it names."""
+    if all(spec.frame for spec in sensors):
+        return list(sensors)
+    frames = urdf_facts.sensor_frames(urdf())
+    filled: list[SensorSpec] = []
+    for spec in sensors:
+        if not spec.frame:
+            if spec.sensor not in frames:
+                raise ValueError(f"sensor {spec.name!r} has no frame and its backing sensor {spec.sensor!r} is not in the URDF")
+            spec = attrs.evolve(spec, frame=frames[spec.sensor])
+        filled.append(spec)
+    return filled
+
+
+def plugin_bridge_rows(urdf: str, prefix: str) -> list[tuple[str, str, str, str]]:
+    """(gz_topic, ros_topic, ros_type, gz_type) for the model's odometry and pose publisher plugins, direction gz->ros."""
+    rows: list[tuple[str, str, str, str]] = []
+    if any(plugin.find('odom_topic') is None for plugin in urdf_facts.model_plugins(urdf, 'gz-sim-odometry-publisher-system', 'gz-sim-diff-drive-system')):
+        rows.append((f'{prefix}/odometry', 'odom', 'nav_msgs/msg/Odometry', 'gz.msgs.Odometry'))
+    if any(plugin.findtext('publish_model_pose') == 'true' and plugin.findtext('use_pose_vector_msg') != 'true' for plugin in urdf_facts.model_plugins(urdf, 'gz-sim-pose-publisher-system')):
+        rows.append((f'{prefix}/pose', 'pose', 'geometry_msgs/msg/PoseStamped', 'gz.msgs.Pose'))
     return rows

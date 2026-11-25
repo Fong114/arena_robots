@@ -49,7 +49,7 @@ def _sensor_topic(model: str, ns: str, sensor_type: str) -> str:
 
 LIDAR = _sensor_topic("jackal", JACKAL, "laserscan")
 IMU = _sensor_topic("jackal", JACKAL, "imu")
-CAMERA = _sensor_topic("rbkairos_plus", KAIROS, "image")
+CAMERA = _sensor_topic("rbkairos", KAIROS, "image")
 
 
 class Peer:
@@ -120,8 +120,9 @@ class Peer:
             params=[KeyValue(key="lidar@front", value="jackal_default"), KeyValue(key="imu@imu", value="jackal_default")],
         )
         kairos = RobotState(
-            descriptor=RobotDescriptor(name="kairos", model="rbkairos_plus", ns=KAIROS, frame=f"env_{ENV}/kairos", base_frame=f"env_{ENV}/kairos/robot_base_footprint"),
-            caps=[RobotCap(cap="arm", adapter="moveit", instance="arm"), RobotCap(cap="mobile", adapter="none")],
+            descriptor=RobotDescriptor(name="kairos", model="rbkairos", ns=KAIROS, frame=f"env_{ENV}/kairos", base_frame=f"env_{ENV}/kairos/robot_base_footprint"),
+            caps=[RobotCap(cap="arm", adapter="moveit", instance="arm_mount"), RobotCap(cap="mobile", adapter="none")],
+            params=[KeyValue(key="arm@arm_mount", value="ur5e")],
         )
         return RobotFleet(robots=[jackal, kairos])
 

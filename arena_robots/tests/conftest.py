@@ -19,6 +19,10 @@ def _ros_available() -> bool:
     return True
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "requires_installed(*names): skip unless every submodule of each named robot or component is checked out")
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     if _ros_available():
         return
@@ -46,6 +50,18 @@ def rclpy_context():
         rclpy.shutdown()
 
 
+@pytest.fixture()
+def write_urdf() -> Callable[..., None]:
+    """Return a writer of `<robot_dir>/urdf/<name>.urdf.xacro` with one base link of `kg` kg."""
+    pytest.importorskip("xacro", reason="xacro is not importable, run under the Arena container")
+
+    def _write(robot_dir: Path, kg: float = 1.0) -> None:
+        (robot_dir / "urdf").mkdir(exist_ok=True)
+        (robot_dir / "urdf" / f"{robot_dir.name}.urdf.xacro").write_text(f'<?xml version="1.0"?>\n<robot name="{robot_dir.name}" xmlns:xacro="http://www.ros.org/wiki/xacro">\n  <link name="base_link"><inertial><mass value="{kg}"/><inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/></inertial></link>\n</robot>\n')
+
+    return _write
+
+
 def _submodules() -> dict[str, list[Path]]:
     cfg = configparser.ConfigParser()
     cfg.read(_REPO / ".gitmodules")
@@ -70,3 +86,10 @@ def require_installed() -> Callable[[str], None]:
             pytest.skip(f"{name} is not installed, run `arena feature robots add {name}`")
 
     return require
+
+
+@pytest.fixture(autouse=True)
+def _requires_installed(request: pytest.FixtureRequest, require_installed: Callable[[str], None]) -> None:
+    for marker in request.node.iter_markers("requires_installed"):
+        for name in marker.args:
+            require_installed(name)
