@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Protocol, cast
 import yaml
 from pydantic import Field
 
-from arena_mcp.core import JOBS, LATCHED, RELIABLE, ROS, SENSOR, Domain, ToolError, cli, current_episode, episode_records, fleet, media, msgs, robot_ns, tg
+from arena_mcp.core import JOBS, LATCHED, RELIABLE, ROS, SENSOR, Domain, ToolError, cli, current_episode, env_reference, episode_records, fleet, media, msgs, robot_ns, tg
 from arena_mcp.core.envs import SUBMIT_TASK_TIMEOUT_S
 from arena_mcp.core.jobs import RUNNING
 
@@ -932,23 +932,25 @@ def _path_length(points: list[PoseStamped]) -> float:
 
 @domain.tool(read_only=True)
 async def robots_pose(env_id: EnvId = None, robot: RobotName = None) -> dict[str, Any]:
-    """The robot's task pose (what the judge sees), odometry pose and twist, and its trail length this episode."""
+    """The robot's task pose (what the judge sees) in the env map frame, odometry pose and twist, and its trail length this episode."""
     from geometry_msgs.msg import PoseStamped
     from nav_msgs.msg import Odometry
     from nav_msgs.msg import Path as PathMsg
 
     entry = await _member(env_id, robot)
     ns = entry["ns"]
-    (task, task_error), (odom, odom_error), (trail, _) = await asyncio.gather(
+    (task, task_error), (odom, odom_error), (trail, _), reference = await asyncio.gather(
         _maybe(ROS.latest(PoseStamped, _topic(ns, "task_pose"), qos=SENSOR, timeout=2.0)),
         _maybe(ROS.latest(Odometry, _topic(ns, "odom"), qos=SENSOR, timeout=2.0)),
         _maybe(ROS.latest(PathMsg, _topic(ns, "trail"), qos=LATCHED, timeout=1.0)),
+        env_reference(env_id),
     )
     if task is None and odom is None:
         raise ToolError(f"{entry['name']} publishes neither task_pose nor odom", hint=f"{task_error}, {odom_error}")
     out: dict[str, Any] = {"robot": entry["name"], "sim_time": msgs.seconds((await ROS.node()).sim_time.to_msg())}
     if task is not None:
-        out["task_pose"] = {**msgs.pose_dict(task.pose), "frame": task.header.frame_id, "stamp": msgs.seconds(task.header.stamp)}
+        pose = msgs.pose_dict(task.pose)
+        out["task_pose"] = {**pose, "x": pose["x"] + reference[0], "y": pose["y"] + reference[1], "frame": "map", "stamp": msgs.seconds(task.header.stamp)}
     else:
         out["task_pose"] = {"error": task_error}
     if odom is not None:
