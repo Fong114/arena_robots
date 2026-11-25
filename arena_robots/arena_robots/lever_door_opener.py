@@ -150,7 +150,6 @@ class LeverDoorOpener(Node):
             pass
         wz_lock = max(-0.4, min(0.4, -2.5 * base_yaw))
 
-        # Speed estimation for ADA 309.4 metric
         speed = 0.0
         if self._last_ee_pos and self._last_ee_time > 0:
             dt = max(now - self._last_ee_time, 1e-4)
@@ -161,7 +160,6 @@ class LeverDoorOpener(Node):
             self._contact_speed = speed
             self.get_logger().info(f"Contact detected at speed: {speed:.4f} m/s")
 
-        # Phase execution state machine
         if self._phase == Phase.APPROACH_ABOVE:
             base_arrived = abs(base_x - 7.45) < 0.03 and abs(base_y - self._door_center_y) < 0.03
             if not base_arrived:
@@ -183,7 +181,6 @@ class LeverDoorOpener(Node):
         elif self._phase == Phase.DESCEND_AND_PRESS:
             self._stop_base()
 
-            # Very gentle descent before contact to guarantee contact speed < 0.05 m/s
             if self._contact_speed is None:
                 press_speed = 0.035
             elif self._contact_force < 6.0:
@@ -196,7 +193,6 @@ class LeverDoorOpener(Node):
                 press_speed = 0.0
 
             descent = self._lever_xyz[2] - ee[2]
-            # The latch unlatches when handle_joint >= 0.5 * 0.65 rad (~4.5-5.0 cm descent)
             if descent >= 0.050 or (descent >= 0.045 and self._contact_force >= 10.0):
                 self._stop_arm()
                 self._transition(Phase.RETRACT_ARM, f"Lever unlatched ({descent * 100:.1f}cm). Retracting arm before driving...")
@@ -206,7 +202,6 @@ class LeverDoorOpener(Node):
                 self._send_servo_vel_raw(0.0, 0.0, -press_speed)
 
         elif self._phase == Phase.PUSH_DOOR:
-            # Fallback phase if invoked directly
             self._stop_arm()
             self._transition(Phase.RETRACT_ARM, "Retracting arm...")
 

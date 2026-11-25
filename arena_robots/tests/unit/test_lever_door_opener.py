@@ -81,7 +81,6 @@ def test_metrics_saving(tmp_path: Path):
 def test_omnidirectional_and_servo_raw_commands():
     node = LeverDoorOpener()
     try:
-        # Verify omnidirectional base control and raw servo command methods execute cleanly
         node._send_base_vel(vx=0.2, vy=0.08, wz=0.0)
         node._send_servo_vel_raw(vx=3.5, vy=-4.0, vz=-1.0)
         node._stop_base()
