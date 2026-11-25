@@ -1,6 +1,6 @@
 """Tests for arena_robots.moveit_factory's `instance: str | None` parameter on
-`build_moveit_params` and the allocation-derived rendering gate against rbvogui_plus
-(SRDF composition + joint_limits agreement)."""
+`build_moveit_params` and the allocation-derived rendering of rbvogui[arm=ur5e], the
+robot `rbvogui_plus` expands to (SRDF composition + joint_limits)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,12 @@ from collections.abc import Callable
 
 import pytest
 
+from arena_robots.assembly import RequestPart
+from arena_robots.request import InstanceRequest
+
 _XACRO = shutil.which("xacro")
+_RBVOGUI_ARM = InstanceRequest(parts={"arm": [RequestPart(variant="ur5e", mount="arm0")]})
+ARM_JOINTS = tuple(f"robot_arm_{name}_joint" for name in ("shoulder_pan", "shoulder_lift", "elbow", "wrist_1", "wrist_2", "wrist_3"))
 
 
 class _SrdfLinksExist:
@@ -24,6 +29,36 @@ class _SrdfLinksExist:
             srdf_links |= {dc.get("link1", ""), dc.get("link2", "")}
         srdf_links.discard("")
         assert not (srdf_links - urdf_links), f"SRDF references links absent from URDF: {sorted(srdf_links - urdf_links)}"
+
+
+_LINK = '<link name="{}"><collision><geometry><sphere radius="0.1"/></geometry></collision></link>'
+_JOINT = '<joint name="{0}_{1}" type="{2}"><parent link="{0}"/><child link="{1}"/></joint>'
+
+
+class TestDerivedDisableCollisions:
+    """base - frame (no collision) - cover - arm are fixed, wheel and finger turn, tip is fixed to finger."""
+
+    @pytest.fixture(scope="class")
+    def pairs(self) -> set[frozenset]:
+        from arena_robots.moveit_factory import _disable_rigid_and_adjacent
+
+        links = "".join(_LINK.format(n) for n in ("base", "cover", "arm", "wheel", "finger", "tip")) + '<link name="frame"/>'
+        edges = [("base", "frame", "fixed"), ("frame", "cover", "fixed"), ("cover", "arm", "fixed"), ("base", "wheel", "continuous"), ("arm", "finger", "revolute"), ("finger", "tip", "fixed")]
+        control = '<ros2_control name="c" type="system"><joint name="base_wheel"/></ros2_control>'
+        urdf = f"<robot name='r'>{links}{''.join(_JOINT.format(*e) for e in edges)}{control}</robot>"
+        srdf = "<robot name='r'><disable_collisions link1='arm' link2='base' reason='User'/></robot>"
+        out = [frozenset((d.get("link1", ""), d.get("link2", ""))) for d in ET.fromstring(_disable_rigid_and_adjacent(srdf, urdf)).iter("disable_collisions")]
+        assert len(out) == len(set(out))
+        return set(out)
+
+    def test_fixed_chain_is_disabled_across_links_without_collision(self, pairs: set[frozenset]) -> None:
+        assert {frozenset(p) for p in (("base", "cover"), ("base", "arm"), ("cover", "arm"), ("finger", "tip"))} <= pairs
+
+    def test_joint_neighbors_are_disabled(self, pairs: set[frozenset]) -> None:
+        assert {frozenset(("base", "wheel")), frozenset(("arm", "finger"))} <= pairs
+
+    def test_bodies_that_move_against_each_other_stay_checked(self, pairs: set[frozenset]) -> None:
+        assert not pairs & {frozenset(p) for p in (("wheel", "finger"), ("base", "finger"), ("base", "tip"), ("wheel", "arm"))}
 
 
 class TestSelectArm:
@@ -59,99 +94,68 @@ class TestSelectArm:
 
 
 class TestBuildMoveitParamsInstanceAgreement:
-    """rbvogui_plus is single-arm (author key "arm"): instance=None and the
-    explicit instance="arm" must build byte-identical params."""
+    """rbvogui_plus is single-arm (instance "arm0"): instance=None and the
+    explicit instance="arm0" must build byte-identical params."""
 
     def test_none_and_explicit_instance_agree(self, require_installed: Callable[[str], None]):
         from arena_robots.moveit_factory import build_moveit_params
 
-        require_installed("rbvogui_plus")
-        default_params = build_moveit_params("rbvogui_plus")
-        explicit_params = build_moveit_params("rbvogui_plus", instance="arm")
+        require_installed("rbvogui")
+        require_installed("arm/ur")
+        default_params = build_moveit_params("rbvogui", request=_RBVOGUI_ARM)
+        explicit_params = build_moveit_params("rbvogui", request=_RBVOGUI_ARM, instance="arm0")
         assert default_params is not None
         assert default_params == explicit_params
 
+    @pytest.mark.requires_installed("rbvogui", "arm/ur")
     def test_unknown_instance_raises_key_error(self):
         from arena_robots.moveit_factory import build_moveit_params
 
-        with pytest.raises(KeyError, match="arm"):
-            build_moveit_params("rbvogui_plus", instance="bogus")
+        with pytest.raises(KeyError, match="arm0"):
+            build_moveit_params("rbvogui", request=_RBVOGUI_ARM, instance="bogus")
 
 
-def _norm(value: str) -> str:
-    """The documented rename map: the mount-specific group name renames wholesale
-    (arm0_manipulator has no `arm_`-substring counterpart in rbvogui_plus's static
-    naming, it's ur_manipulator), everything else just drops the mount digit."""
-    if value == "arm0_manipulator":
-        return "ur_manipulator"
-    return value.replace("arm0_", "arm_")
-
-
-def _canon_srdf(xml_text: str) -> frozenset:
-    root = ET.fromstring(xml_text)
-    items: set[tuple] = set()
-    for group in root.iter("group"):
-        items.add(("group", _norm(group.get("name", ""))))
-        for chain in group.findall("chain"):
-            items.add(("chain", _norm(group.get("name", "")), _norm(chain.get("base_link", "")), _norm(chain.get("tip_link", ""))))
-    for gs in root.iter("group_state"):
-        joints = tuple(sorted((_norm(j.get("name", "")), j.get("value", "")) for j in gs.findall("joint")))
-        items.add(("group_state", gs.get("name", ""), _norm(gs.get("group", "")), joints))
-    for dc in root.iter("disable_collisions"):
-        items.add(("disable_collisions", frozenset({_norm(dc.get("link1", "")), _norm(dc.get("link2", ""))})))
-    return frozenset(items)
+def _disabled_pairs(srdf_text: str) -> frozenset:
+    return frozenset(frozenset((dc.get("link1", ""), dc.get("link2", ""))) for dc in ET.fromstring(srdf_text).iter("disable_collisions"))
 
 
 def _arm_link_names(urdf_text: str) -> frozenset:
     root = ET.fromstring(urdf_text)
-    return frozenset(_norm(link.get("name", "")) for link in root.iter("link") if "arm" in link.get("name", ""))
+    return frozenset(link.get("name", "") for link in root.iter("link") if "arm" in link.get("name", ""))
 
 
 @pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")
-class TestBuildMoveitParamsAllocationMatchesPlus:
-    """Moveit params for the allocation-derived rbvogui[arm=ur5e] must match
-    rbvogui_plus's hand-authored ones, modulo the documented rename map
-    (arm0_ -> arm_, group arm0_manipulator -> ur_manipulator)."""
+class TestBuildMoveitParamsOfRbvoguiPlus(_SrdfLinksExist):
+    """Moveit params for rbvogui[arm=ur5e], what `rbvogui_plus` expands to: the arm
+    component's SRDF fragment composed with the chassis residual fragment."""
 
     @pytest.fixture(scope="class")
-    def params_pair(self, require_installed: Callable[[str], None]) -> tuple[dict, dict]:
-        from arena_robots.assembly import RequestPart
+    def params(self, require_installed: Callable[[str], None]) -> dict:
         from arena_robots.moveit_factory import build_moveit_params
 
-        require_installed("rbvogui_plus")
-        mine = build_moveit_params("rbvogui", tf_prefix="robot_", parts={"arm": [RequestPart(variant="ur5e")]})
-        plus = build_moveit_params("rbvogui_plus", tf_prefix="robot_")
-        assert mine is not None
-        assert plus is not None
-        return mine, plus
+        require_installed("rbvogui")
+        require_installed("arm/ur")
+        p = build_moveit_params("rbvogui", tf_prefix="env_0/rbvogui/", request=_RBVOGUI_ARM)
+        assert p is not None
+        return p
 
-    def test_srdf_semantic_matches(self, params_pair: tuple[dict, dict]) -> None:
-        mine, plus = params_pair
-        assert _canon_srdf(mine["robot_description_semantic"]) == _canon_srdf(plus["robot_description_semantic"])
+    def test_srdf_disables_every_derived_pair(self, params: dict) -> None:
+        from arena_robots.moveit_factory import _disable_rigid_and_adjacent
 
-    def test_joint_limits_match(self, params_pair: tuple[dict, dict]) -> None:
-        mine, plus = params_pair
-        mine_jl = mine["robot_description_planning"]["joint_limits"]
-        plus_jl = plus["robot_description_planning"]["joint_limits"]
-        assert {_norm(k): v for k, v in mine_jl.items()} == {_norm(k): v for k, v in plus_jl.items()}
+        srdf = params["robot_description_semantic"]
+        assert _disabled_pairs(srdf) == _disabled_pairs(_disable_rigid_and_adjacent(srdf, params["robot_description"]))
 
-    def test_robot_description_arm_link_set_matches(self, params_pair: tuple[dict, dict]) -> None:
-        mine, plus = params_pair
-        assert _arm_link_names(mine["robot_description"]) == _arm_link_names(plus["robot_description"])
-
-    def test_static_path_unchanged(self, params_pair: tuple[dict, dict]) -> None:
-        """rbvogui_plus's own output must be untouched by the allocation-derived
-        rendering: its SRDF keeps the ur_manipulator group + swerve-corner DCs, and
-        its robot_description still comes from the static chassis xacro, not a
-        wrapper render (evidenced by the hand-spliced ros2_control tag name,
-        "rbvogui_plus_arm", from urdf/base_hw/rbvogui_plus.ros2_control.urdf, rather
-        than an assembled chassis's own tag name, e.g. "vogui")."""
-        _, plus = params_pair
-        root = ET.fromstring(plus["robot_description_semantic"])
-        assert "ur_manipulator" in {g.get("name") for g in root.iter("group")}
+    def test_srdf_carries_the_arm_group_and_the_chassis_residual(self, params: dict) -> None:
+        root = ET.fromstring(params["robot_description_semantic"])
+        assert "arm_manipulator" in {g.get("name") for g in root.iter("group")}
         assert any("front_right_base_wheel" in (dc.get("link1", "") + dc.get("link2", "")) for dc in root.iter("disable_collisions"))
-        assert 'name="rbvogui_plus_arm"' in plus["robot_description"]
-        assert 'name="vogui"' not in plus["robot_description"]
+
+    def test_joint_limits_cover_the_arm_joints(self, params: dict) -> None:
+        assert set(ARM_JOINTS) <= set(params["robot_description_planning"]["joint_limits"])
+
+    def test_robot_description_arm_link_set(self, params: dict) -> None:
+        links = {f"env_0/rbvogui/robot_arm_{name}" for name in ("base_link", "shoulder_link", "upper_arm_link", "forearm_link", "wrist_1_link", "wrist_2_link", "wrist_3_link", "tool0")}
+        assert links <= _arm_link_names(params["robot_description"])
 
 
 @pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")
@@ -168,7 +172,7 @@ class TestBuildMoveitParamsZeroPrefixChassis(_SrdfLinksExist):
         from arena_robots.moveit_factory import build_moveit_params
 
         require_installed("arm/ur")
-        p = build_moveit_params("jackal", tf_prefix="", parts={"arm": [RequestPart(variant="ur5e", mount="top")]}, instance="top")
+        p = build_moveit_params("jackal", tf_prefix="", request=InstanceRequest(parts={"arm": [RequestPart(variant="ur5e", mount="top")]}), instance="top")
         assert p is not None
         return p
 
@@ -196,7 +200,7 @@ class TestBuildMoveitParamsWithGripper(_SrdfLinksExist):
         p = build_moveit_params(
             "jackal",
             tf_prefix="",
-            parts={"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]},
+            request=InstanceRequest(parts={"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]}),
             instance="top",
         )
         assert p is not None
@@ -224,7 +228,7 @@ class TestBuildMoveitParamsWithGripper(_SrdfLinksExist):
         p = build_moveit_params(
             "jackal",
             tf_prefix="env_0/jackal/",
-            parts={"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]},
+            request=InstanceRequest(parts={"arm": [RequestPart(variant="ur5e", mount="top")], "gripper": [RequestPart(variant="robotiq_2f_85", mount="top_tool")]}),
             instance="top",
         )
         ee = next(iter(ET.fromstring(p["robot_description_semantic"]).iter("end_effector")))
@@ -244,7 +248,7 @@ class TestBuildMoveitParamsSmallUrComponents(_SrdfLinksExist):
         from arena_robots.moveit_factory import build_moveit_params
 
         require_installed("arm/ur")
-        p = build_moveit_params("jackal", tf_prefix="", parts={"arm": [RequestPart(variant=request.param, mount="top")]}, instance="top")
+        p = build_moveit_params("jackal", tf_prefix="", request=InstanceRequest(parts={"arm": [RequestPart(variant=request.param, mount="top")]}), instance="top")
         assert p is not None
         return p
 
@@ -294,7 +298,7 @@ class TestBuildMoveitParamsFr3(_SrdfLinksExist):
         p = build_moveit_params(
             "rbkairos",
             tf_prefix="",
-            parts={"arm": [RequestPart(variant="fr3", mount="arm_mount")], "gripper": [RequestPart(variant="franka_hand", mount="gripper_mount")]},
+            request=InstanceRequest(parts={"arm": [RequestPart(variant="fr3", mount="arm_mount")], "gripper": [RequestPart(variant="franka_hand", mount="gripper_mount")]}),
         )
         assert p is not None
         return p
@@ -334,7 +338,7 @@ class TestBuildMoveitParamsJackalFr3:
         from arena_robots.moveit_factory import build_moveit_params
 
         require_installed("arm/fr3")
-        p = build_moveit_params("jackal", tf_prefix="", parts={"arm": [RequestPart(variant="fr3", mount="top")]}, instance="top")
+        p = build_moveit_params("jackal", tf_prefix="", request=InstanceRequest(parts={"arm": [RequestPart(variant="fr3", mount="top")]}), instance="top")
         assert p is not None
         return p
 
@@ -364,7 +368,7 @@ class TestBuildMoveitParamsTiago(_SrdfLinksExist):
         assert _group_chains(params)["arm"] == ("torso_lift_link", "arm_tool_link")
 
     def test_named_states_match_caps(self, params: dict) -> None:
-        assert _group_states(params, "arm") == {"stow", "ready"}
+        assert _group_states(params, "arm") == {"stow", "ready", "carry"}
 
     def test_joint_limits_cover_arm_joints(self, params: dict) -> None:
         assert set(self._JOINTS) <= set(params["robot_description_planning"]["joint_limits"])
@@ -403,20 +407,21 @@ class TestBuildMoveitParamsUrKeepsWorking:
     def params(self, require_installed: Callable[[str], None]) -> dict:
         from arena_robots.moveit_factory import build_moveit_params
 
-        require_installed("rbvogui_plus")
-        p = build_moveit_params("rbvogui_plus", tf_prefix="robot_")
+        require_installed("rbvogui")
+        require_installed("arm/ur")
+        p = build_moveit_params("rbvogui", tf_prefix="robot_", request=_RBVOGUI_ARM)
         assert p is not None
         return p
 
     def test_planning_group_chain(self, params: dict) -> None:
-        assert "ur_manipulator" in _group_chains(params)
+        assert "arm_manipulator" in _group_chains(params)
 
     def test_joint_limits_cover_arm_joints(self, params: dict) -> None:
         limits = params["robot_description_planning"]["joint_limits"]
-        assert {f"robot_arm_{n}_joint" for n in ("shoulder_pan", "shoulder_lift", "elbow", "wrist_1", "wrist_2", "wrist_3")} <= set(limits)
+        assert set(ARM_JOINTS) <= set(limits)
 
     def test_kinematics_solver_set_on_group(self, params: dict) -> None:
-        assert params["robot_description_kinematics"]["ur_manipulator"]["kinematics_solver"] == "kdl_kinematics_plugin/KDLKinematicsPlugin"
+        assert params["robot_description_kinematics"]["arm_manipulator"]["kinematics_solver"] == "kdl_kinematics_plugin/KDLKinematicsPlugin"
 
     def test_controller_names_arm_controller(self, params: dict) -> None:
         joints = _controller_joints(params, "arm_controller")

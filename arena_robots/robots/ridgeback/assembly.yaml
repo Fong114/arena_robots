@@ -11,6 +11,12 @@ mounts:
     xyz: [0, 0, 0]
     rpy: [0, 0, 0]
     accepts: [imu]
+  arm_mount:
+    parent: chassis_link
+    xyz: [0, 0, 0.28]
+    rpy: [0, 0, 0]
+    accepts: [arm]
+    frame: arm
 defaults:
   lidar:
     - variant: arena_default

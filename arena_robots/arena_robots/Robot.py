@@ -1,24 +1,24 @@
 import functools
-import sys
+import os
 import typing
 from pathlib import Path
 
 import attrs
 import yaml
-from ament_index_python.packages import get_package_share_path
+from ament_index_python.packages import PackageNotFoundError, get_package_share_directory, get_package_share_path
 from arena_simulation_setup.shared import Light
 from arena_simulation_setup.tree import Identifier, PathView, SimplePathResolver
 from arena_simulation_setup.utils.cattrs import converter
 from arena_simulation_setup.utils.models import ModelWrapper
-from arena_simulation_setup.utils.models.model_loader import (
-    ModelProvider_URDF,
-    ModelProvider_USD,
-)
+from arena_simulation_setup.utils.models.model_loader import ModelProvider_USD
 
 from arena_robots import assembly as assembly_mod
+from arena_robots import preset as preset_mod
+from arena_robots import urdf_facts
+from arena_robots.acoustic_profile import effective_profile
 from arena_robots.caps import MobileSpec, RobotCaps
 from arena_robots.catalog import Catalog, render_effective_sensors
-from arena_robots.Sensor import SensorSpec
+from arena_robots.Sensor import SensorSpec, fill_frames
 
 _CATALOG = Catalog()
 
@@ -41,19 +41,25 @@ class ControlSpec:
     odom_topic: str = "odom"
 
     @classmethod
-    def from_dict(cls, data: typing.Mapping[str, typing.Any]) -> "ControlSpec":
+    def from_dict(cls, data: typing.Mapping[str, typing.Any], control: typing.Mapping[str, typing.Any] | None = None) -> "ControlSpec":
         mode = str(data.get("mode", "gazebo_native"))
-        controllers_raw = data.get("controllers", [])
-        if not isinstance(controllers_raw, list):
+        controllers_raw = data.get("controllers")
+        if controllers_raw is None:
+            controllers = urdf_facts.controller_names(control) if control is not None else ()
+        elif isinstance(controllers_raw, list):
+            controllers = tuple(str(c) for c in controllers_raw)
+        else:
             raise ValueError(f"control.controllers must be a list; got {type(controllers_raw).__name__}")
-        controllers = tuple(str(c) for c in controllers_raw)
         config = data.get("config")
+        drive = urdf_facts.drive_controller(control) if control is not None else None
+        cmd_vel_leaf, odom_leaf = urdf_facts.DRIVE_TOPICS[drive[1]] if drive is not None else ("cmd_vel", "odom")
+        prefix = f"{drive[0]}/" if drive is not None else ""
         return cls(
             mode=mode,
             controllers=controllers,
             config=str(config) if config is not None else None,
-            cmd_vel_topic=str(data.get("cmd_vel_topic", "cmd_vel")),
-            odom_topic=str(data.get("odom_topic", "odom")),
+            cmd_vel_topic=str(data.get("cmd_vel_topic", f"{prefix}{cmd_vel_leaf}")),
+            odom_topic=str(data.get("odom_topic", f"{prefix}{odom_leaf}")),
         )
 
     @property
@@ -61,13 +67,35 @@ class ControlSpec:
         return self.mode == "ros2_control"
 
 
+def _read_mapping(path: str) -> dict[str, typing.Any]:
+    with open(path) as f:
+        data = yaml.safe_load(f)
+    if not isinstance(data, dict):
+        raise ValueError(f"control config at {path} must be a mapping; got {type(data).__name__}")
+    return data
+
+
+def _config_path(uri: str) -> str:
+    if not uri.startswith("package://"):
+        return uri
+    pkg, _, sub = uri[len("package://") :].partition('/')
+    try:
+        return os.path.join(get_package_share_directory(pkg), sub)
+    except PackageNotFoundError as e:
+        raise FileNotFoundError(f"control.config package '{pkg}' not found") from e
+
+
+def _overlay(base: dict, top: dict) -> dict:
+    return {**base, **{k: _overlay(base[k], v) if isinstance(v, dict) and isinstance(base.get(k), dict) else v for k, v in top.items()}}
+
+
 class ModelParams(dict[str, typing.Any]):
     """Robot-wide identity (from ``model_params.yaml``) with typed accessors
-    that delegate to the sibling ``caps/`` tree for mobile primitives.
+    that delegate to the sibling ``caps.yaml`` for mobile primitives.
 
     Constructed via :meth:`from_yaml` which records the file path; the
-    ``caps`` cached property resolves ``<path>.parent / 'caps'`` so every
-    ``ModelParams`` that came from disk can see its robot's cap tree without
+    ``caps`` cached property resolves ``<path>.parent`` so every
+    ``ModelParams`` that came from disk can see its robot's caps.yaml without
     external wiring."""
 
     _path: Path | None = None
@@ -85,10 +113,10 @@ class ModelParams(dict[str, typing.Any]):
 
     @functools.cached_property
     def caps(self) -> RobotCaps:
-        """Lazy view over ``<robot_dir>/caps/``. Empty if this ``ModelParams``
-        wasn't loaded from disk or the caps dir doesn't exist."""
-        caps_dir = self._path.parent / 'caps' if self._path is not None else Path('/dev/null')
-        return RobotCaps(caps_dir=caps_dir)
+        """Lazy view over ``<robot_dir>/caps.yaml``. Empty if this ``ModelParams``
+        wasn't loaded from disk or the file doesn't exist."""
+        robot_dir = self._path.parent if self._path is not None else Path('/dev/null')
+        return RobotCaps(robot_dir=robot_dir)
 
     def _mobile(self) -> MobileSpec | None:
         if 'mobile' not in self.caps.available:
@@ -110,16 +138,17 @@ class ModelParams(dict[str, typing.Any]):
     def z_offset(self) -> float:
         return float(self.get('z_offset', 0.0))
 
-    @property
+    @functools.cached_property
     def control(self) -> ControlSpec | None:
-        """Typed view of the ``control:`` block in model_params.yaml. ``None``
+        """Typed view of the ``control:`` block in model_params.yaml, its controllers and topics taken from the control config unless authored. ``None``
         when absent (gazebo_native pipeline)."""
         raw = self.get('control')
         if raw is None:
             return None
         if not isinstance(raw, dict):
             raise ValueError(f"model_params 'control' must be a mapping; got {type(raw).__name__}")
-        return ControlSpec.from_dict(raw)
+        config = raw.get('config')
+        return ControlSpec.from_dict(raw, _read_mapping(_config_path(str(config))) if config is not None else None)
 
     @property
     def sensors(self) -> list["SensorSpec"]:
@@ -130,7 +159,7 @@ class ModelParams(dict[str, typing.Any]):
         for i, entry in enumerate(raw):
             if not isinstance(entry, dict):
                 raise ValueError(f"model_params 'sensors[{i}]' must be a mapping; got {type(entry).__name__}")
-            missing = {'name', 'type', 'topic', 'frame'} - set(entry)
+            missing = {'name', 'type', 'topic'} - set(entry)
             if missing:
                 raise ValueError(f"model_params 'sensors[{i}]' missing required keys: {sorted(missing)}")
             out.append(
@@ -138,7 +167,7 @@ class ModelParams(dict[str, typing.Any]):
                     name=str(entry['name']),
                     type=str(entry['type']),
                     topic=str(entry['topic']),
-                    frame=str(entry['frame']),
+                    frame=str(entry.get('frame', '')),
                     sensor=str(entry['sensor']) if 'sensor' in entry else None,
                 )
             )
@@ -185,8 +214,19 @@ class RobotView(PathView):
         self._assembly_loaded: bool = False
 
     @property
+    def is_definition(self) -> bool:
+        """Whether the directory holds a robot definition, a ``model_params.yaml``."""
+        return (self.path / 'model_params.yaml').is_file()
+
+    @property
+    def preset(self) -> preset_mod.Preset | None:
+        """The directory's ``preset.yaml``, ``None`` for a robot that is no preset."""
+        path = self.path / preset_mod.FILE_NAME
+        return preset_mod.Preset.read(path) if path.is_file() else None
+
+    @property
     def caps(self) -> RobotCaps:
-        """Lazy view over robots/<name>/caps/, equivalent to
+        """Lazy view over robots/<name>/caps.yaml, equivalent to
         ``self.model_params.caps``, exposed directly on ``RobotView`` for
         readability."""
         return self.model_params.caps
@@ -209,11 +249,8 @@ class RobotView(PathView):
             if not path.is_file():
                 raise FileNotFoundError(f"model_params.yaml not found for robot '{self.name}' at {path}")
             self._cached_params = ModelParams.from_yaml(path)
+            self._cached_params.caps.view = self
         return self._cached_params
-
-    @property
-    def mappings(self) -> str:
-        return str(self.path / 'mappings.yaml')
 
     @property
     def control(self) -> dict:
@@ -227,6 +264,54 @@ class RobotView(PathView):
                     raise ValueError(f"Control file {control_path} must contain a dictionary at the top level.")
                 self._cached_control = mapping
         return self._cached_control
+
+    def control_config(self, sim: str | None = None) -> dict[str, typing.Any]:
+        """The ``control.config`` file as a mapping, overlaid key by key with its ``<name>.<sim>.yaml`` sibling when ``sim`` is given and that file exists."""
+        control = self.model_params.control
+        if control is None or control.config is None:
+            raise FileNotFoundError(f"robot '{self.name}' declares no control.config")
+        src_path = _config_path(control.config)
+        data = _read_mapping(src_path)
+        if sim is None:
+            return data
+        root, ext = os.path.splitext(src_path)
+        overlay_path = f"{root}.{sim}{ext}"
+        if not os.path.isfile(overlay_path):
+            return data
+        return _overlay(data, _read_mapping(overlay_path))
+
+    def drive_controller(self, sim: str | None = None) -> tuple[str, str, dict[str, typing.Any]] | None:
+        """Name, type and parameters of the drive controller in ``control_config(sim)`` with ``base_frame_id`` set to the robot's base frame, ``None`` for a robot without one."""
+        control = self.model_params.control
+        if control is None or control.config is None:
+            return None
+        drive = urdf_facts.drive_controller(self.control_config(sim))
+        if drive is None:
+            return None
+        name, kind, params = drive
+        return name, kind, {**params, 'base_frame_id': self.model_params.base_frame}
+
+    def drive_geometry(self, urdf: str, sim: str | None = None) -> urdf_facts.DriveGeometry:
+        """The drive controller's geometry parameters measured in ``urdf``, empty for a robot without a drive controller."""
+        controller = self.drive_controller(sim)
+        return {} if controller is None else urdf_facts.drive_geometry(urdf, controller[1], controller[2])
+
+    def wheel_axles(self, urdf: str, sim: str | None = None) -> list[float]:
+        """Sorted base x of the drive controller's wheel joints in ``urdf``, empty for a robot without a drive controller."""
+        controller = self.drive_controller(sim)
+        return [] if controller is None else urdf_facts.wheel_axles(urdf, controller[1], controller[2])
+
+    @property
+    def bringup_launch(self) -> Path | None:
+        """``launch/bringup.launch.py`` of the robot directory, ``None`` without one."""
+        path = self.path / 'launch' / 'bringup.launch.py'
+        return path if path.is_file() else None
+
+    @property
+    def srdf_source(self) -> Path | None:
+        """The robot's own residual SRDF xacro fragment, ``None`` without one."""
+        path = self.path / 'srdf' / f'{self.name}.srdf.xacro'
+        return path if path.is_file() else None
 
     @property
     def assembly(self) -> assembly_mod.AssemblySpec | None:
@@ -254,91 +339,63 @@ class RobotView(PathView):
     def effective_sensors(self, parts: dict[str, list[assembly_mod.RequestPart]], *, frames: dict[str, str] | None = None) -> list[SensorSpec]:
         """The robot's full effective ``SensorSpec`` list for a parts request (``{}``
         for pure defaults). Robots with no assembly.yaml (``assembly`` is ``None``)
-        return ``model_params.sensors`` unchanged. Robots with an assembly.yaml
+        return ``model_params.sensors`` with frames they omit read from the canonical URDF. Robots with an assembly.yaml
         resolve ``parts`` against the declared assembly and render it through the
         shared component catalog. No per-request caching: ``RobotView`` is a
-        per-model singleton, but resolution is per-request.
-
-        Consistency guard: warns on stderr, once per call, if ``model_params.sensors``
-        declares a name absent from the assembly's own DEFAULTS render, i.e. the
-        assembly's defaults must render every sensor model_params.yaml declares."""
+        per-model singleton, but resolution is per-request."""
         resolved = self._resolved(parts)
         if resolved is None:
-            return self.model_params.sensors
+            from arena_robots import served_urdf
+
+            return fill_frames(self.model_params.sensors, lambda: served_urdf.canonical(self, parts, frames))
         assert self.assembly is not None
         resolved = assembly_mod.apply_frame_overrides(resolved, frames or {})
-        prefix = self.assembly.prefix
-        rendered = render_effective_sensors(resolved, _CATALOG, prefix=prefix)
-        defaults_rendered = rendered if not parts else render_effective_sensors(assembly_mod.resolve(self.assembly, {}), _CATALOG, prefix=prefix)
-        missing = {s.name for s in self.model_params.sensors} - {s.name for s in defaults_rendered}
-        if missing:
-            print(
-                f"assembly.yaml incomplete? model_params declares sensors absent from assembly defaults: {sorted(missing)}",
-                file=sys.stderr,
-            )
-        return rendered
+        return render_effective_sensors(resolved, _CATALOG, prefix=self.assembly.prefix)
 
-    def effective_caps(self, parts: dict[str, list[assembly_mod.RequestPart]], *, frames: dict[str, str] | None = None) -> RobotCaps:
+    def effective_caps(
+        self,
+        parts: dict[str, list[assembly_mod.RequestPart]],
+        *,
+        frames: dict[str, str] | None = None,
+        caps: dict[str, object] | None = None,
+    ) -> RobotCaps:
         """The robot's effective :class:`RobotCaps` for a parts request (``{}`` for
-        pure defaults), mirroring :meth:`effective_sensors`. Robots with no
-        assembly.yaml return ``self.caps`` unchanged; robots with an assembly.yaml get
-        a ``RobotCaps`` with ``resolved``/``catalog`` set so `.available`/instances see
+        pure defaults), mirroring :meth:`effective_sensors`, with the instance's cap
+        overrides ``caps`` applied, backed by this view so URDF-derived facts resolve. Robots
+        with an assembly.yaml get ``resolved``/``catalog`` set so `.available`/instances see
         placement-derived caps."""
         resolved = self._resolved(parts)
         if resolved is None:
-            return self.caps
+            return RobotCaps(self.caps.robot_dir, overrides=dict(caps or {}), view=self, parts=parts)
         assert self.assembly is not None
         resolved = assembly_mod.apply_frame_overrides(resolved, frames or {})
-        return RobotCaps(self.caps.caps_dir, resolved=resolved, catalog=_CATALOG, prefix=self.assembly.prefix)
+        return RobotCaps(self.caps.robot_dir, resolved=resolved, catalog=_CATALOG, prefix=self.assembly.prefix, overrides=dict(caps or {}), view=self, parts=parts, frames=dict(frames or {}))
 
-    def power_profile(self, parts: dict[str, list[assembly_mod.RequestPart]]) -> dict[str, float | int] | None:
-        """Power-publisher parameters, chassis block plus resolved component draw. ``None`` when unpowered."""
-        telemetry_yaml = self.path / 'telemetry' / 'power.yaml'
-        has_telemetry = telemetry_yaml.is_file()
+    def power_profile(self, caps: RobotCaps) -> dict[str, float | int] | None:
+        """Power-publisher parameters from the instance's effective power and body facts plus the resolved component draw. ``None`` when unpowered."""
+        power = caps.power
         assembly_power = self.assembly.power if self.assembly is not None else None
-        has_assembly_power = assembly_power is not None
-
-        if not has_telemetry and not has_assembly_power:
+        if power is None and assembly_power is None:
             return None
 
-        static_w = 0.0
-        efficiency = 1.0
-        heating_ch = 0.0
-        battery_wh = 0.0
-        damping = 0.0
-        friction = 0.0
-        crr = 0.0
-        mass_kg = 0.0
-        wheel_r = 0.0
-        num_wheels = 1
+        raw = power.raw if power is not None else {}
+        ps = raw.get('power_system') or {}
+        static = raw.get('static_power_w', 0.0)
+        static_w = float(static.get('compute_core', 0.0)) + float(static.get('idle_motors', 0.0)) if isinstance(static, dict) else float(static)
+        efficiency = float(ps.get('global_drivetrain_efficiency', ps.get('drivetrain_efficiency', 1.0)))
+        heating_ch = float(ps.get('heating_coefficient_ch', 0.0))
+        battery_wh = float(ps.get('battery_capacity_wh', 0.0))
+        damping = float(ps.get('drivetrain_damping', 0.0))
+        friction = float(ps.get('drivetrain_friction', 0.0))
+        crr = float(ps.get('rolling_resistance_crr', 0.0))
+        controller = self.drive_controller()
+        geometry = self.drive_geometry(caps.rendered_urdf())
+        radius = geometry.get('wheel_radius', geometry.get('kinematics.wheels_radius', 0.0))
+        wheel_r = radius if isinstance(radius, float) else 0.0
+        num_wheels = len(urdf_facts.wheel_joints(controller[1], controller[2])) if controller is not None else 0
+        mass_kg = float(caps.body.mass or 0.0)
+        torque_nm = effective_profile(caps.acoustics.raw if caps.acoustics is not None else None)['max_joint_torque_nm']
 
-        # 1. Primary telemetry configuration from telemetry/power.yaml
-        if has_telemetry:
-            try:
-                with open(telemetry_yaml) as f:
-                    t_cfg = yaml.safe_load(f)
-                if isinstance(t_cfg, dict):
-                    if "power_system" in t_cfg and isinstance(t_cfg["power_system"], dict):
-                        ps = t_cfg["power_system"]
-                        efficiency = float(ps.get("global_drivetrain_efficiency", ps.get("drivetrain_efficiency", 1.0)))
-                        heating_ch = float(ps.get("heating_coefficient_ch", 0.0))
-                        battery_wh = float(ps.get("battery_capacity_wh", 0.0))
-                        damping = float(ps.get("drivetrain_damping", 0.0))
-                        friction = float(ps.get("drivetrain_friction", 0.0))
-                        crr = float(ps.get("rolling_resistance_crr", 0.0))
-                        mass_kg = float(ps.get("robot_mass_kg", 0.0))
-                        wheel_r = float(ps.get("wheel_radius_m", 0.0))
-                        num_wheels = int(ps.get("num_wheels", 1))
-                    if "static_power_w" in t_cfg:
-                        sp = t_cfg["static_power_w"]
-                        if isinstance(sp, dict):
-                            static_w = float(sp.get("compute_core", 0.0)) + float(sp.get("idle_motors", 0.0))
-                        elif isinstance(sp, (int, float)):
-                            static_w = float(sp)
-            except Exception:
-                pass
-
-        # 2. Backward-compatible fallback / override from assembly.yaml power:
         if assembly_power is not None:
             spec = assembly_power
             if static_w == 0.0:
@@ -355,32 +412,21 @@ class RobotView(PathView):
                 friction = spec.drivetrain_friction
             if crr == 0.0:
                 crr = spec.rolling_resistance_crr
-            if mass_kg == 0.0:
-                mass_kg = spec.robot_mass_kg
-            if wheel_r == 0.0:
-                wheel_r = spec.wheel_radius_m
-            if num_wheels <= 1 and spec.num_wheels > 1:
-                num_wheels = spec.num_wheels
 
-        # 3. Add dynamic component static power draw from catalog (e.g. mounted sensors)
-        resolved = self._resolved(parts)
-        if resolved is not None:
-            for placement in resolved.placements:
+        if caps.resolved is not None:
+            for placement in caps.resolved.placements:
                 component = _CATALOG.get(placement.type, placement.variant)
                 draw = component.power.get('static_power_w', 0.0)
                 if not isinstance(draw, (int, float)):
                     raise ValueError(f"component {placement.type}/{placement.variant}: 'power.static_power_w' must be a number; got {type(draw).__name__}")
                 static_w += float(draw)
 
-        # 4. Fallback for mass from model_params
-        if mass_kg == 0.0 and "mass" in self.model_params:
-            mass_kg = float(self.model_params.get("mass", {}).get("base_kg", 0.0))
-
         return {
             'static_power_w': static_w,
             'drivetrain_efficiency': efficiency,
             'heating_coefficient_ch': heating_ch,
             'battery_capacity_wh': battery_wh,
+            'max_joint_torque_nm': torque_nm,
             'drivetrain_damping': damping,
             'drivetrain_friction': friction,
             'rolling_resistance_crr': crr,
@@ -393,10 +439,7 @@ class RobotView(PathView):
     def model(self) -> ModelWrapper:
         return ModelWrapper(
             self.name,
-            {
-                **ModelProvider_URDF.asdict(self.path, self.name),
-                **ModelProvider_USD.asdict(self.path, self.name),
-            },
+            ModelProvider_USD.asdict(self.path, self.name),
         )
 
 

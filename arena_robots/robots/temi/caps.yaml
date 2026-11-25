@@ -1,0 +1,82 @@
+mobile:
+  odom_frame: odom
+
+  polygons_dict:
+    StopPolygon:
+      type: polygon
+      points: [[0.25, 0.2], [0.25, -0.2], [-0.25, -0.2], [-0.25, 0.2]]
+      action_type: stop
+      min_points: 4
+      visualize: true
+      polygon_pub_topic: polygon_stop
+      enabled: true
+
+  velocity_limits:
+    linear: [-1.0, 1.0]
+    angular: [-1.5, 1.5]
+  acceleration_limits:
+    linear: 1.0
+    angular: 2.0
+
+  planar:
+    velocity: {linear: [-1.0, 1.0], lateral: [0.0, 0.0], angular: [-1.5, 1.5]}
+    acceleration: {linear: 1.0, lateral: .inf, angular: 2.0}
+    gain: {linear: 1.0, lateral: 1.0, angular: 1.0}
+    lag: 0.0
+    traction: 4.9
+    timeout: 0.25
+
+  actions:
+    discrete:
+      - angular: 0.0
+        linear: 0.3
+        name: move_forward
+      - angular: 0.0
+        linear: -0.15
+        name: move_backward
+      - angular: 0.35
+        linear: 0.15
+        name: turn_left
+      - angular: -0.35
+        linear: 0.15
+        name: turn_right
+      - angular: 0.75
+        linear: 0.0
+        name: turn_strong_left
+      - angular: -0.75
+        linear: 0.0
+        name: turn_strong_right
+      - angular: 0.0
+        linear: 0.0
+        name: stop
+
+power:
+  power_system:
+    system_voltage_v: 24.0
+    global_drivetrain_efficiency: 0.85
+    heating_coefficient_ch: 0.05
+    battery_capacity_wh: 220.0
+    drivetrain_damping: 0.005
+    drivetrain_friction: 0.04
+    rolling_resistance_crr: 0.02
+
+  joint_metrics:
+    topic: "joint_states"
+
+  static_power_w:
+    compute_core: 15.0
+    idle_motors: 5.0
+
+acoustics:
+  L_base_0: 40.0
+  beta_0: 43.0
+  beta_1: 16.0
+  beta_2: 4.5
+  beta_3: 2.5
+  omega_ref: 6.0
+  tau_ref: 8.0
+  omega_deadband: 0.05
+  omega_active: 0.2
+  sigma_base: 1.0
+  sigma_dynamic: 0.8
+  sigma_no_effort: 1.0

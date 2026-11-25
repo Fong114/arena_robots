@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<robot name="fr3" xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:macro name="fr3_base_hw_controller">
+    <ros2_control name="fr3_base" type="system">
+      <hardware>
+        <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      </hardware>
+    </ros2_control>
+  </xacro:macro>
+
+</robot>

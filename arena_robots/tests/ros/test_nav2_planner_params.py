@@ -15,6 +15,8 @@ def _planner_params(robot: str, global_planner: str) -> dict:
     from launch import LaunchContext
     from launch.actions import GroupAction, OpaqueFunction
     from launch.substitutions import TextSubstitution
+    from arena_robots.bringup.mobile.nav2 import Nav2Bringup
+    from arena_robots.Robot import RobotIdentifier
     from launch_ros.actions import Node
 
     spec = importlib.util.spec_from_file_location("nav2_adapter_launch", NAV2_LAUNCH)
@@ -38,11 +40,13 @@ def _planner_params(robot: str, global_planner: str) -> dict:
             "train_mode": "true",
             "arena_env_node": "",
             "env_namespace": "",
-            "sensors_json": "",
+            "sensors_json": "[]",
             "params_overlay": "",
             "agent": "",
             "mapping": "static",
             "scan_topic": "",
+            "mobile_caps": Nav2Bringup(RobotIdentifier(robot).resolve_sync(), f"/env_0/{robot}").planner_launch_arguments()["mobile_caps"],
+            "base_frame": "base_link",
         }
     )
     (setup,) = [e for e in ld.entities if isinstance(e, OpaqueFunction)]

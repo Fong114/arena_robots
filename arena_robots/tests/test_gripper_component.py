@@ -15,7 +15,7 @@ import pytest
 from arena_robots.assembly import Mount, Placement, ResolvedAssembly, build_request, resolve
 from arena_robots.catalog import Catalog, ComponentSpec, render_control_joints, render_effective_control, render_effective_sensors, render_wrapper_xacro
 from arena_robots.Robot import RobotIdentifier
-from arena_simulation_setup.utils.models.urdf import _inject_ros2_control_joints
+from arena_robots.served_urdf import _inject_ros2_control_joints
 
 COMPONENTS_ROOT = Path(__file__).resolve().parent.parent / "components"
 _XACRO = shutil.which("xacro")
@@ -64,8 +64,9 @@ class TestGripperComponentSpec:
         assert spec.caps["joint"] == f"${{prefix}}${{mount}}_{KNUCKLE}"
         assert spec.caps["controller"] == "${mount}_controller"
         assert spec.caps["moveit"]["srdf"]["path"] == "components/gripper/robotiq_2f_85/srdf/robotiq_2f_85.srdf.xacro"
-        assert spec.caps["positions"] == {"open": 0.0, "close": 0.8}
-        assert spec.caps["max_effort"] == 50.0
+        assert spec.caps["moveit"]["args"] == {"prefix": "${prefix}", "mount": "${mount}"}
+        assert "positions" not in spec.caps
+        assert "max_effort" not in spec.caps
 
 
 def _jackal_gripper_resolved() -> tuple[object, object]:
@@ -114,13 +115,12 @@ class TestGripperChainsOntoArmTip:
         from arena_robots.caps import RobotCaps
 
         _, resolved = _jackal_gripper_resolved()
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="")
+        rc = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="")
         grippers = rc.gripper
         assert grippers is not None and set(grippers) == {"top_tool"}
         assert grippers["top_tool"].joint == f"top_tool_{KNUCKLE}"
         assert grippers["top_tool"].controller == "top_tool_controller"
         assert grippers["top_tool"].positions == {"open": 0.0, "close": 0.8}
-        assert grippers["top_tool"].max_effort == 50.0
 
 
 @pytest.mark.parametrize(
@@ -154,12 +154,12 @@ class TestRbkairosGripperMount:
         from arena_robots.caps import RobotCaps
 
         _, resolved = placed
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
+        rc = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
         assert rc.gripper is not None and set(rc.gripper) == {"gripper_mount"}
         gripper = rc.gripper["gripper_mount"]
         assert gripper.joint == f"robot_gripper_{KNUCKLE}"
         assert gripper.controller == "gripper_controller"
-        assert (gripper.positions, gripper.max_effort) == ({"open": 0.0, "close": 0.8}, 50.0)
+        assert gripper.positions == {"open": 0.0, "close": 0.8}
 
 
 @pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")

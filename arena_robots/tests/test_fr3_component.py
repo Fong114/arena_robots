@@ -8,11 +8,11 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
-from arena_robots.assembly import build_request, resolve
+from arena_robots.assembly import RequestPart, build_request, resolve
 from arena_robots.caps import RobotCaps
 from arena_robots.catalog import Catalog, render_control_joints, render_wrapper_xacro
 from arena_robots.Robot import RobotIdentifier
-from arena_simulation_setup.utils.models.urdf import _inject_ros2_control_joints
+from arena_robots.served_urdf import _inject_ros2_control_joints
 
 COMPONENTS_ROOT = Path(__file__).resolve().parent.parent / "components"
 _XACRO = shutil.which("xacro")
@@ -31,23 +31,32 @@ def _placed() -> tuple[object, object]:
 
 
 class TestFr3Caps:
+    @pytest.mark.requires_installed("rbkairos", "arm/fr3")
     def test_arm_caps_resolve_chain_tip_and_poses(self) -> None:
-        _, resolved = _placed()
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
+        rc = RobotIdentifier("rbkairos").resolve_sync().effective_caps({"arm": [RequestPart(variant="fr3", mount="arm_mount")]})
         assert rc.arm is not None and set(rc.arm) == {"arm_mount"}
         arm = rc.arm["arm_mount"]
         assert arm.chain == _ARM_JOINTS
         assert arm.tip_link == "robot_arm_fr3_link8"
+        assert arm.base_link == "robot_top_cover"
         assert arm.controller == "arm_controller"
+        assert arm.named_poses["stow"] == dict(zip(_ARM_JOINTS, [0.0, -1.5, 0.0, -2.9, 0.0, 1.4, 0.785], strict=True))
+        assert set(arm.named_poses) == {"stow", "ready", "wave_up", "wave_l", "wave_r"}
 
     def test_gripper_caps_resolve_joint_and_positions(self) -> None:
         _, resolved = _placed()
-        rc = RobotCaps(caps_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
+        rc = RobotCaps(robot_dir=Path("/dev/null"), resolved=resolved, catalog=Catalog(root=COMPONENTS_ROOT), prefix="robot_")
         assert rc.gripper is not None and set(rc.gripper) == {"gripper_mount"}
         gripper = rc.gripper["gripper_mount"]
         assert gripper.joint == _FINGER
         assert gripper.controller == "gripper_controller"
         assert (gripper.positions, gripper.max_effort) == ({"open": 0.04, "close": 0.0}, 70.0)
+
+    def test_control_joints_start_at_the_srdf_stow_pose(self) -> None:
+        _, resolved = _placed()
+        joints = {str(j["name"]): j for j in render_control_joints(resolved, Catalog(root=COMPONENTS_ROOT), prefix="robot_")}
+        assert [joints[name]["initial_value"] for name in _ARM_JOINTS] == [0.0, -1.5, 0.0, -2.9, 0.0, 1.4, 0.785]
+        assert "initial_value" not in joints[_FINGER]
 
     def test_wrapper_chains_hand_onto_flange(self) -> None:
         view, resolved = _placed()

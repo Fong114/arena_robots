@@ -14,8 +14,8 @@
                        node_namespace:=${None}
                        topic_prefix:=~/
                        gpu:=false
-                       min_angle:=${-radians(135)}
-                       max_angle:=${radians(135)}">
+                       min_angle
+                       max_angle">
     <!-- node_namespace is used from node_name if not set -->
     <xacro:if value="${node_namespace == None}">
       <xacro:property name="node_namespace" value="${node_name}"/>

@@ -39,6 +39,24 @@ no scans and publishes no TF, and the simulator keeps `map -> odom`. Nav2's life
 manager brings `slam_toolbox` up before the costmaps, and its absolute `/map` and
 `/map_metadata` are remapped into the robot's namespace.
 
+`base_frame` is the robot's effective `body.base_frame`, passed by `Nav2Bringup` and `DrlBringup`.
+
+`mobile_caps` and `sensors_json` are required. `mobile_caps` is the effective `mobile` cap of the
+instance, written by `Nav2Bringup` and `DrlBringup` (`Bringup.planner_launch_arguments`) to a per-instance
+temp YAML named `mobile_caps_<host>_<namespace>.yaml` in the temp dir, with the laser block of the
+rendered URDF. `sensors_json` is the instance's effective sensors with their URDF geometry, the only
+source of the costmap observation sources. [`global_planner/nav2.launch.py`](../global_planner/nav2.launch.py)
+forwards both arguments to this file.
+
+### `arm/moveit.launch.py`
+
+Internals of `arena_robots.bringup.arm.moveit.MoveItArmBringup`. Starts one
+`move_group` for the arm instance named by `instance` (empty = the only arm).
+`request_json` carries the instance request (`parts` with their xacro arguments,
+`frames`, cap overrides, `InstanceRequest.dumps()`), from which `build_moveit_params`
+resolves the effective arm caps and, for an instance that overrides `arm.<mount>.joint_limits`,
+writes the effective joint limits in place of the component's file.
+
 ### `none.launch.py`
 
 Internals of `arena_robots.bringup.none.NoneBringup`. Spins up no navigation

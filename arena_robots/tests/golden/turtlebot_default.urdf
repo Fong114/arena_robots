@@ -20,8 +20,8 @@
     </collision>
     <inertial>
       <origin xyz="0.0 0 0.0742"/>
-      <mass value="2.3"/>
-      <inertia ixx="0.016155199999999998" ixy="0.0" ixz="0.0" iyy="0.016155199999999998" iyz="0.0" izz="0.03093039999999999"/>
+      <mass value="2.01810739225"/>
+      <inertia ixx="0.0141751863232" ixy="0" ixz="0" iyy="0.0141751863232" iyz="0" izz="0.0271395082109"/>
     </inertial>
   </link>
   <joint name="bumper_joint" type="fixed">
@@ -42,8 +42,8 @@
     </collision>
     <inertial>
       <origin xyz="0.08 0 0.02"/>
-      <mass value="0.1"/>
-      <inertia ixx="0.0013483753405" ixy="0.0000000454352" ixz="0.0000014434849" iyy="0.0002521736852" iyz="-0.0000000006721" izz="0.0015442525386"/>
+      <mass value="0.0877437996628"/>
+      <inertia ixx="0.00118311575747" ixy="3.98665708644e-08" ixz="1.26656849882e-06" iyy="0.000221266773144" iyz="-5.89726077534e-10" izz="0.00135498585375"/>
     </inertial>
   </link>
   <gazebo reference="bumper">
@@ -120,9 +120,9 @@
   </gazebo>
   <link name="wheel_drop_left">
     <inertial>
-      <mass value="0.05"/>
+      <mass value="0.0438718998315"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="2.0833333333333336e-05" ixy="0.0" ixz="0.0" iyy="2.0833333333333336e-05" iyz="0.0" izz="2.0833333333333336e-05"/>
+      <inertia ixx="1.82799582631e-05" ixy="0" ixz="0" iyy="1.82799582631e-05" iyz="0" izz="1.82799582631e-05"/>
     </inertial>
   </link>
   <gazebo>
@@ -160,8 +160,8 @@
     </collision>
     <inertial>
       <origin xyz="0 0 0"/>
-      <mass value="0.2"/>
-      <inertia ixx="6.765312500000001e-05" ixy="0.0" ixz="0.0" iyy="6.765312500000001e-05" iyz="0.0" izz="0.00012780625000000003"/>
+      <mass value="0.175487599326"/>
+      <inertia ixx="5.93614224657e-05" ixy="0" ixz="0" iyy="5.93614224657e-05" iyz="0" izz="0.000112142059957"/>
     </inertial>
   </link>
   <gazebo reference="left_wheel">
@@ -203,9 +203,9 @@
   </gazebo>
   <link name="wheel_drop_right">
     <inertial>
-      <mass value="0.05"/>
+      <mass value="0.0438718998315"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="2.0833333333333336e-05" ixy="0.0" ixz="0.0" iyy="2.0833333333333336e-05" iyz="0.0" izz="2.0833333333333336e-05"/>
+      <inertia ixx="1.82799582631e-05" ixy="0" ixz="0" iyy="1.82799582631e-05" iyz="0" izz="1.82799582631e-05"/>
     </inertial>
   </link>
   <gazebo>
@@ -243,8 +243,8 @@
     </collision>
     <inertial>
       <origin xyz="0 0 0"/>
-      <mass value="0.2"/>
-      <inertia ixx="6.765312500000001e-05" ixy="0.0" ixz="0.0" iyy="6.765312500000001e-05" iyz="0.0" izz="0.00012780625000000003"/>
+      <mass value="0.175487599326"/>
+      <inertia ixx="5.93614224657e-05" ixy="0" ixz="0" iyy="5.93614224657e-05" iyz="0" izz="0.000112142059957"/>
     </inertial>
   </link>
   <gazebo reference="right_wheel">
@@ -287,8 +287,8 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="0.01"/>
-      <inertia ixx="4.0000000000000003e-07" ixy="0.0" ixz="0.0" iyy="4.0000000000000003e-07" iyz="0.0" izz="4.0000000000000003e-07"/>
+      <mass value="0.00877437996628"/>
+      <inertia ixx="3.50975198651e-07" ixy="0" ixz="0" iyy="3.50975198651e-07" iyz="0" izz="3.50975198651e-07"/>
     </inertial>
   </link>
   <gazebo reference="front_caster_joint">
@@ -308,9 +308,9 @@
   </joint>
   <link name="imu_link">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="imu_link">
@@ -389,9 +389,9 @@
   </joint>
   <link name="mouse">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo>
@@ -414,9 +414,9 @@
   </joint>
   <link name="cliff_side_left">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="cliff_side_left">
@@ -468,9 +468,9 @@
   </joint>
   <link name="cliff_side_right">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="cliff_side_right">
@@ -522,9 +522,9 @@
   </joint>
   <link name="cliff_front_left">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="cliff_front_left">
@@ -576,9 +576,9 @@
   </joint>
   <link name="cliff_front_right">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="cliff_front_right">
@@ -630,9 +630,9 @@
   </joint>
   <link name="ir_intensity_front_center_left">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="ir_intensity_front_center_left_joint">
@@ -685,9 +685,9 @@
   </joint>
   <link name="ir_intensity_front_center_right">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="ir_intensity_front_center_right_joint">
@@ -740,9 +740,9 @@
   </joint>
   <link name="ir_intensity_front_left">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="ir_intensity_front_left_joint">
@@ -795,9 +795,9 @@
   </joint>
   <link name="ir_intensity_front_right">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="ir_intensity_front_right_joint">
@@ -850,9 +850,9 @@
   </joint>
   <link name="ir_intensity_left">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="ir_intensity_left_joint">
@@ -905,9 +905,9 @@
   </joint>
   <link name="ir_intensity_right">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="ir_intensity_right_joint">
@@ -960,9 +960,9 @@
   </joint>
   <link name="ir_intensity_side_left">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo reference="ir_intensity_side_left_joint">
@@ -1033,9 +1033,9 @@
   </joint>
   <link name="ir_omni">
     <inertial>
-      <mass value="0.01"/>
+      <mass value="0.00877437996628"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="1.6666666666666668e-07" ixy="0.0" ixz="0.0" iyy="1.6666666666666668e-07" iyz="0.0" izz="1.6666666666666668e-07"/>
+      <inertia ixx="1.46239666105e-07" ixy="0" ixz="0" iyy="1.46239666105e-07" iyz="0" izz="1.46239666105e-07"/>
     </inertial>
   </link>
   <gazebo>
@@ -1115,8 +1115,8 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="0.39"/>
-      <inertia ixx="0.00281295367" ixy="-0.00000137675" ixz="-0.00005790057" iyy="0.00164666421" iyz="0.00000564466" izz="0.00424540124"/>
+      <mass value="0.342200818685"/>
+      <inertia ixx="0.00246819243282" ixy="-1.20801276186e-06" ixz="-5.08041601445e-05" iyy="0.00144484574554" iyz="4.95283916205e-06" izz="0.00372507635891"/>
     </inertial>
     <turnGravityOff>false</turnGravityOff>
   </link>
@@ -1137,8 +1137,8 @@
     </visual>
     <inertial>
       <origin xyz="0.1 0 0"/>
-      <mass value="0.061"/>
-      <inertia ixx="0.0000093482" ixy="-0.00000337434" ixz="0.0" iyy="0.00000436382" iyz="0.0" izz="0.00001288852"/>
+      <mass value="0.0535237177944"/>
+      <inertia ixx="8.20246588008e-06" ixy="-2.96077412954e-06" ixz="0" iyy="3.82898147844e-06" iyz="0" izz="1.13088771683e-05"/>
     </inertial>
   </link>
   <gazebo reference="front_left_bottom_weight_block_joint">
@@ -1166,8 +1166,8 @@
     </visual>
     <inertial>
       <origin xyz="0.1 0 0"/>
-      <mass value="0.061"/>
-      <inertia ixx="0.0000093482" ixy="-0.00000337434" ixz="0.0" iyy="0.00000436382" iyz="0.0" izz="0.00001288852"/>
+      <mass value="0.0535237177944"/>
+      <inertia ixx="8.20246588008e-06" ixy="-2.96077412954e-06" ixz="0" iyy="3.82898147844e-06" iyz="0" izz="1.13088771683e-05"/>
     </inertial>
   </link>
   <gazebo reference="front_left_top_weight_block_joint">
@@ -1195,8 +1195,8 @@
     </visual>
     <inertial>
       <origin xyz="0.1 0 0"/>
-      <mass value="0.061"/>
-      <inertia ixx="0.0000093482" ixy="-0.00000337434" ixz="0.0" iyy="0.00000436382" iyz="0.0" izz="0.00001288852"/>
+      <mass value="0.0535237177944"/>
+      <inertia ixx="8.20246588008e-06" ixy="-2.96077412954e-06" ixz="0" iyy="3.82898147844e-06" iyz="0" izz="1.13088771683e-05"/>
     </inertial>
   </link>
   <gazebo reference="front_right_bottom_weight_block_joint">
@@ -1224,8 +1224,8 @@
     </visual>
     <inertial>
       <origin xyz="0.1 0 0"/>
-      <mass value="0.061"/>
-      <inertia ixx="0.0000093482" ixy="-0.00000337434" ixz="0.0" iyy="0.00000436382" iyz="0.0" izz="0.00001288852"/>
+      <mass value="0.0535237177944"/>
+      <inertia ixx="8.20246588008e-06" ixy="-2.96077412954e-06" ixz="0" iyy="3.82898147844e-06" iyz="0" izz="1.13088771683e-05"/>
     </inertial>
   </link>
   <gazebo reference="front_right_top_weight_block_joint">
@@ -1259,8 +1259,8 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="0.026"/>
-      <inertia ixx="0.00000019604" ixy="0.0" ixz="0.0" iyy="0.00005262313" iyz="0.0" izz="0.00005262313"/>
+      <mass value="0.0228133879123"/>
+      <inertia ixx="1.72012944859e-07" ixy="0" ixz="0" iyy="4.61735337635e-05" iyz="0" izz="4.61735337635e-05"/>
     </inertial>
   </link>
   <gazebo reference="front_left_tower_standoff_joint">
@@ -1294,8 +1294,8 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="0.026"/>
-      <inertia ixx="0.00000019604" ixy="0.0" ixz="0.0" iyy="0.00005262313" iyz="0.0" izz="0.00005262313"/>
+      <mass value="0.0228133879123"/>
+      <inertia ixx="1.72012944859e-07" ixy="0" ixz="0" iyy="4.61735337635e-05" iyz="0" izz="4.61735337635e-05"/>
     </inertial>
   </link>
   <gazebo reference="front_right_tower_standoff_joint">
@@ -1329,8 +1329,8 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="0.026"/>
-      <inertia ixx="0.00000019604" ixy="0.0" ixz="0.0" iyy="0.00005262313" iyz="0.0" izz="0.00005262313"/>
+      <mass value="0.0228133879123"/>
+      <inertia ixx="1.72012944859e-07" ixy="0" ixz="0" iyy="4.61735337635e-05" iyz="0" izz="4.61735337635e-05"/>
     </inertial>
   </link>
   <gazebo reference="rear_left_tower_standoff_joint">
@@ -1364,8 +1364,8 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="0.026"/>
-      <inertia ixx="0.00000019604" ixy="0.0" ixz="0.0" iyy="0.00005262313" iyz="0.0" izz="0.00005262313"/>
+      <mass value="0.0228133879123"/>
+      <inertia ixx="1.72012944859e-07" ixy="0" ixz="0" iyy="4.61735337635e-05" iyz="0" izz="4.61735337635e-05"/>
     </inertial>
   </link>
   <gazebo reference="rear_right_tower_standoff_joint">
@@ -1398,8 +1398,8 @@
       </geometry>
     </collision>
     <inertial>
-      <mass value="0.332"/>
-      <inertia ixx="0.00092982299" ixy="0.0" ixz="0.0" iyy="0.00083033498" iyz="0.0" izz="0.00175985947"/>
+      <mass value="0.29130941488"/>
+      <inertia ixx="0.000815862021565" ixy="0" ixz="0" iyy="0.000728567461382" iyz="0" izz="0.0015441675677"/>
     </inertial>
   </link>
   <gazebo reference="tower_sensor_plate_joint">
@@ -1426,8 +1426,8 @@
       </geometry>
     </visual>
     <inertial>
-      <mass value="0.033"/>
-      <inertia ixx="0.0000579181" ixy="0.0" ixz="0.0000090679" iyy="0.0000559785" iyz="0.0" izz="0.0000140955"/>
+      <mass value="0.0289554538887"/>
+      <inertia ixx="5.08195416325e-05" ixy="0" ixz="7.95652000963e-06" iyy="4.91176628942e-05" iyz="0" izz="1.23679272815e-05"/>
     </inertial>
   </link>
   <gazebo reference="oakd_camera_bracket_joint">

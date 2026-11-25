@@ -288,12 +288,13 @@ class TestResolveParams:
         resolved = resolve(spec, {})
         assert resolved.placements[0].params == {"max_angle": 2.1}
 
-    def test_request_params_are_not_propagated(self):
+    def test_request_params_reach_the_placement_as_its_args(self):
         from arena_robots.assembly import AssemblySpec, RequestPart, resolve
 
         spec = AssemblySpec(mounts={"top": _mount("top", ["lidar"])})
         resolved = resolve(spec, {"lidar": [RequestPart(variant="sick", params={"max_angle": 1.0})]})
-        assert resolved.placements[0].params == {}
+        assert resolved.placements[0].params == {"max_angle": 1.0}
+        assert resolved.placements[0].args == {"max_angle": 1.0}
 
     def test_pinned_request_of_a_default_keeps_its_params(self):
         from arena_robots.assembly import AssemblySpec, DefaultPart, RequestPart, resolve

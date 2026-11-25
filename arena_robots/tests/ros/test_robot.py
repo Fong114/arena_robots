@@ -135,21 +135,19 @@ class TestModelParamsSensors:
 
 
 class TestModelParamsCaps:
-    def test_caps_with_mobile_yaml(self, tmp_path: Path):
+    def test_caps_with_mobile_section(self, tmp_path: Path):
         from arena_robots.Robot import ModelParams
 
         robot_dir = tmp_path / "robot"
         robot_dir.mkdir()
-        caps_dir = robot_dir / "caps"
-        caps_dir.mkdir()
-        (caps_dir / "mobile.yaml").write_text(yaml.dump({"odom_frame": "custom_odom"}))
+        (robot_dir / "caps.yaml").write_text(yaml.dump({"mobile": {"odom_frame": "custom_odom"}}))
         mp_path = robot_dir / "model_params.yaml"
         mp_path.write_text(yaml.dump({}))
         mp = ModelParams.from_yaml(mp_path)
         assert "mobile" in mp.caps.available
         assert mp.odom_frame == "custom_odom"
 
-    def test_caps_no_caps_dir(self, tmp_path: Path):
+    def test_caps_no_caps_file(self, tmp_path: Path):
         from arena_robots.Robot import ModelParams
 
         mp = ModelParams.from_yaml(_write(tmp_path, {}))
@@ -177,6 +175,23 @@ class TestModelParamsCapabilities:
         mp = ModelParams.from_yaml(_write(tmp_path, {"capabilities": "bad"}))
         with pytest.raises(ValueError, match="must be a list"):
             _ = mp.capabilities
+
+
+def _write_wheeled_urdf(robot_dir: Path, kg: float) -> None:
+    pytest.importorskip("xacro", reason="xacro is not importable, run under the Arena container")
+    wheel = '<link name="{n}"><collision><geometry><cylinder radius="0.098" length="0.05"/></geometry></collision></link><joint name="{n}_joint" type="continuous"><parent link="base_link"/><child link="{n}"/><origin xyz="0 {y} 0"/><axis xyz="0 1 0"/></joint>'
+    (robot_dir / "urdf").mkdir(exist_ok=True)
+    (robot_dir / "urdf" / f"{robot_dir.name}.urdf.xacro").write_text(
+        f'<?xml version="1.0"?>\n<robot name="{robot_dir.name}" xmlns:xacro="http://www.ros.org/wiki/xacro">\n'
+        f'<link name="base_link"><inertial><mass value="{kg}"/><inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1"/></inertial></link>\n' + wheel.format(n="left_wheel", y=0.2) + wheel.format(n="right_wheel", y=-0.2) + "\n</robot>\n"
+    )
+
+
+def _diff_drive_control() -> dict:
+    return {
+        "controller_manager": {"ros__parameters": {"drive": {"type": "diff_drive_controller/DiffDriveController"}}},
+        "drive": {"ros__parameters": {"left_wheel_names": ["left_wheel_joint"], "right_wheel_names": ["right_wheel_joint"], "base_frame_id": "base_link"}},
+    }
 
 
 class TestRobotView:
@@ -239,13 +254,6 @@ class TestRobotView:
         with pytest.raises(ValueError, match="must contain a dictionary"):
             _ = view.control
 
-    def test_mappings_path(self, temp_robot_dir):
-        from arena_robots.Robot import RobotView
-
-        rd = temp_robot_dir(model_params={}, control={})
-        view = RobotView(rd)
-        assert view.mappings == str(rd / "mappings.yaml")
-
     def test_caps_delegates_to_model_params(self, temp_robot_dir):
         from arena_robots.Robot import RobotView
 
@@ -253,13 +261,14 @@ class TestRobotView:
         view = RobotView(rd)
         assert "mobile" in view.caps.available
 
-    def test_power_profile_with_assembly_and_telemetry_fallbacks(self, temp_robot_dir):
+    def test_power_profile_with_assembly_and_power_section_fallbacks(self, temp_robot_dir, tmp_path):
         from arena_robots.Robot import RobotView
 
         rd = temp_robot_dir(
-            model_params={"mass": {"base_kg": 18.0}},
-            control={},
+            model_params={"control": {"mode": "ros2_control", "config": str(tmp_path / "test_robot" / "control.yaml")}},
+            control=_diff_drive_control(),
         )
+        _write_wheeled_urdf(rd, 17.0)
         (rd / "assembly.yaml").write_text(
             yaml.dump(
                 {
@@ -275,26 +284,22 @@ class TestRobotView:
                 }
             )
         )
-        # Add telemetry/power.yaml with physical losses
-        telem_dir = rd / "telemetry"
-        telem_dir.mkdir()
-        (telem_dir / "power.yaml").write_text(
+        (rd / "caps.yaml").write_text(
             yaml.dump(
                 {
-                    "power_system": {
-                        "drivetrain_damping": 0.006,
-                        "drivetrain_friction": 0.050,
-                        "rolling_resistance_crr": 0.025,
-                        "robot_mass_kg": 17.0,
-                        "wheel_radius_m": 0.098,
-                        "num_wheels": 4,
+                    "power": {
+                        "power_system": {
+                            "drivetrain_damping": 0.006,
+                            "drivetrain_friction": 0.050,
+                            "rolling_resistance_crr": 0.025,
+                        }
                     }
                 }
             )
         )
 
         view = RobotView(rd)
-        profile = view.power_profile({})
+        profile = view.power_profile(view.effective_caps({}))
         assert profile is not None
         assert profile["static_power_w"] == 35.0
         assert profile["drivetrain_efficiency"] == 0.70
@@ -305,42 +310,40 @@ class TestRobotView:
         assert profile["rolling_resistance_crr"] == 0.025
         assert profile["robot_mass_kg"] == 17.0
         assert profile["wheel_radius_m"] == 0.098
-        assert profile["num_wheels"] == 4
+        assert profile["num_wheels"] == 2
 
-    def test_power_profile_from_standalone_telemetry_yaml(self, temp_robot_dir):
+    def test_power_profile_from_standalone_power_section(self, temp_robot_dir, tmp_path):
         from arena_robots.Robot import RobotView
 
         rd = temp_robot_dir(
-            model_params={"mass": {"base_kg": 17.0}},
-            control={},
+            model_params={"control": {"mode": "ros2_control", "config": str(tmp_path / "test_robot" / "control.yaml")}},
+            control=_diff_drive_control(),
         )
-        telem_dir = rd / "telemetry"
-        telem_dir.mkdir()
-        (telem_dir / "power.yaml").write_text(
+        _write_wheeled_urdf(rd, 17.0)
+        (rd / "caps.yaml").write_text(
             yaml.dump(
                 {
-                    "robot_model": "test_robot",
-                    "power_system": {
-                        "global_drivetrain_efficiency": 0.85,
-                        "heating_coefficient_ch": 0.05,
-                        "battery_capacity_wh": 270.0,
-                        "drivetrain_damping": 0.15,
-                        "drivetrain_friction": 0.65,
-                        "rolling_resistance_crr": 0.035,
-                        "robot_mass_kg": 17.0,
-                        "wheel_radius_m": 0.098,
-                        "num_wheels": 4,
-                    },
-                    "static_power_w": {
-                        "compute_core": 20.0,
-                        "idle_motors": 15.0,
-                    },
+                    "power": {
+                        "robot_model": "test_robot",
+                        "power_system": {
+                            "global_drivetrain_efficiency": 0.85,
+                            "heating_coefficient_ch": 0.05,
+                            "battery_capacity_wh": 270.0,
+                            "drivetrain_damping": 0.15,
+                            "drivetrain_friction": 0.65,
+                            "rolling_resistance_crr": 0.035,
+                        },
+                        "static_power_w": {
+                            "compute_core": 20.0,
+                            "idle_motors": 15.0,
+                        },
+                    }
                 }
             )
         )
 
         view = RobotView(rd)
-        profile = view.power_profile({})
+        profile = view.power_profile(view.effective_caps({}))
         assert profile is not None
         assert profile["static_power_w"] == 35.0
         assert profile["drivetrain_efficiency"] == 0.85
@@ -351,7 +354,7 @@ class TestRobotView:
         assert profile["rolling_resistance_crr"] == 0.035
         assert profile["robot_mass_kg"] == 17.0
         assert profile["wheel_radius_m"] == 0.098
-        assert profile["num_wheels"] == 4
+        assert profile["num_wheels"] == 2
 
 
 def _write(tmp_path: Path, data: dict) -> Path:

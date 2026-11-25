@@ -7,9 +7,9 @@ import pytest
 import yaml
 from arena_rclpy_mixins.yaml_replace import YAMLReplacer
 from arena_robots.nav2 import Nav2KinematicsDerivedYAML
+from arena_robots.Robot import RobotIdentifier
 
 PKG = Path(__file__).resolve().parents[2] / "arena_robots"
-ROBOTS_DIR = PKG / "robots"
 MPPI_YAML = PKG / "config" / "nav2" / "controllers" / "mppi" / "controller_config.yaml"
 SMAC_HYBRID_YAML = PKG / "config" / "nav2" / "planners" / "smac_hybrid" / "planner_config.yaml"
 
@@ -35,12 +35,14 @@ def _smac_hybrid(mobile_yaml: Path) -> dict:
         ("f1tenth", "Ackermann", 0.7416, 0.7416),
     ],
 )
-def test_mppi_and_smac_hybrid_follow_the_caps_drive_kind(robot: str, motion_model: str, mppi_radius: float, smac_radius: float) -> None:
-    mobile_yaml = ROBOTS_DIR / robot / "caps" / "mobile.yaml"
+def test_mppi_and_smac_hybrid_follow_the_caps_drive_kind(robot: str, motion_model: str, mppi_radius: float, smac_radius: float, tmp_path: Path, require_installed) -> None:
+    require_installed(robot)
+    mobile_yaml = tmp_path / "mobile.yaml"
+    mobile_yaml.write_text(yaml.safe_dump(RobotIdentifier(robot).resolve_sync().effective_caps({}).mobile.raw))
     mppi = _mppi(mobile_yaml)
     assert mppi["motion_model"] == motion_model
-    assert mppi["AckermannConstraints"]["min_turning_r"] == mppi_radius
-    assert _smac_hybrid(mobile_yaml)["minimum_turning_radius"] == smac_radius
+    assert mppi["AckermannConstraints"]["min_turning_r"] == pytest.approx(mppi_radius, abs=1e-4)
+    assert _smac_hybrid(mobile_yaml)["minimum_turning_radius"] == pytest.approx(smac_radius, abs=1e-4)
 
 
 def test_explicit_zero_turning_radius_keeps_the_config_defaults(tmp_path: Path) -> None:

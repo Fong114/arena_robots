@@ -6,10 +6,16 @@ maximum bipartite matching. No xacro/yaml rendering, no ROS: this module only de
 
 from __future__ import annotations
 
+import functools
 import re
 import typing
 
 import attrs
+
+from arena_robots.inline import split_part
+
+if typing.TYPE_CHECKING:
+    from arena_robots.catalog import Catalog
 
 
 class AssemblyError(RuntimeError):
@@ -77,9 +83,6 @@ class PowerSpec:
     drivetrain_damping: float = 0.0
     drivetrain_friction: float = 0.0
     rolling_resistance_crr: float = 0.0
-    robot_mass_kg: float = 0.0
-    wheel_radius_m: float = 0.0
-    num_wheels: int = 1
 
     @classmethod
     def parse(cls, data: dict[str, typing.Any]) -> PowerSpec:
@@ -97,21 +100,22 @@ class PowerSpec:
         missing = required - set(data)
         if missing:
             raise AssemblyError(f"assembly.yaml 'power' is missing keys {sorted(missing)}")
-        values = {k: float(v) for k, v in data.items() if k != "num_wheels"}
-        return cls(**values, num_wheels=int(data.get("num_wheels", 1)))
+        return cls(**{k: float(v) for k, v in data.items()})
 
 
 @attrs.define
 class RequestPart:
     """One requested part instance from a fleet-def morphology item; ``mount`` set only
-    for an explicit pin. ``params`` is reserved for later bracket-level tuning and is
-    accepted but not propagated: a part pinned to a default's own mount and variant takes
-    that default's params and overrides, its own ``overrides`` winning."""
+    for an explicit pin. ``params`` are the xacro arguments its component declares, taken
+    from the part's brackets: a part pinned to a default's own mount and variant takes
+    that default's params and overrides, its own ``params`` and ``overrides`` winning."""
 
     variant: str
     mount: str | None = None
     params: dict[str, object] = attrs.field(factory=dict)
     overrides: dict[str, str] = attrs.field(factory=dict)
+    caps: dict[str, object] = attrs.field(factory=dict)
+    """Cap overrides of this part (field path within its cap instance to a value or an operation)."""
 
 
 def _validate_mount_dag(mounts: dict[str, Mount]) -> None:
@@ -216,6 +220,10 @@ class Placement:
     overrides: dict[str, str] = attrs.field(factory=dict)
     """Copied verbatim from the originating ``DefaultPart`` or ``RequestPart``; consumed
     only by ``catalog.render_effective_sensors``."""
+    caps: dict[str, object] = attrs.field(factory=dict)
+    """The originating ``RequestPart``'s cap overrides."""
+    args: dict[str, object] = attrs.field(factory=dict)
+    """The originating ``RequestPart``'s xacro arguments, already part of ``params``."""
 
 
 @attrs.define
@@ -234,9 +242,41 @@ class _Item:
     params: dict[str, object]
     local_index: int
     overrides: dict[str, str] = attrs.field(factory=dict)
+    caps: dict[str, object] = attrs.field(factory=dict)
+    args: dict[str, object] = attrs.field(factory=dict)
 
 
-def build_request(spec: AssemblySpec, directives: dict[str, list[str]]) -> tuple[dict[str, list[RequestPart]], frozenset[str], frozenset[str]]:
+@functools.cache
+def _default_catalog() -> Catalog:
+    from arena_robots.catalog import Catalog
+
+    return Catalog()
+
+
+def _split_args(catalog: Catalog, lhs: str, type_: str, variant: str, bracket: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
+    """A part's bracket entries as the xacro arguments its component declares and the cap overrides."""
+    if not bracket:
+        return {}, {}
+    try:
+        declared = catalog.get(type_, variant).args
+    except RuntimeError as e:
+        raise AssemblyError(f"'{lhs}': {e}") from e
+    params = {key: value for key, value in bracket.items() if key in declared}
+    for key, value in params.items():
+        if value is None or isinstance(value, dict | list):
+            raise AssemblyError(f"'{lhs}': xacro argument '{key}' of {type_}/{variant} takes one value, got {value!r}")
+    return params, {key: value for key, value in bracket.items() if key not in declared}
+
+
+def placed_request(resolved: ResolvedAssembly) -> dict[str, list[RequestPart]]:
+    """The fully pinned type-keyed request that resolves back to ``resolved``'s placements."""
+    request: dict[str, list[RequestPart]] = {}
+    for placement in resolved.placements:
+        request.setdefault(placement.type, []).append(RequestPart(variant=placement.variant, mount=placement.mount.name, params=dict(placement.args), overrides=dict(placement.overrides), caps=dict(placement.caps)))
+    return request
+
+
+def build_request(spec: AssemblySpec, directives: dict[str, list[str]], *, catalog: Catalog | None = None) -> tuple[dict[str, list[RequestPart]], frozenset[str], frozenset[str]]:
     """Disambiguate raw setup-grammar directives (``lhs -> raw value strings``) into a
     type-keyed request plus cleared-socket/cleared-type sets (mount-centric addressing).
 
@@ -246,14 +286,26 @@ def build_request(spec: AssemblySpec, directives: dict[str, list[str]]) -> tuple
     (``type=variant``, resolver places one of the type); a name matching both wins as
     a mount (mount beats type on collision). ``/`` is only the type/variant separator,
     consulted only for mount-centric fills. Returns ``(type_keyed_request,
-    cleared_sockets, cleared_types)`` for :func:`resolve`.
+    cleared_sockets, cleared_types)`` for :func:`resolve`. A bracket key the part's component
+    declares under ``xacro.args`` becomes a ``RequestPart.params`` entry, every other key a cap override.
     """
+    catalog = catalog if catalog is not None else _default_catalog()
     known_types = {t for m in spec.mounts.values() for t in m.accepts}
     request: dict[str, list[RequestPart]] = {}
     cleared_sockets: set[str] = set()
     cleared_types: set[str] = set()
 
-    for lhs, values in directives.items():
+    for lhs, raw_values in directives.items():
+        split: list[tuple[str, dict[str, object]]] = []
+        for raw in raw_values:
+            try:
+                split.append(split_part(raw))
+            except ValueError as e:
+                raise AssemblyError(f"'{lhs}': {e}") from e
+        values = [value for value, _ in split]
+        part_caps = {value: caps for value, caps in split}
+        if any(caps for value, caps in split if value == 'none'):
+            raise AssemblyError(f"'{lhs}': 'none' takes no cap overrides")
         if lhs in spec.mounts:
             mount = spec.mounts[lhs]
             has_clear = 'none' in values
@@ -275,7 +327,8 @@ def build_request(spec: AssemblySpec, directives: dict[str, list[str]]) -> tuple
                         raise AssemblyError(f"socket '{lhs}' accepts multiple types {sorted(mount.accepts)}; use type/variant")
                     typ = mount.accepts[0]
                     variant = value
-                request.setdefault(typ, []).append(RequestPart(variant=variant, mount=lhs))
+                params, caps = _split_args(catalog, lhs, typ, variant, part_caps[value])
+                request.setdefault(typ, []).append(RequestPart(variant=variant, mount=lhs, params=params, caps=caps))
         elif lhs in known_types:
             has_clear = 'none' in values
             fills = [v for v in values if v != 'none']
@@ -284,8 +337,10 @@ def build_request(spec: AssemblySpec, directives: dict[str, list[str]]) -> tuple
             if has_clear:
                 cleared_types.add(lhs)
                 continue
-            for value in fills:
-                request.setdefault(lhs, []).append(RequestPart(variant=value, mount=None))
+            for value, caps in split:
+                if value != 'none':
+                    params, caps = _split_args(catalog, lhs, lhs, value, caps)
+                    request.setdefault(lhs, []).append(RequestPart(variant=value, mount=None, params=params, caps=caps))
         else:
             raise AssemblyError(f"unknown '{lhs}': not a mount {sorted(spec.mounts)} nor an accepted type {sorted(known_types)}")
 
@@ -346,8 +401,8 @@ def _match(items: list[_Item], mounts_pool: list[str], mounts: dict[str, Mount])
 
 def _pinned_item(part_type: str, part: RequestPart, default: DefaultPart | None, index: int) -> _Item:
     if default is None:
-        return _Item(type=part_type, variant=part.variant, mount=part.mount, params={}, overrides=part.overrides, local_index=index)
-    return _Item(type=part_type, variant=part.variant, mount=part.mount, params=dict(default.params), overrides={**default.overrides, **part.overrides}, local_index=index)
+        return _Item(type=part_type, variant=part.variant, mount=part.mount, params=dict(part.params), overrides=part.overrides, local_index=index, caps=dict(part.caps), args=dict(part.params))
+    return _Item(type=part_type, variant=part.variant, mount=part.mount, params={**default.params, **part.params}, overrides={**default.overrides, **part.overrides}, local_index=index, caps=dict(part.caps), args=dict(part.params))
 
 
 def resolve(
@@ -448,6 +503,8 @@ def resolve(
                 mount=spec.mounts[mount_name],
                 params=dict(item.params),
                 overrides=dict(item.overrides),
+                caps=dict(item.caps),
+                args=dict(item.args),
             )
         )
 

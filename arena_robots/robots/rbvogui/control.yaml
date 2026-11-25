@@ -30,11 +30,6 @@ robotnik_base_controller:
       - robot_back_right_steering_joint
       - robot_back_left_steering_joint
 
-    wheel_radius: 0.1125
-    # wheel_base 0.76 m, track_width 0.4745 m, base_link at geometric center.
-    wheel_positions_x: [ 0.38,  0.38, -0.38, -0.38]
-    wheel_positions_y: [-0.23725, 0.23725, -0.23725, 0.23725]
-
     max_steering_angle: 2.8
     allow_reverse_drive: true
     cmd_vel_timeout: 0.5
@@ -42,5 +37,12 @@ robotnik_base_controller:
 
     publish_odom: true
     publish_tf: false
-    odom_frame_id: odom
-    base_frame_id: robot_base_footprint
+
+    linear.x.has_velocity_limits: true
+    linear.x.has_acceleration_limits: true
+
+    linear.y.has_velocity_limits: true
+    linear.y.has_acceleration_limits: true
+
+    angular.z.has_velocity_limits: true
+    angular.z.has_acceleration_limits: true

@@ -26,9 +26,9 @@
   <!-- source en.wikipedia.org/wiki/List_of_moments_of_inertia-->
   <link name="base_footprint">
     <inertial>
-      <mass value="140"/>
+      <mass value="86.4"/>
       <origin xyz="0 0 0"/>
-      <inertia ixx="7.8" ixy="0.0" ixz="0" iyy="7.8" iyz="0.0" izz="7.8"/>
+      <inertia ixx="4.8137143" ixy="0.0" ixz="0" iyy="4.8137143" iyz="0.0" izz="4.8137143"/>
     </inertial>
     <visual>
       <origin rpy="0 0 -1.571" xyz="0.0 0.0 0.0"/>
@@ -169,7 +169,7 @@
     <inertial>
       <mass value="1.2"/>
       <origin rpy="0 0 0" xyz="0 0 0"/>
-      <inertia ixx="0.11042056" ixy="0" ixz="0" iyy="0.11042056" iyz="0" izz="0.11042056"/>
+      <inertia ixx="0.003888" ixy="0" ixz="0" iyy="0.003888" iyz="0" izz="0.003888"/>
     </inertial>
     <visual>
       <origin rpy="0 0 3.14" xyz="0 0 0"/>
@@ -196,7 +196,7 @@
     <inertial>
       <mass value="1.2"/>
       <origin rpy="0 0 0" xyz="0 0 0"/>
-      <inertia ixx="0.11042056" ixy="0" ixz="0" iyy="0.11042056" iyz="0" izz="0.11042056"/>
+      <inertia ixx="0.003888" ixy="0" ixz="0" iyy="0.003888" iyz="0" izz="0.003888"/>
     </inertial>
     <visual>
       <origin rpy="0 0 3.14" xyz="0 0 0"/>
@@ -223,7 +223,7 @@
     <inertial>
       <mass value="1.2"/>
       <origin rpy="0 0 0" xyz="0 0 0"/>
-      <inertia ixx="0.11042056" ixy="0" ixz="0" iyy="0.11042056" iyz="0" izz="0.11042056"/>
+      <inertia ixx="0.003888" ixy="0" ixz="0" iyy="0.003888" iyz="0" izz="0.003888"/>
     </inertial>
     <visual>
       <origin rpy="0 0 3.14" xyz="0 0 0"/>
@@ -250,7 +250,7 @@
     <inertial>
       <mass value="1.2"/>
       <origin rpy="0 0 0" xyz="0 0 0"/>
-      <inertia ixx="0.11042056" ixy="0" ixz="0" iyy="0.11042056" iyz="0" izz="0.11042056"/>
+      <inertia ixx="0.003888" ixy="0" ixz="0" iyy="0.003888" iyz="0" izz="0.003888"/>
     </inertial>
     <visual>
       <origin rpy="0 0 3.14" xyz="0 0 0"/>

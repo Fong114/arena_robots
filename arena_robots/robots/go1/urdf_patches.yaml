@@ -1,0 +1,17 @@
+patches:
+  - link: FR_calf
+    inertia: from_collision
+    reason: the vendor calf inertia tensor has 5.9 times the trace of its box collision
+    source: the closed-form tensor of the link's box collision
+  - link: FL_calf
+    inertia: from_collision
+    reason: the vendor calf inertia tensor has 5.9 times the trace of its box collision
+    source: the closed-form tensor of the link's box collision
+  - link: RR_calf
+    inertia: from_collision
+    reason: the vendor calf inertia tensor has 5.9 times the trace of its box collision
+    source: the closed-form tensor of the link's box collision
+  - link: RL_calf
+    inertia: from_collision
+    reason: the vendor calf inertia tensor has 5.9 times the trace of its box collision
+    source: the closed-form tensor of the link's box collision

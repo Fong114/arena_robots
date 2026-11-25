@@ -1,0 +1,5 @@
+patches:
+  - link: rear_caster
+    inertia: from_collision
+    reason: the vendor rear caster inertia tensor has 250 times the trace of its sphere collision
+    source: the closed-form tensor of the link's sphere collision

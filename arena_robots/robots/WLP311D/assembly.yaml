@@ -1,4 +1,4 @@
-# caps/mobile.yaml's laser.angle (+-135deg) is narrower than the URDF's actual FOV
+# caps.yaml mobile laser.angle (+-135deg) is narrower than the URDF's actual FOV
 # (+-180deg, unoverridden macro default): known pre-existing drift, kept as-is.
 prefix: ""
 mounts:

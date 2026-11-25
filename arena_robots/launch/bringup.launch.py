@@ -1,16 +1,11 @@
 """Standalone robot bringup launch (no task_generator)."""
 
-from pathlib import Path
-
 from arena_rclpy_mixins.launch_argument import LaunchArgument
 from arena_robots.bringup import check_caps, BRINGUPS
+from arena_robots.request import InstanceRequest
 from arena_robots.Robot import RobotIdentifier
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, OpaqueFunction
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch_ros.actions import Node
-from launch_ros.substitutions import FindPackageShare
-from launch.substitutions import PathJoinSubstitution
+from launch.actions import OpaqueFunction
 
 
 def generate_launch_description():
@@ -35,27 +30,14 @@ def generate_launch_description():
         use_sim_time = use_sim_time_str.lower() in ('true', '1', 'yes')
 
         view = RobotIdentifier(name).resolve_sync()
-        bringup = BRINGUPS[cap].get(kind)(robot=view, namespace=ns)
+        bringup = BRINGUPS[cap].get(kind)(robot=view, namespace=ns, request=InstanceRequest())
         check_caps(bringup)
-
-        simulation_setup_root = FindPackageShare('arena_simulation_setup')
-        state_publisher = IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(
-                PathJoinSubstitution([simulation_setup_root, 'launch', 'state_publisher.launch.py'])
-            ),
-            launch_arguments={
-                'namespace': ns,
-                'robot': name,
-                'frame': frame,
-            }.items(),
-        )
 
         bringup_actions = bringup._launch_actions(use_sim_time=use_sim_time, frame=frame)
 
-        actions = [state_publisher, *bringup_actions]
+        actions = [*bringup_actions]
         actions.extend(bringup.telemetry_actions())
 
         return actions
 
     return LaunchDescription([*ld_items, OpaqueFunction(function=_compose)])
-

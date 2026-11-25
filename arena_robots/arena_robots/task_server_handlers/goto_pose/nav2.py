@@ -8,10 +8,11 @@ import tf2_ros
 from action_msgs.msg import GoalStatus
 from arena_robots_msgs.action import GotoPose
 from geometry_msgs.msg import PoseStamped, Quaternion, Twist
-from nav2_msgs.action import NavigateToPose
+from nav2_msgs.action import BackUp, DriveOnHeading, NavigateToPose
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.action import ActionClient
+from rclpy.duration import Duration
 
 from arena_robots.lockstep_beat import LockstepBeat
 from arena_robots.task_server_handlers import NativeGoals, TaskHandler, _await_within, _executor_sleep
@@ -36,6 +37,13 @@ _SETTLE_STEP_M = 0.001
 _SETTLE_STEP_RAD = 0.002
 _PRECISE_RESENDS = 5
 _NAV2_PREEMPT_TIMEOUT_SEC = 10.0
+_STRAIGHT_MIN_M = 0.02
+_STRAIGHT_MAX_M = 1.0
+_STRAIGHT_SPEED = 0.1
+_STRAIGHT_ALLOWANCE_FACTOR = 3.0
+_STRAIGHT_ALLOWANCE_EXTRA_S = 10.0
+_STRAIGHT_DEFAULT_TOLERANCE = 0.05
+_BEHAVIOR_WAIT_S = 1.0
 
 
 def _yaw(q: Quaternion) -> float:
@@ -56,10 +64,12 @@ class GotoPoseHandlerNav2(TaskHandler[GotoPose.Goal, GotoPose.Feedback, GotoPose
         self._tf_buffer = tf_buffer
         self._node = node
         self._native_client = ActionClient(node, NavigateToPose, bringup.native_action_name)
+        self._backup_client = ActionClient(node, BackUp, str(bringup.namespace("backup")))
+        self._drive_client = ActionClient(node, DriveOnHeading, str(bringup.namespace("drive_on_heading")))
         self._beat = LockstepBeat(node, "nav")
         self._beat_period: float | None = None
         self._nav2_goals = NativeGoals()
-        self._base_frame = bringup.frame + bringup.robot.model_params.base_frame
+        self._base_frame = bringup.frame + bringup.caps.body.base_frame
         self._checker_defaults: dict[str, float] | None = None
         node.create_subscription(Twist, str(bringup.namespace("cmd_vel_nav")), lambda _msg: self._beat.pulse(), 10)
 
@@ -100,13 +110,94 @@ class GotoPoseHandlerNav2(TaskHandler[GotoPose.Goal, GotoPose.Feedback, GotoPose
             await _executor_sleep(self._node, 0.1, wall=True)
 
         await self._beat.acquire(await self._controller_period())
-        restore = await self._tighten_checker(arena_goal)
         try:
-            return await self._dispatch(goal_handle, nav2_goal, result, precise=bool(restore))
+            along = self._straight_distance(arena_goal)
+            if along is not None:
+                straight = await self._drive_straight(goal_handle, along, result)
+                if straight is not None:
+                    return straight
+            restore = await self._tighten_checker(arena_goal)
+            try:
+                return await self._dispatch(goal_handle, nav2_goal, result, precise=bool(restore))
+            finally:
+                if restore:
+                    await self._set_parameters(restore)
         finally:
-            if restore:
-                await self._set_parameters(restore)
             await self._beat.release()
+
+    def _straight_distance(self, goal: GotoPose.Goal) -> float | None:
+        """The signed distance along the base heading when the goal is a short straight move within tolerance, else None."""
+        pose = self._base_pose()
+        if pose is None:
+            return None
+        target = goal.target.pose
+        dx = target.position.x - pose[0]
+        dy = target.position.y - pose[1]
+        along = dx * math.cos(pose[2]) + dy * math.sin(pose[2])
+        lateral = -dx * math.sin(pose[2]) + dy * math.cos(pose[2])
+        yaw = abs(math.remainder(_yaw(target.orientation) - pose[2], math.tau))
+        position_tolerance = goal.pose_tolerance if goal.pose_tolerance > 0.0 else _STRAIGHT_DEFAULT_TOLERANCE
+        yaw_tolerance = goal.yaw_tolerance if goal.yaw_tolerance > 0.0 else _STRAIGHT_DEFAULT_TOLERANCE
+        if _STRAIGHT_MIN_M < abs(along) <= _STRAIGHT_MAX_M and abs(lateral) <= position_tolerance and yaw <= yaw_tolerance:
+            return along
+        return None
+
+    async def _drive_straight(self, goal_handle: ServerGoalHandle, along: float, result: GotoPose.Result) -> GotoPose.Result | None:
+        """Drive `along` meters with the backup or drive_on_heading behavior, None when the behavior is unavailable or rejects the goal."""
+        distance = abs(along)
+        client, behavior_goal = (self._backup_client, BackUp.Goal()) if along < 0.0 else (self._drive_client, DriveOnHeading.Goal())
+        for _ in range(int(_BEHAVIOR_WAIT_S / 0.1)):
+            if client.server_is_ready():
+                break
+            await _executor_sleep(self._node, 0.1, wall=True)
+        else:
+            return None
+        behavior_goal.target.x = distance
+        behavior_goal.speed = _STRAIGHT_SPEED
+        behavior_goal.time_allowance = Duration(seconds=distance / _STRAIGHT_SPEED * _STRAIGHT_ALLOWANCE_FACTOR + _STRAIGHT_ALLOWANCE_EXTRA_S).to_msg()
+
+        def _on_feedback(fb_msg: BackUp.Impl.FeedbackMessage | DriveOnHeading.Impl.FeedbackMessage) -> None:
+            self._beat.pulse()
+            remaining = max(distance - fb_msg.feedback.distance_traveled, 0.0)
+            arena_fb = GotoPose.Feedback()
+            arena_fb.distance_remaining = remaining
+            arena_fb.eta_seconds = remaining / _STRAIGHT_SPEED
+            goal_handle.publish_feedback(arena_fb)
+
+        if not goal_handle.is_active:
+            result.status = GotoPose.Result.STATUS_CANCELED
+            result.reason = "goal preempted by new submit_task"
+            return result
+        if goal_handle.is_cancel_requested:
+            goal_handle.canceled()
+            result.status = GotoPose.Result.STATUS_CANCELED
+            result.reason = "goal canceled"
+            return result
+
+        await self._await_preempted(goal_handle)
+        behavior_handle = await client.send_goal_async(behavior_goal, feedback_callback=_on_feedback)
+        if behavior_handle is None or not behavior_handle.accepted:
+            return None
+
+        self._node.get_logger().info(f"straight move: {'backing up' if along < 0.0 else 'driving ahead'} {distance:.3f} m")
+        with self._nav2_goals.tracking(goal_handle, behavior_handle):
+            wrapped = await behavior_handle.get_result_async()
+
+        arena_status, arena_reason = _translate_nav2_status(wrapped.status)
+        if not goal_handle.is_active:
+            result.status = GotoPose.Result.STATUS_CANCELED
+            result.reason = "goal preempted by new submit_task"
+            return result
+        result.status = arena_status
+        result.reason = arena_reason
+        if arena_status == GotoPose.Result.STATUS_SUCCEEDED:
+            goal_handle.succeed()
+        elif arena_status == GotoPose.Result.STATUS_CANCELED and goal_handle.is_cancel_requested:
+            goal_handle.canceled()
+        else:
+            goal_handle.abort()
+            result.status = GotoPose.Result.STATUS_ABORTED
+        return result
 
     async def _service(self, srv_type: type, name: str) -> Client | None:
         """A ready controller_server parameter client, None after `_SERVICE_WAIT_S` s of wall time."""

@@ -41,8 +41,6 @@ ros2_control:
       command_interfaces: [position]
       state_interfaces: [position, velocity]
 
-# control params must stay in sync with robots/rbvogui_plus/control.yaml's arm_controller
-# section (maintained there, not derived from this component).
 control:
   controller: "${mount}_controller"
   type: joint_trajectory_controller/JointTrajectoryController
@@ -59,18 +57,8 @@ control:
     state_publish_rate: 50.0
     action_monitor_rate: 20.0
 
-# workspace/named_poses must stay in sync with robots/rbvogui_plus/caps/arm.yaml
-# (maintained there, not derived from this component).
 caps:
   base_link: "${prefix}${parent}"
-  tip_link: "${prefix}${mount}_tool0"
-  chain:
-    - "${prefix}${mount}_shoulder_pan_joint"
-    - "${prefix}${mount}_shoulder_lift_joint"
-    - "${prefix}${mount}_elbow_joint"
-    - "${prefix}${mount}_wrist_1_joint"
-    - "${prefix}${mount}_wrist_2_joint"
-    - "${prefix}${mount}_wrist_3_joint"
   controller: "${mount}_controller"
   moveit:
     package: ur_moveit_config
@@ -80,7 +68,7 @@ caps:
       path: components/arm/ur/srdf/ur.srdf.xacro
     joint_limits:
       package: arena_robots
-      path: components/arm/ur/joint_limits/${variant}.yaml
+      path: components/arm/ur/joint_limits.yaml
     args:
       ur_type: "${variant}"
       prefix: "${prefix}"
@@ -93,22 +81,6 @@ caps:
     min: [0.2, -0.5, 0.2]
     max: [0.7, 0.5, 1.0]
   named_poses:
-    stow:
-      joints:
-        "${prefix}${mount}_shoulder_pan_joint": 0.0
-        "${prefix}${mount}_shoulder_lift_joint": -1.57
-        "${prefix}${mount}_elbow_joint": 1.57
-        "${prefix}${mount}_wrist_1_joint": -1.57
-        "${prefix}${mount}_wrist_2_joint": -1.57
-        "${prefix}${mount}_wrist_3_joint": 0.0
-    ready:
-      joints:
-        "${prefix}${mount}_shoulder_pan_joint": 0.0
-        "${prefix}${mount}_shoulder_lift_joint": -1.0
-        "${prefix}${mount}_elbow_joint": 1.0
-        "${prefix}${mount}_wrist_1_joint": -1.5
-        "${prefix}${mount}_wrist_2_joint": -1.57
-        "${prefix}${mount}_wrist_3_joint": 0.0
     wave_up:
       joints:
         "${prefix}${mount}_shoulder_pan_joint": 0.0

@@ -24,11 +24,10 @@ class TestPublicSuffix:
 
         assert PUBLIC_SUFFIX[TaskKind.GOTO_POSE] == "goto_pose"
 
-    def test_all_kinds_have_suffix(self):
+    def test_every_kind_but_grasp_has_a_public_endpoint(self):
         from arena_robots.task_kinds import PUBLIC_SUFFIX, TaskKind
 
-        for kind in TaskKind:
-            assert kind in PUBLIC_SUFFIX
+        assert set(PUBLIC_SUFFIX) == set(TaskKind) - {TaskKind.GRASP}
 
 
 class TestActionType:
@@ -68,3 +67,18 @@ class TestEndpoint:
 
         ep = endpoint("/", TaskKind.GOTO_POSE)
         assert "goto_pose" in ep
+
+
+class TestGrasp:
+    def test_grasp_is_served_by_the_gripper_cap(self):
+        from arena_robots.task_kinds import TaskKind, cap_for_task_kind
+
+        assert TaskKind.GRASP.value == "grasp"
+        assert cap_for_task_kind(TaskKind.GRASP) == "gripper"
+
+    def test_grasp_runs_on_the_gripper_controller_action(self):
+        from control_msgs.action import GripperCommand
+
+        from arena_robots.task_kinds import TaskKind, action_type
+
+        assert action_type(TaskKind.GRASP) is GripperCommand

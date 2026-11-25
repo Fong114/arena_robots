@@ -20,7 +20,11 @@ ROSNAV_RL_SIDECAR = Path(__file__).resolve().parents[2] / "config" / "nav2" / "c
 def _make_mock_robot(name: str = "test_robot") -> object:
     mock_robot = MagicMock()
     mock_robot.name = name
-    mock_robot.caps.mobile.min_turning_radius = 0.0
+    caps = mock_robot.effective_caps.return_value
+    caps.mobile.min_turning_radius = 0.0
+    caps.laser_block.return_value = {"angle": {"min": -3.14159, "max": 3.14159, "increment": 0.0098}, "num_beams": 640, "range": 12.0, "update_rate": 10.0}
+    caps.mobile.raw = {}
+    caps.rendered_urdf.return_value = '<robot name="test_robot"><link name="base_link"/></robot>'
     return mock_robot
 
 
@@ -142,7 +146,7 @@ class TestNav2RosnavRlAgent:
         from arena_robots.bringup.mobile.nav2 import Nav2Bringup
         from arena_robots.Robot import RobotView
 
-        rd = temp_robot_dir(model_params={"base_frame": "base_link"}, mobile_cap=mobile_cap, name="myrobot")
+        rd = temp_robot_dir(model_params={"base_frame": "base_link"}, mobile_cap=mobile_cap, name="myrobot", urdf=True)
         return Nav2Bringup(robot=RobotView(rd), namespace="/robot1")
 
     def test_agent_kwarg_forwarded(self, temp_robot_dir: Callable[..., Path]) -> None:

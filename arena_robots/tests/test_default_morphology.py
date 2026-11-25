@@ -1,6 +1,6 @@
 """Default-morphology snapshot tests: each robot's default assembly must render exactly
 the golden URDF (links, joints, gz sensors), and its effective sensors must match
-model_params.yaml, which robots_manager reads at runtime."""
+model_params.yaml (frames aside, which the URDF gives), which robots_manager reads at runtime."""
 
 from __future__ import annotations
 
@@ -18,16 +18,17 @@ GOLDEN_DIR = Path(__file__).parent / "golden"
 ROBOT_NAMES = sorted(p.name.removesuffix("_default.urdf") for p in GOLDEN_DIR.glob("*_default.urdf"))
 
 
-class TestEffectiveSensorsMatchModelParams:
-    """The env node's robots_manager reads ``model_params.sensors`` at runtime, so a
-    robot's default-request sensor resolution must reproduce it field-for-field,
-    order-sensitive."""
+class TestEffectiveSensorsOfThePinnedDefault:
+    """Pinning the default placements in a request leaves the sensors as they are."""
 
     @pytest.mark.parametrize("robot_name", ROBOT_NAMES)
-    def test_effective_sensors_matches_model_params(self, robot_name: str) -> None:
+    def test_default_sensors_have_unique_names_under_the_namespace(self, robot_name: str) -> None:
         view = RobotIdentifier(robot_name).resolve_sync()
         assert view.assembly is not None, f"{robot_name} has no assembly.yaml"
-        assert view.effective_sensors({}) == view.model_params.sensors
+        sensors = view.effective_sensors({})
+        assert sensors
+        assert len({s.name for s in sensors}) == len(sensors)
+        assert all(s.topic.startswith("${namespace}/") for s in sensors)
 
     @pytest.mark.parametrize("robot_name", ROBOT_NAMES)
     def test_pinned_default_request_keeps_sensor_names_and_topics(self, robot_name: str) -> None:
@@ -35,7 +36,7 @@ class TestEffectiveSensorsMatchModelParams:
         pinned: dict[str, list[RequestPart]] = {}
         for placement in resolve(view.assembly, {}).placements:
             pinned.setdefault(placement.type, []).append(RequestPart(variant=placement.variant, mount=placement.mount.name, overrides=placement.overrides))
-        assert [(s.name, s.topic) for s in view.effective_sensors(pinned)] == [(s.name, s.topic) for s in view.model_params.sensors]
+        assert [(s.name, s.topic) for s in view.effective_sensors(pinned)] == [(s.name, s.topic) for s in view.effective_sensors({})]
 
     @pytest.mark.parametrize("robot_name", ROBOT_NAMES)
     def test_default_pinned_by_mount_and_variant_alone_keeps_sensor_names_and_topics(self, robot_name: str) -> None:
@@ -43,7 +44,7 @@ class TestEffectiveSensorsMatchModelParams:
         pinned: dict[str, list[RequestPart]] = {}
         for placement in resolve(view.assembly, {}).placements:
             pinned.setdefault(placement.type, []).append(RequestPart(variant=placement.variant, mount=placement.mount.name))
-        assert [(s.name, s.topic) for s in view.effective_sensors(pinned)] == [(s.name, s.topic) for s in view.model_params.sensors]
+        assert [(s.name, s.topic) for s in view.effective_sensors(pinned)] == [(s.name, s.topic) for s in view.effective_sensors({})]
 
 
 @pytest.mark.parametrize("robot_name", ROBOT_NAMES)

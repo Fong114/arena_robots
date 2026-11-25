@@ -26,9 +26,9 @@
   <!-- BASE_LINK -->
   <link name="${prefix}base_link">
     <inertial>
-      <mass value="125.0" />
+      <mass value="89.0" />
       <origin xyz="0 0 0" />
-      <inertia  ixx="1.391" ixy="0.004"  ixz="0.0"  iyy="6.853"  iyz="0.0"  izz="6.125" />
+      <inertia  ixx="0.990392" ixy="0.002848"  ixz="0.0"  iyy="4.879336"  iyz="0.0"  izz="4.361" />
     </inertial>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />

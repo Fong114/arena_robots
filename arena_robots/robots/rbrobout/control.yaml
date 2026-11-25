@@ -25,16 +25,11 @@ rbrobout_velocity_controller:
     rear_right_wheel_command_joint_name: robot_back_right_wheel_joint
 
     kinematics.base_frame_offset: { x: 0.0, y: 0.0, theta: 0.0 }
-    kinematics.wheels_radius: 0.127
-    # half-wheelbase (0.558) + half-track (0.2865), per rbrobout_base.urdf.xacro
-    kinematics.sum_of_robot_center_projection_on_X_Y_axis: 0.8445
 
     publish_rate: 50.0
     reference_timeout: 0.5
     use_stamped_vel: false
 
-    base_frame_id: robot_base_footprint
-    odom_frame_id: odom
     enable_odom_tf: false
 
     pose_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
@@ -44,21 +39,9 @@ rbrobout_velocity_controller:
 
     linear.x.has_velocity_limits: true
     linear.x.has_acceleration_limits: true
-    linear.x.max_velocity: 2.0
-    linear.x.min_velocity: -2.0
-    linear.x.max_acceleration: 10.0
-    linear.x.min_acceleration: -10.0
 
     linear.y.has_velocity_limits: true
     linear.y.has_acceleration_limits: true
-    linear.y.max_velocity: 2.0
-    linear.y.min_velocity: -2.0
-    linear.y.max_acceleration: 10.0
-    linear.y.min_acceleration: -10.0
 
     angular.z.has_velocity_limits: true
     angular.z.has_acceleration_limits: true
-    angular.z.max_velocity: 4.0
-    angular.z.min_velocity: -4.0
-    angular.z.max_acceleration: 20.0
-    angular.z.min_acceleration: -20.0

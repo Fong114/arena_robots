@@ -15,23 +15,10 @@ def gripper_topic(namespace: str, instance: str, leaf: str = "command") -> str:
     return f"{namespace.rstrip('/')}/gripper/{instance}/{leaf}"
 
 
-def lift_limits(spec: LiftSpec) -> tuple[float, float] | None:
-    """Joint range from the `limits: [lower, upper]` entry of the lift instance, None when undeclared."""
-    raw = spec.raw.get("limits")
-    if raw is None:
-        return None
-    if not isinstance(raw, list | tuple) or len(raw) != 2:
-        raise ValueError(f"{spec.path}: lift '{spec.name}' limits must be [lower, upper]; got {raw!r}")
-    lower, upper = float(raw[0]), float(raw[1])
-    if not lower <= upper:
-        raise ValueError(f"{spec.path}: lift '{spec.name}' limits lower {lower} exceeds upper {upper}")
-    return lower, upper
-
-
 def clamp_lift(spec: LiftSpec, height: float) -> float:
     if not math.isfinite(height):
         raise ValueError(f"lift height must be finite; got {height}")
-    limits = lift_limits(spec)
+    limits = spec.limits
     if limits is None:
         return height
     return min(max(height, limits[0]), limits[1])
