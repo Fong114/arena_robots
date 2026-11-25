@@ -24,6 +24,16 @@
     <joint name="arm_7_joint" value="0.0"/>
   </group_state>
 
+  <group_state name="carry" group="arm">
+    <joint name="arm_1_joint" value="0.1"/>
+    <joint name="arm_2_joint" value="0.9"/>
+    <joint name="arm_3_joint" value="-2.39"/>
+    <joint name="arm_4_joint" value="1.15"/>
+    <joint name="arm_5_joint" value="0.24"/>
+    <joint name="arm_6_joint" value="-0.93"/>
+    <joint name="arm_7_joint" value="-1.08"/>
+  </group_state>
+
   <group name="gripper">
     <link name="gripper_link"/>
     <link name="gripper_left_finger_link"/>

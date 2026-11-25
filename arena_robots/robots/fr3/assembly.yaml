@@ -1,0 +1,35 @@
+prefix: ""
+mounts:
+  arm_mount:
+    parent: arm_base_link
+    xyz: [0, 0, 0]
+    rpy: [0, 0, 0]
+    accepts: [arm]
+    frame: arm
+  gripper_mount:
+    parent: "@arm_mount:tip"
+    xyz: [0, 0, 0]
+    rpy: [0, 0, 0]
+    accepts: [gripper]
+    frame: gripper
+  wrist_cam:
+    parent: "@arm_mount:tip"
+    xyz: [0.0, 0.04, 0.05]
+    rpy: [0, 0, 0]
+    accepts: [camera]
+  base_front:
+    parent: arm_base_link
+    xyz: [0.0, 0.0, 0.2]
+    rpy: [0, 0, 0]
+    accepts: [lidar]
+    frame: lidar
+defaults:
+  arm:
+    - variant: fr3
+      mount: arm_mount
+  gripper:
+    - variant: franka_hand
+      mount: gripper_mount
+  lidar:
+    - variant: arena_default
+      mount: base_front

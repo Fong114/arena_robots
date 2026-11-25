@@ -81,7 +81,7 @@ def test_arm_robot_definition_lists_named_poses_gestures_and_arm_endpoints():
 @pytest.mark.parametrize("model", [_model_param(model) for model in sorted(path.parent.name for path in [*ROBOTS_DIR.glob("*/model_params.yaml"), *ROBOTS_DIR.glob("*/preset.yaml")])])
 def test_every_model_resolves_to_a_json_definition(model):
     definition = mcp.robots_definition(model)
-    assert definition["model"] == model and "mobile" in definition["caps"]
+    assert definition["model"] == model and definition["caps"]
     json.dumps(definition, allow_nan=False)
     bringup_errors = {cap: {kind: entry["error"] for kind, entry in kinds.items() if "error" in entry} for cap, kinds in definition["actions"]["bringups"].items()}
     assert all(not errors for errors in bringup_errors.values()), bringup_errors
@@ -106,7 +106,7 @@ def test_definition_findings_flag_a_broken_robot(tmp_path):
     findings = mcp._definition_findings(RobotView(robot))
     by_check = {(finding["check"], finding["severity"]) for finding in findings}
     assert ("model_params", "warning") in by_check
-    assert ("caps", "error") in by_check
+    assert ("caps", "info") in by_check
     messages = " ".join(finding["message"] for finding in findings)
     assert "'sonar'" in messages and "${namespace}" in messages
     assert "no controllers" in messages

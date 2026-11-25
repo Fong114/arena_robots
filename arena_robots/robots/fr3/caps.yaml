@@ -1,0 +1,25 @@
+mobile:
+  odom_frame: odom
+  drive: false
+
+  velocity_limits:
+    linear: [0.0, 0.0]
+    angular: [0.0, 0.0]
+
+  acceleration_limits:
+    linear: 0.0
+    angular: 0.0
+
+  planar:
+    velocity: {linear: [0.0, 0.0], lateral: [0.0, 0.0], angular: [0.0, 0.0]}
+    acceleration: {linear: 0.0, lateral: 0.0, angular: 0.0}
+    gain: {linear: 1.0, lateral: 1.0, angular: 1.0}
+    lag: 0.0
+    traction: 0.0
+    timeout: 0.25
+
+  actions:
+    discrete:
+      - angular: 0.0
+        linear: 0.0
+        name: stop

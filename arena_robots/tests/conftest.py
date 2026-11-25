@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import configparser
+import functools
 from collections.abc import Callable
 from pathlib import Path
 
@@ -93,3 +94,20 @@ def _requires_installed(request: pytest.FixtureRequest, require_installed: Calla
     for marker in request.node.iter_markers("requires_installed"):
         for name in marker.args:
             require_installed(name)
+    if "model" in request.fixturenames and isinstance(model := request.getfixturevalue("model"), str):
+        for name in _placed_arms_and_grippers(model):
+            require_installed(name)
+
+
+@functools.cache
+def _placed_arms_and_grippers(model: str) -> tuple[str, ...]:
+    """Arm and gripper components the default assembly of a shipped robot places, whose vendor descriptions its URDF renders."""
+    from arena_robots.Robot import RobotView
+
+    robot_dir = _REPO / "arena_robots" / "robots" / model
+    if not robot_dir.is_dir():
+        return ()
+    spec = RobotView(robot_dir).assembly
+    if spec is None:
+        return ()
+    return tuple(f"{kind}/{part.variant}" for kind, parts in spec.defaults.items() if kind in ("arm", "gripper") for part in parts)

@@ -10,7 +10,7 @@ files, and the `arena feature robots` CLI all look robots up by this name.
 <robot>/
 ├── model_params.yaml    # robot-wide identity (robot_model, base_frame, z_offset, control)
 ├── control.yaml         # ros2_control configuration
-└── caps.yaml            # capabilities and robot facts, the `mobile` section is required
+└── caps.yaml            # capabilities and robot facts, a robot without a `mobile` section is immobile
 ```
 
 ### `model_params.yaml`
@@ -99,6 +99,7 @@ planner config. `arm`, `lift` and `gripper` are always a dict of named instances
 mobile:                       # required, flat
   source: https://...         # optional, the document the section's values come from, in every section
   odom_frame: odom
+  drive: true                 # optional, default true, false for a base that only seats the robot
   min_turning_radius: 0.0     # optional, m, default 0.0 (turns in place)
   climbs: [stairs]            # optional, default []
 
@@ -346,7 +347,7 @@ A value is written once, by its owner. The URDF (after `urdf_patches.yaml`) is t
 | CHAMP gait speeds | `mobile.limits` velocity bounds, the rest of the gait in `champ/gait.yaml` | the CHAMP bringup's `gait_config`, written per instance by `champ.served_champ_files` |
 | CHAMP joint and link maps | the URDF: the four leg chains below the base frame, classified by their hip joint origins | the CHAMP bringup's `joints_map` and `links_map`, written per instance by `champ.served_champ_files` |
 | Footprint and radius (`mobile.footprint`, `mobile.radius`) | the URDF collision geometry | the convex ground outline of the base (`body.outline`) and the circumradius of the effective footprint, provenance `urdf`, overridable per instance, never authored in the `mobile` section (`footprint_padding` stays authored) |
-| Holonomy (`mobile.is_holonomic`) | the drive controller of `control.yaml` and `champ/gait.yaml` | true for a mecanum, swerve or omni drive controller or a CHAMP gait, false for diff drive, provenance `derived`, overridable per instance |
+| Holonomy (`mobile.is_holonomic`) | the drive controller of `control.yaml` and `champ/gait.yaml` | true for a mecanum, swerve or omni drive controller or a CHAMP gait, false for diff drive or a base with `drive: false`, provenance `derived`, overridable per instance |
 | Lift range (`lift.<name>.limits`), gripper effort (`gripper.<name>.max_effort`) | the lift or gripper joint's URDF `<limit>` | the direct adapters, authored only where a deliberate value differs from the URDF |
 | Lidar geometry (`mobile.laser`) | the lidar component's xacro arguments (a bracket on the part) or the URDF | read from the scan sensor of the rendered URDF on the primary lidar (the first `laserscan` sensor), never authored in the `mobile` section |
 | Arm chain links, chain joints and poses (`arm.<mount>.tip_link`, `chain`, `named_poses`, and `base_link` where the SRDF chain starts at the mount) | the SRDF group of the arm's `moveit.planning_group`: its `<chain>` links, its `group_state`s, and the non-fixed URDF joints between those links, provenance `derived`, `base_link`, other poses (`wave_*`) and the workspace stay authored | the arm adapters and task handlers, overridable per instance |
@@ -533,8 +534,9 @@ their URDFs reference `package://jackal_description/…` etc., supplied by
 
 1. `mkdir -p arena_robots/arena_robots/robots/<name>/caps`
 2. Write `model_params.yaml` (minimal identity), `control.yaml`.
-3. Write `caps.yaml` with a `mobile` section (every robot has a mobile base). Add `arm`
-   and/or `lift` sections if the robot has those subsystems.
+3. Write `caps.yaml` with a `mobile` section if the robot has a base (`drive: false` for one that
+   only seats it, such as `fr3`), a robot without one is immobile. Add `arm` and/or `lift` sections
+   if the robot has those subsystems.
 4. (Optional) add `urdf/<name>.urdf.xacro` and/or a `meshes/` submodule.
    For component-catalog sensors, add `assembly.yaml` + a golden (see "Moving a
    robot's sensors to the component catalog" above).

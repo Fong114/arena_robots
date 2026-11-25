@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<robot name="fr3" xmlns:xacro="http://wiki.ros.org/xacro">
+
+  <xacro:include filename="$(find arena_robots)/robots/fr3/urdf/base_hw/fr3.ros2_control.urdf" />
+  <xacro:include filename="$(find arena_robots)/robots/fr3/urdf/fr3.gazebo" />
+
+  <xacro:arg name="namespace" default="robot"/>
+  <xacro:arg name="prefix" default=""/>
+  <xacro:arg name="gazebo_classic" default="false"/>
+  <xacro:arg name="gazebo_ignition" default="true"/>
+  <xacro:arg name="gazebo_controllers" default=""/>
+  <xacro:arg name="sim_path" default=""/>
+
+  <xacro:property name="pedestal_x" value="0.3"/>
+  <xacro:property name="pedestal_y" value="0.3"/>
+  <xacro:property name="pedestal_z" value="0.7"/>
+  <xacro:property name="pedestal_mass" value="80.0"/>
+
+  <link name="$(arg prefix)base_link">
+    <visual>
+      <origin xyz="0 0 ${pedestal_z / 2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${pedestal_x} ${pedestal_y} ${pedestal_z}"/>
+      </geometry>
+      <material name="fr3_pedestal">
+        <color rgba="0.35 0.35 0.38 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${pedestal_z / 2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${pedestal_x} ${pedestal_y} ${pedestal_z}"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 ${pedestal_z / 2}" rpy="0 0 0"/>
+      <mass value="${pedestal_mass}"/>
+      <inertia
+        ixx="${pedestal_mass * (pedestal_y * pedestal_y + pedestal_z * pedestal_z) / 12}" ixy="0" ixz="0"
+        iyy="${pedestal_mass * (pedestal_x * pedestal_x + pedestal_z * pedestal_z) / 12}" iyz="0"
+        izz="${pedestal_mass * (pedestal_x * pedestal_x + pedestal_y * pedestal_y) / 12}"/>
+    </inertial>
+  </link>
+
+  <link name="$(arg prefix)arm_base_link"/>
+
+  <joint name="$(arg prefix)arm_base_joint" type="fixed">
+    <parent link="$(arg prefix)base_link"/>
+    <child link="$(arg prefix)arm_base_link"/>
+    <origin xyz="0 0 ${pedestal_z}" rpy="0 0 0"/>
+  </joint>
+
+  <xacro:fr3_base_hw_controller/>
+
+</robot>

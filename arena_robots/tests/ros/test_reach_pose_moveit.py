@@ -32,6 +32,7 @@ _ARM_ENTRY: dict = {
     "chain": ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"],
     "controller": "arm_controller",
     "moveit": {"package": "ur_moveit_config", "planning_group": "ur_manipulator"},
+    "named_poses": {"ready": {"joints": {"elbow_joint": 0.5}}},
 }
 
 
@@ -105,11 +106,11 @@ def _run(client: ActionClient, goal: ReachPose.Goal):
 
 
 class TestBuildGoalMotion:
-    def test_default_goal_uses_the_default_pipeline_at_full_speed(self, rig) -> None:
+    def test_default_pose_goal_moves_point_to_point_at_full_speed(self, rig) -> None:
         handler, _, arm = rig
         request = handler._build_goal(_goal(), arm).request
-        assert request.pipeline_id == ""
-        assert request.planner_id == ""
+        assert request.pipeline_id == "pilz_industrial_motion_planner"
+        assert request.planner_id == "PTP"
         assert request.max_velocity_scaling_factor == 1.0
         assert request.max_acceleration_scaling_factor == 1.0
 
@@ -119,10 +120,16 @@ class TestBuildGoalMotion:
         assert request.pipeline_id == "pilz_industrial_motion_planner"
         assert request.planner_id == "LIN"
 
-    def test_free_goal_keeps_the_default_pipeline(self, rig) -> None:
+    def test_free_pose_goal_moves_point_to_point(self, rig) -> None:
         handler, _, arm = rig
         request = handler._build_goal(_goal(motion="free"), arm).request
-        assert request.pipeline_id == ""
+        assert (request.pipeline_id, request.planner_id) == ("pilz_industrial_motion_planner", "PTP")
+
+    def test_named_goal_keeps_the_default_pipeline(self, rig, tmp_path: Path) -> None:
+        handler, _, _ = rig
+        arm = ArmSpec(path=tmp_path, raw={**_ARM_ENTRY, "named_poses": {"ready": {"joints": {"elbow_joint": 0.5}}}}, name="arm")
+        request = handler._build_goal(_goal(named_target="ready"), arm).request
+        assert (request.pipeline_id, request.planner_id) == ("", "")
 
     def test_speed_scales_velocity_and_acceleration(self, rig) -> None:
         handler, _, arm = rig
@@ -376,11 +383,39 @@ class TestGuardStep:
         assert _guard_step(guard, _state(0.0, 0.0, 0.0, position=math.nan)).startswith("arm state not finite: joint arm_2_joint")
 
 
+def test_an_arm_settles_once_every_joint_reaches_its_reference() -> None:
+    import rclpy.task
+
+    from arena_robots.task_server_handlers.reach_pose.moveit import _Settle, _settle_step
+
+    settle = _Settle(done=rclpy.task.Future())
+    assert [_settle_step(settle, _state(t / 10, 0.3 / (t + 1), 0.5)) for t in range(3)] == [None, None, None]
+    assert _settle_step(settle, _state(0.3, 0.005, 0.0)) is True
+
+
+def test_an_arm_short_of_its_reference_past_the_settle_time_has_not_settled() -> None:
+    import rclpy.task
+
+    from arena_robots.task_server_handlers.reach_pose.moveit import _SETTLE_TIME_S, _Settle, _settle_step
+
+    settle = _Settle(done=rclpy.task.Future())
+    assert _settle_step(settle, _state(1.0, 0.08, 0.0)) is None
+    assert _settle_step(settle, _state(1.0 + _SETTLE_TIME_S, 0.08, 0.0)) is False
+    assert settle.worst == (pytest.approx(0.08), "arm_2_joint")
+
+
+def _limited_urdf(chain: list[str]) -> str:
+    links = ["base", *(f"link_{i}" for i in range(1, len(chain))), "tool0"]
+    joints = "".join(f'<joint name="{joint}" type="revolute"><parent link="{links[i]}"/><child link="{links[i + 1]}"/><limit lower="-1.0" upper="1.0" effort="1" velocity="1"/></joint>' for i, joint in enumerate(chain))
+    return '<robot name="r">' + "".join(f'<link name="{link}"/>' for link in links) + joints + "</robot>"
+
+
 class _FakeMoveIt:
-    """move_group's parameter, plan and execute endpoints, execution ending only on a trajectory_execution_event stop."""
+    """move_group's parameter, IK, plan and execute endpoints, execution ending only on a trajectory_execution_event stop."""
 
     def __init__(self, node, bringup, group) -> None:
         from moveit_msgs.action import ExecuteTrajectory, MoveGroup
+        from moveit_msgs.srv import GetPositionIK
         from rcl_interfaces.msg import ParameterType, ParameterValue
         from rcl_interfaces.srv import GetParameters
         from std_msgs.msg import String
@@ -388,14 +423,48 @@ class _FakeMoveIt:
         ns = bringup.arm_namespace("arm")
         self.executing = False
         self.events: list[str] = []
+        self.refuse_lin = False
+        self.refuse_lin_once = False
+        self.refuse_ptp = False
+        self.pipelines: list[str] = []
+        self.scalings: list[tuple[float, float]] = []
+        self.goals: list[list] = []
+        self.urdf = '<robot name="r"><link name="tool0"/></robot>'
+        self.ik = None
+        self.ik_seeds: list[dict[str, float]] = []
 
         def on_parameters(_request, response):
-            response.values = [ParameterValue(type=ParameterType.PARAMETER_STRING, string_value='<robot name="r"><link name="tool0"/></robot>')]
+            response.values = [ParameterValue(type=ParameterType.PARAMETER_STRING, string_value=self.urdf)]
+            return response
+
+        def on_ik(request, response):
+            state = request.ik_request.robot_state.joint_state
+            seed = dict(zip(state.name, state.position, strict=True))
+            self.ik_seeds.append(seed)
+            solution = None if self.ik is None else self.ik(seed)
+            if solution is None:
+                response.error_code.val = -31
+                return response
+            response.solution.joint_state.name = list(_ARM_ENTRY["chain"])
+            response.solution.joint_state.position = solution
+            response.error_code.val = 1
             return response
 
         def on_plan(goal_handle):
-            goal_handle.succeed()
             result = MoveGroup.Result()
+            self.pipelines.append(f"{goal_handle.request.request.pipeline_id}/{goal_handle.request.request.planner_id}")
+            self.scalings.append((goal_handle.request.request.max_velocity_scaling_factor, goal_handle.request.request.max_acceleration_scaling_factor))
+            self.goals.append(list(goal_handle.request.request.goal_constraints))
+            if goal_handle.request.request.planner_id == "PTP" and self.refuse_ptp:
+                goal_handle.abort()
+                result.error_code.val = -31
+                return result
+            if goal_handle.request.request.planner_id == "LIN" and (self.refuse_lin or self.refuse_lin_once):
+                self.refuse_lin_once = False
+                goal_handle.abort()
+                result.error_code.val = 99999
+                return result
+            goal_handle.succeed()
             result.error_code.val = 1
             return result
 
@@ -411,6 +480,7 @@ class _FakeMoveIt:
             return result
 
         node.create_service(GetParameters, str(ns("move_group", "get_parameters")), on_parameters, callback_group=group)
+        node.create_service(GetPositionIK, str(ns("compute_ik")), on_ik, callback_group=group)
         node.create_subscription(String, str(ns("trajectory_execution_event")), lambda msg: self.events.append(msg.data), 10, callback_group=group)
         self._servers = [
             ActionServer(node, MoveGroup, str(ns("move_action")), execute_callback=on_plan, callback_group=group),
@@ -467,3 +537,116 @@ class TestCancelDuringExecution:
         result = _wait(handle.get_result_async()).result
         assert moveit.events == ["stop"]
         assert result.status == ReachPose.Result.STATUS_CANCELED
+
+
+def _executed_goal(client, moveit, goal) -> list:
+    handle = _wait(client.send_goal_async(goal))
+    assert handle.accepted
+    deadline = time.monotonic() + 30.0
+    while not moveit.executing:
+        assert time.monotonic() < deadline, "execution never started"
+        time.sleep(0.02)
+    _wait(handle.cancel_goal_async())
+    assert _wait(handle.get_result_async()).result.status == ReachPose.Result.STATUS_CANCELED
+    return moveit.goals[-1]
+
+
+class TestSeededReach:
+    def test_a_free_reach_near_a_joint_limit_from_the_current_joints_moves_to_the_solution_a_named_pose_seeds(self, moveit_rig) -> None:
+        client, moveit = moveit_rig
+        moveit.urdf = _limited_urdf(_ARM_ENTRY["chain"])
+        moveit.ik = lambda seed: [0.0] * 6 if seed.get("elbow_joint") == 0.5 else [0.9] * 6
+        (goal,) = _executed_goal(client, moveit, _goal(motion="free"))
+        assert moveit.pipelines[-1] == "pilz_industrial_motion_planner/PTP"
+        assert moveit.ik_seeds == [{}, {"elbow_joint": 0.5}]
+        assert [(c.joint_name, c.position) for c in goal.joint_constraints] == [(joint, 0.0) for joint in _ARM_ENTRY["chain"]]
+        assert not goal.position_constraints
+
+    def test_a_free_reach_clear_of_the_joint_limits_from_the_current_joints_keeps_that_solution(self, moveit_rig) -> None:
+        client, moveit = moveit_rig
+        moveit.urdf = _limited_urdf(_ARM_ENTRY["chain"])
+        moveit.ik = lambda seed: [0.0] * 6 if seed else [0.2] * 6
+        (goal,) = _executed_goal(client, moveit, _goal(motion="free"))
+        assert moveit.ik_seeds == [{}]
+        assert [c.position for c in goal.joint_constraints] == [0.2] * 6
+
+    def test_a_free_reach_no_seed_solves_keeps_its_pose_goal(self, moveit_rig) -> None:
+        client, moveit = moveit_rig
+        (goal,) = _executed_goal(client, moveit, _goal(motion="free"))
+        assert moveit.ik_seeds == [{}, {"elbow_joint": 0.5}]
+        assert goal.position_constraints
+        assert not goal.joint_constraints
+
+    def test_a_linear_reach_solves_no_ik(self, moveit_rig) -> None:
+        client, moveit = moveit_rig
+        moveit.ik = lambda _seed: [0.0] * 6
+        (goal,) = _executed_goal(client, moveit, _goal(motion="linear"))
+        assert moveit.ik_seeds == []
+        assert goal.position_constraints
+
+
+class TestLinearFallback:
+    def test_a_linear_reach_the_lin_planner_refuses_moves_point_to_point(self, moveit_rig) -> None:
+        client, moveit = moveit_rig
+        moveit.refuse_lin = True
+        handle = _wait(client.send_goal_async(_goal(motion="linear")))
+        assert handle.accepted
+        deadline = time.monotonic() + 30.0
+        while not moveit.executing:
+            assert time.monotonic() < deadline, "execution never started"
+            time.sleep(0.02)
+        _wait(handle.cancel_goal_async())
+        assert _wait(handle.get_result_async()).result.status == ReachPose.Result.STATUS_CANCELED
+
+    def test_a_linear_reach_the_lin_planner_refuses_once_still_executes(self, moveit_rig) -> None:
+        client, moveit = moveit_rig
+        moveit.refuse_lin_once = True
+        handle = _wait(client.send_goal_async(_goal(motion="linear")))
+        assert handle.accepted
+        deadline = time.monotonic() + 30.0
+        while not moveit.executing:
+            assert time.monotonic() < deadline, "execution never started"
+            time.sleep(0.02)
+        _wait(handle.cancel_goal_async())
+        assert _wait(handle.get_result_async()).result.status == ReachPose.Result.STATUS_CANCELED
+
+    def test_each_straight_retry_halves_the_speed_and_the_point_to_point_fallback_restores_it(self, moveit_rig) -> None:
+        client, moveit = moveit_rig
+        moveit.refuse_lin = True
+        handle = _wait(client.send_goal_async(_goal(motion="linear")))
+        assert handle.accepted
+        deadline = time.monotonic() + 30.0
+        while not moveit.executing:
+            assert time.monotonic() < deadline, "execution never started"
+            time.sleep(0.02)
+        assert moveit.pipelines[-5:] == ["pilz_industrial_motion_planner/LIN"] * 4 + ["pilz_industrial_motion_planner/PTP"]
+        assert moveit.scalings[-5:] == [(1.0, 1.0), (0.5, 0.5), (0.25, 0.25), (0.125, 0.125), (1.0, 1.0)]
+        _wait(handle.cancel_goal_async())
+        assert _wait(handle.get_result_async()).result.status == ReachPose.Result.STATUS_CANCELED
+
+    def test_a_free_reach_the_ptp_planner_refuses_is_planned_freely(self, moveit_rig) -> None:
+        client, moveit = moveit_rig
+        moveit.refuse_ptp = True
+        handle = _wait(client.send_goal_async(_goal(motion="free")))
+        assert handle.accepted
+        deadline = time.monotonic() + 30.0
+        while not moveit.executing:
+            assert time.monotonic() < deadline, "execution never started"
+            time.sleep(0.02)
+        assert moveit.pipelines[-2:] == ["pilz_industrial_motion_planner/PTP", "/"]
+        _wait(handle.cancel_goal_async())
+        assert _wait(handle.get_result_async()).result.status == ReachPose.Result.STATUS_CANCELED
+
+    def test_a_linear_reach_both_pilz_planners_refuse_is_planned_freely(self, moveit_rig) -> None:
+        client, moveit = moveit_rig
+        moveit.refuse_lin = True
+        moveit.refuse_ptp = True
+        handle = _wait(client.send_goal_async(_goal(motion="linear")))
+        assert handle.accepted
+        deadline = time.monotonic() + 30.0
+        while not moveit.executing:
+            assert time.monotonic() < deadline, "execution never started"
+            time.sleep(0.02)
+        assert moveit.pipelines[-2:] == ["pilz_industrial_motion_planner/PTP", "/"]
+        _wait(handle.cancel_goal_async())
+        assert _wait(handle.get_result_async()).result.status == ReachPose.Result.STATUS_CANCELED

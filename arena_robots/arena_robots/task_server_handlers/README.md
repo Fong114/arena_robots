@@ -8,6 +8,12 @@ behalf of a robot. Each `TaskKind` has one action type (defined in
 advertises depends on the selected `bringup` and the handlers registered for
 that `(TaskKind, bringup_kind)` pair.
 
+`TaskKind.GRASP` (cap `gripper`) is the one kind without a `task_server`
+endpoint or handler: the `gripper: direct` adapter in `arena_runtime` sends
+the phase to the gripper controller's `control_msgs/GripperCommand` action
+(the type `action_type()` returns for it) and the phase ends when that action
+returns. It has no `PUBLIC_SUFFIX` entry, so no `<namespace>/grasp` endpoint exists and the robots MCP lists none.
+
 ## Sources of truth
 
 | File | Role |
@@ -133,13 +139,15 @@ The `task_server` node takes its instance request as the `request_json` paramete
 
 Nav2 ends a `navigate_to_pose` goal once its controller's goal checker passes, at `xy_goal_tolerance` and `yaw_goal_tolerance` from the nav2 config. When a goal's `pose_tolerance` or `yaw_tolerance` is tighter, the handler sets that tolerance on `controller_server` for the goal and restores the configured value afterwards. Looser tolerances, including the task defaults, leave the checker alone. With a tightened checker, a Nav2 success counts only once the base has stopped within the goal's tolerances, since the base coasts after the controller stops. Otherwise the goal is sent again, at most five times.
 
+Nav2 planners and controllers do not reverse reliably and may rotate in place, which is unsafe with an arm inside a shelf. A goal that lies straight along the base heading, between 0.02 m and 1 m away, within its lateral and yaw tolerances (0.05 when unset), is therefore driven with the `backup` behavior when behind and `drive_on_heading` when ahead, at 0.1 m/s with collision checks on. If the behavior server is not ready, or rejects the goal, the handler sends `navigate_to_pose` instead.
+
 ## Reach pose on MoveIt
 
 `reach_pose/moveit.py` plans every `ReachPose` goal through the arm's `move_group`. Goal fields beyond the target:
 
 | Field | Effect |
 |---|---|
-| `motion` | `""` or `free` plans with OMPL, `linear` moves the tool along a straight line (Pilz `LIN` in the `pilz_industrial_motion_planner` pipeline). `linear` with a `named_target` and any other value abort the goal. |
+| `motion` | `""` or `free` plans a pose goal with Pilz `PTP` to a joint goal: move_group's `compute_ik` solves the pose seeded from the current joints and then from each named pose, and the first solution at least 0.3 rad inside every joint limit wins, else the one with the most room (a wrist parked at its limit jams the next straight move), the pose goal itself when no seed solves and, when that finds no plan, with the default pipeline, a `named_target` always with the default pipeline, `linear` moves the tool along a straight line (Pilz `LIN` in the `pilz_industrial_motion_planner` pipeline), and when `LIN` finds no plan in four attempts, each at half the speed of the one before (a path near a singularity breaks the joint acceleration limits at full speed), the handler warns and replans the goal at the requested speed with Pilz `PTP`, and when that finds none either (one KDL solve from the current joints), with the default pipeline, one IK solution seeded from the current state reached by joint interpolation. `linear` with a `named_target` and any other value abort the goal. |
 | `speed` | Scales velocity and acceleration, `0.0` means `1.0`. |
 | `relative` | The target is an offset from the tool pose: the tip is looked up in `target.header.frame_id` at goal time, positions add and the offset rotation multiplies the tip rotation. A failed lookup aborts the goal with a reason naming both frames. |
 | `contact` | Collision object ids the arm may touch for this goal. The handler reads the current allowed collision matrix from `get_planning_scene`, adds each object against the child link of every chain joint, the tip link and every URDF descendant of the tip (read once per arm from `move_group`'s `robot_description`) and sends the full matrix in the request's scene diff. |
@@ -148,4 +156,4 @@ Every request is sent to `move_action` with `plan_only`, from an explicit start 
 
 The handler publishes `PLANNING` before it sends the request to MoveIt, `EXECUTING` once `execute_trajectory` accepted the plan and `DONE` on success. The result carries `final_pose`, the tip pose in the target frame (the arm's base link frame for a named target), empty when the lookup fails.
 
-While the trajectory executes, the handler watches the arm's `controller_state`. A non-finite feedback position or error, or a tracking error above the arm's `stall_error` on a joint slower than `stall_speed` for `stall_time` seconds of message time, stops the execution with a `stop` on `trajectory_execution_event` and ends the reach with `STATUS_ABORTED` and the reason `arm state not finite` or `arm blocked`, naming the joint and the error.
+While the trajectory executes, the handler watches the arm's `controller_state`. A non-finite feedback position or error, or a tracking error above the arm's `stall_error` on a joint slower than `stall_speed` for `stall_time` seconds of message time, stops the execution with a `stop` on `trajectory_execution_event` and ends the reach with `STATUS_ABORTED` and the reason `arm state not finite` or `arm blocked`, naming the joint and the error. After a successful execution of an arm that publishes `controller_state`, the reach succeeds once every joint is within 0.01 rad of the trajectory's last point, at most 3 s of message time (10 s wall) later, and logs the joint still off its end when the arm stops short.

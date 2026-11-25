@@ -177,6 +177,7 @@
 	url = https://github.com/frankaemika/franka_description.git
 	branch = jazzy
 	update = none
+	robot = fr3
 	component = arm/fr3 gripper/franka_hand
 [submodule "arena_robots/robots/p3at/meshes"]
 	path = arena_robots/robots/p3at/meshes

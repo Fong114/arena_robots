@@ -9,6 +9,7 @@ class TaskKind(enum.Enum):
     GOTO_POSE = "goto_pose"
     REACH_POSE = "reach_pose"
     PLAY_GESTURE = "play_gesture"
+    GRASP = "grasp"
 
 
 PUBLIC_SUFFIX: dict[TaskKind, str] = {
@@ -21,6 +22,7 @@ TASK_KIND_CAP: dict[TaskKind, str] = {
     TaskKind.GOTO_POSE: "mobile",
     TaskKind.REACH_POSE: "arm",
     TaskKind.PLAY_GESTURE: "arm",
+    TaskKind.GRASP: "gripper",
 }
 
 
@@ -41,6 +43,10 @@ def action_type(tk: TaskKind) -> type:
         from arena_robots_msgs.action import PlayGesture
 
         return PlayGesture
+    if tk is TaskKind.GRASP:
+        from control_msgs.action import GripperCommand
+
+        return GripperCommand
     raise KeyError(tk)
 
 

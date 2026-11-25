@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import math
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -79,6 +80,25 @@ class Nav2Server:
         self._server.destroy()
 
 
+class BehaviorServer:
+    """A BackUp or DriveOnHeading action server that records the goals it receives."""
+
+    def __init__(self, node: Any, action_type: Any, name: str) -> None:
+        from rclpy.action import ActionServer, CancelResponse
+
+        self._action_type = action_type
+        self.goals: list[Any] = []
+        self._server = ActionServer(node, action_type, name, execute_callback=self._execute, cancel_callback=lambda _handle: CancelResponse.ACCEPT)
+
+    async def _execute(self, goal_handle: Any) -> Any:
+        self.goals.append(goal_handle.request)
+        goal_handle.succeed()
+        return self._action_type.Result()
+
+    def destroy(self) -> None:
+        self._server.destroy()
+
+
 class GotoRig:
     """A goto_pose handler behind a real action server, a client, and the lockstep register service."""
 
@@ -105,6 +125,7 @@ class GotoRig:
         self._server: Any = None
         self._client: Any = None
         self._nav2: list[Nav2Server] = []
+        self._behaviors: list[BehaviorServer] = []
         self.peer.create_service(LockstepRegister, "/arena/sim_lifecycle/lockstep/register", self._on_register)
         self._executor = SingleThreadedExecutor()
         self._executor.add_node(self.node)
@@ -120,6 +141,11 @@ class GotoRig:
     def nav2(self, **script: Any) -> Nav2Server:
         server = Nav2Server(self.peer, self.bringup.native_action_name, **script)
         self._nav2.append(server)
+        return server
+
+    def behavior(self, action_type: Any, name: str) -> BehaviorServer:
+        server = BehaviorServer(self.peer, action_type, f"{self.namespace}/{name}")
+        self._behaviors.append(server)
         return server
 
     def controller(self, **params: float) -> list[dict[str, float]]:
@@ -147,8 +173,9 @@ class GotoRig:
     def serve(self, handler_cls: type, tf_buffer: Any = None) -> Any:
         from arena_robots_msgs.action import GotoPose
         from rclpy.action import ActionClient, ActionServer
+        from tf2_ros import Buffer
 
-        handler = handler_cls(self.bringup, tf_buffer=tf_buffer, node=self.node)
+        handler = handler_cls(self.bringup, tf_buffer=tf_buffer if tf_buffer is not None else Buffer(), node=self.node)
 
         async def execute(goal_handle: Any) -> Any:
             self.handles.append(goal_handle)
@@ -163,11 +190,14 @@ class GotoRig:
         until(future.done, what)
         return future.result()
 
-    def send(self, x: float = 0.0, *, pose_tolerance: float = 0.0, yaw_tolerance: float = 0.0) -> Any:
+    def send(self, x: float = 0.0, *, y: float = 0.0, yaw: float = 0.0, pose_tolerance: float = 0.0, yaw_tolerance: float = 0.0) -> Any:
         from arena_robots_msgs.action import GotoPose
 
         goal = GotoPose.Goal()
         goal.target.pose.position.x = x
+        goal.target.pose.position.y = y
+        goal.target.pose.orientation.z = math.sin(yaw / 2.0)
+        goal.target.pose.orientation.w = math.cos(yaw / 2.0)
         goal.pose_tolerance = pose_tolerance
         goal.yaw_tolerance = yaw_tolerance
         handle = self._wait(self._client.send_goal_async(goal, feedback_callback=self.feedback.append), "goal response")
@@ -188,7 +218,7 @@ class GotoRig:
         until(lambda: handler._pub.get_subscription_count() == 1, "goal subscription")
         return received
 
-    def robot_at(self, buffer: Any, x: float) -> None:
+    def robot_at(self, buffer: Any, x: float, *, y: float = 0.0, yaw: float = 0.0) -> None:
         from geometry_msgs.msg import TransformStamped
 
         transform = TransformStamped()
@@ -196,10 +226,14 @@ class GotoRig:
         transform.header.frame_id = "map"
         transform.child_frame_id = "env_0/base_link"
         transform.transform.translation.x = x
-        transform.transform.rotation.w = 1.0
+        transform.transform.translation.y = y
+        transform.transform.rotation.z = math.sin(yaw / 2.0)
+        transform.transform.rotation.w = math.cos(yaw / 2.0)
         buffer.set_transform(transform, "test")
 
     def close(self) -> None:
+        for server in self._behaviors:
+            server.destroy()
         for server in self._nav2:
             server.holding = False
             server.destroy()

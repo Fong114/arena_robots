@@ -187,7 +187,7 @@ class TestInstalledRobots:
         caps = RobotIdentifier("tiago").resolve_sync().effective_caps({})
         arm = caps.arm["arm"]
         assert (arm.base_link, arm.tip_link, arm.chain) == ("torso_lift_link", "arm_tool_link", TIAGO_ARM_JOINTS)
-        assert set(arm.named_poses) == {"stow", "ready", "wave_up", "wave_l", "wave_r"}
+        assert set(arm.named_poses) == {"stow", "ready", "carry", "wave_up", "wave_l", "wave_r"}
         assert [arm.named_poses["stow"][joint] for joint in TIAGO_ARM_JOINTS] == [0.50, -1.34, -0.48, 1.94, -1.49, 1.37, 0.0]
         assert [arm.named_poses["ready"][joint] for joint in TIAGO_ARM_JOINTS] == [0.21, -0.2, -2.2, 1.15, -1.57, 0.2, 0.0]
         assert caps.gripper["gripper"].positions == {"open": 0.044, "close": 0.0}

@@ -455,6 +455,11 @@ class MobileSpec(CapConfig):
         return bool(self.raw.get('is_holonomic', False))
 
     @property
+    def drive(self) -> bool:
+        """Whether the base takes velocity commands, false for a base that only seats the robot."""
+        return bool(self.raw.get('drive', True))
+
+    @property
     def min_turning_radius(self) -> float:
         """Smallest radius in m the base can turn on, 0.0 for a base that turns in place."""
         v = self.raw.get('min_turning_radius', 0.0)
@@ -1307,11 +1312,13 @@ class RobotCaps:
         return copy.deepcopy(block)
 
     def holonomic(self) -> bool | None:
-        """Whether the base drives sideways: a mecanum, swerve or omni drive controller or a CHAMP gait, None without a control config or gait."""
+        """Whether the base drives sideways: a mecanum, swerve or omni drive controller or a CHAMP gait, False for a base that does not drive, None without a control config or gait."""
         if self.view is None:
             return None
         if (self.robot_dir / 'champ' / 'gait.yaml').is_file():
             return True
+        if not (self._section('mobile') or {}).get('drive', True):
+            return False
         from arena_robots import urdf_facts
 
         try:
