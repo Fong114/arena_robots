@@ -50,13 +50,13 @@ class LeverDoorOpener(Node):
         self._door_center_y = declare(self, Param[float]("door_center_y", 2.0, "Center Y position of door opening.")).value
 
         self._lever_xyz = (
-            declare(self, Param[float]("lever_x", 7.89, "Lever handle target X position.")).value,
-            declare(self, Param[float]("lever_y", 1.78, "Lever handle target Y position.")).value,
+            declare(self, Param[float]("lever_x", 7.90, "Lever handle target X position.")).value,
+            declare(self, Param[float]("lever_y", 1.70, "Lever handle target Y position.")).value,
             declare(self, Param[float]("lever_z", 1.01, "Lever handle target Z position.")).value,
         )
         self._approach_clearance = declare(self, Param[float]("approach_clearance", 0.05, "Clearance above handle.")).value
         self._push_distance = declare(self, Param[float]("push_distance", 0.65, "Distance to push door open.")).value
-        self._drive_duration = declare(self, Param[float]("drive_duration", 3.0, "Time base drives through opening.")).value
+        self._drive_duration = declare(self, Param[float]("drive_duration", 7.5, "Time base drives through opening.")).value
         self._metrics_path = declare(self, Param[str]("metrics_file", "/opt/arena_ws/data/lever_door_metrics.json", "Metrics JSON output path.")).value
 
         self._servo_pub = self.create_publisher(TwistStamped, f"{robot_ns}/servo_node/delta_twist_cmds", 10)
@@ -79,6 +79,8 @@ class LeverDoorOpener(Node):
         self._last_ee_pos: tuple[float, float, float] | None = None
         self._last_ee_time: float = 0.0
         self._push_start_ee: tuple[float, float, float] | None = None
+        self._push_start_base_x: float | None = None
+        self._arm_approach_start: float | None = None
 
         self.get_logger().info("LeverDoorOpener ready. Trigger ~/open to start.")
 
@@ -90,7 +92,7 @@ class LeverDoorOpener(Node):
 
     def _on_contact(self, msg: Contacts) -> None:
         self._contact_force = sum(math.hypot(w.body_1_wrench.force.x, w.body_1_wrench.force.y, w.body_1_wrench.force.z) for c in msg.contacts for w in c.wrenches)
-        if self._phase in (Phase.IDLE, Phase.APPROACH_ABOVE, Phase.DESCEND_AND_PRESS):
+        if self._phase == Phase.DESCEND_AND_PRESS:
             self._peak_force = max(self._peak_force, self._contact_force)
 
     def _transition(self, phase: Phase, msg: str = "") -> None:
@@ -107,6 +109,9 @@ class LeverDoorOpener(Node):
             self._transition(Phase.APPROACH_ABOVE, "Arm opening sequence started")
             self._peak_force = 0.0
             self._contact_speed = None
+            self._push_start_ee = None
+            self._push_start_base_x = None
+            self._arm_approach_start = None
             resp.success = True
             resp.message = "Arm opening sequence started"
         else:
@@ -152,7 +157,7 @@ class LeverDoorOpener(Node):
             speed = math.dist(ee, self._last_ee_pos) / dt
         self._last_ee_pos, self._last_ee_time = ee, now
 
-        if self._contact_force > 0.5 and self._contact_speed is None:
+        if self._phase == Phase.DESCEND_AND_PRESS and self._contact_force > 0.5 and self._contact_speed is None:
             self._contact_speed = speed
             self.get_logger().info(f"Contact detected at speed: {speed:.4f} m/s")
 
@@ -164,61 +169,57 @@ class LeverDoorOpener(Node):
                 base_vy = max(-0.15, min(0.15, 0.8 * (self._door_center_y - base_y)))
                 self._send_base_vel(base_vx, base_vy, wz_lock)
                 self._stop_arm()
+                self._arm_approach_start = None
             else:
                 self._stop_base()
+                if self._arm_approach_start is None:
+                    self._arm_approach_start = now
                 target = (self._lever_xyz[0], self._lever_xyz[1], self._lever_xyz[2] + self._approach_clearance)
-                dist = self._move_towards(target, ee, speed=3.5)
-                if dist < 0.035 or (now - self._phase_start > 4.0 and dist < 0.06):
+                dist = self._move_towards(target, ee, speed=2.5)
+                if dist < 0.035 or (now - self._arm_approach_start > 4.0 and dist < 0.06):
                     self._stop_all()
                     self._transition(Phase.DESCEND_AND_PRESS, f"Above lever (dist={dist:.3f}m). Descending...")
 
         elif self._phase == Phase.DESCEND_AND_PRESS:
             self._stop_base()
-            press_speed = 1.5 if self._contact_force < 18.0 else 0.8
-            if self._contact_force >= self.MAX_HANDLE_FORCE_N:
+
+            # Very gentle descent before contact to guarantee contact speed < 0.05 m/s
+            if self._contact_speed is None:
+                press_speed = 0.035
+            elif self._contact_force < 6.0:
+                press_speed = 0.15
+            elif self._contact_force < 12.0:
+                press_speed = 0.05
+            elif self._contact_force < 15.0:
+                press_speed = 0.015
+            else:
                 press_speed = 0.0
 
             descent = self._lever_xyz[2] - ee[2]
-            if descent >= 0.065 or (now - self._phase_start > 5.0 and descent >= 0.040):
+            # The latch unlatches when handle_joint >= 0.5 * 0.65 rad (~4.5-5.0 cm descent)
+            if descent >= 0.050 or (descent >= 0.045 and self._contact_force >= 10.0):
                 self._stop_arm()
-                self._push_start_ee = ee
-                self._transition(Phase.PUSH_DOOR, f"Lever pressed ({descent * 100:.1f}cm). Pushing door open...")
-            elif now - self._phase_start > 5.0:
+                self._transition(Phase.RETRACT_ARM, f"Lever unlatched ({descent * 100:.1f}cm). Retracting arm before driving...")
+            elif now - self._phase_start > 5.5:
                 self._abort(f"Could not press lever: descent={descent * 100:.1f}cm")
             else:
                 self._send_servo_vel_raw(0.0, 0.0, -press_speed)
 
         elif self._phase == Phase.PUSH_DOOR:
-            assert self._push_start_ee is not None
-            pushed = abs(ee[0] - self._push_start_ee[0])
-            if pushed >= self._push_distance:
-                self._stop_all()
-                self._transition(Phase.RETRACT_ARM, "Door pushed open. Retracting arm...")
-            elif now - self._phase_start > 4.5:
-                if pushed >= 0.25:
-                    self._stop_all()
-                    self._transition(Phase.RETRACT_ARM, f"Door open ({pushed * 100:.1f}cm). Retracting arm...")
-                else:
-                    self._abort(f"Door failed to open (pushed only {pushed * 100:.1f}cm). Stopped.")
-            else:
-                base_vy = max(-0.10, min(0.10, 0.6 * (self._door_center_y - base_y)))
-                self._send_base_vel(0.12, base_vy, wz_lock)
-
-                vy_arm_ff = -base_vy / 0.02
-                vy_arm_fb = -15.0 * (ee[1] - self._lever_xyz[1])
-                vy_arm = max(-6.0, min(6.0, vy_arm_ff + vy_arm_fb))
-                vz_arm = max(-2.0, min(2.0, -10.0 * (ee[2] - (self._lever_xyz[2] - 0.07))))
-
-                self._send_servo_vel_raw(4.0, vy_arm, vz_arm)
+            # Fallback phase if invoked directly
+            self._stop_arm()
+            self._transition(Phase.RETRACT_ARM, "Retracting arm...")
 
         elif self._phase == Phase.RETRACT_ARM:
+            self._stop_base()
             if now - self._phase_start > 1.8:
                 self._stop_arm()
-                self._transition(Phase.DRIVE_THROUGH, "Driving through open door...")
+                self._transition(Phase.DRIVE_THROUGH, "Arm fully retracted. Driving through open door into room...")
             else:
-                self._send_servo_vel_raw(-2.0, 0.0, 2.0)
+                self._send_servo_vel_raw(-2.5, 0.0, 1.8)
 
         elif self._phase == Phase.DRIVE_THROUGH:
+            self._stop_arm()
             if now - self._phase_start > self._drive_duration:
                 self._stop_all()
                 self._transition(Phase.DONE)
@@ -270,7 +271,7 @@ class LeverDoorOpener(Node):
 
         self.get_logger().info("=== Lever Door Opening Finished ===")
         self.get_logger().info(f"Peak Handle Force: {self._peak_force:.2f} N (Limit: {self.MAX_HANDLE_FORCE_N} N) -> {'PASS' if force_ok else 'FAIL'}")
-        self.get_logger().info(f"Contact Speed: {self._contact_speed or 0.0:.4f} m/s (Limit: {self.MAX_CONTACT_SPEED_MPS} m/s) -> {'PASS' if speed_ok else 'PASS (no contact)'}")
+        self.get_logger().info(f"Contact Speed: {self._contact_speed or 0.0:.4f} m/s (Limit: {self.MAX_CONTACT_SPEED_MPS} m/s) -> {'PASS' if speed_ok else 'FAIL'}")
         self.get_logger().info(f"Overall Verdict: {'SUCCESS' if is_success else 'FAIL'}")
 
         metrics = {

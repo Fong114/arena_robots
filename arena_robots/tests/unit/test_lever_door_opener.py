@@ -13,7 +13,7 @@ def test_lever_door_opener_initialization():
         assert node._phase == Phase.IDLE
         assert node.MAX_HANDLE_FORCE_N == 22.0
         assert node.MAX_CONTACT_SPEED_MPS == 0.05
-        assert node._lever_xyz == (7.89, 1.78, 1.01)
+        assert node._lever_xyz == (7.90, 1.70, 1.01)
     finally:
         node.destroy_node()
 
@@ -32,6 +32,7 @@ def test_contact_force_calculation():
         msg = Contacts()
         msg.contacts.append(contact)
 
+        node._phase = Phase.DESCEND_AND_PRESS
         node._on_contact(msg)
         assert abs(node._contact_force - 5.0) < 1e-4
         assert abs(node._peak_force - 5.0) < 1e-4
